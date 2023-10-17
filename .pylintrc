@@ -1,0 +1,12 @@
+[MASTER]
+init-hook="import sys; sys.path.append('.')"
+
+[BASIC]
+good-names=i, j, k, y
+good-names-rgxs=x[0-9]?$
+
+[TYPECHECK]
+generated-members=torch.*
+
+[pylint.FORMAT]
+disable=logging-fstring-interpolation
