@@ -10,14 +10,13 @@ from torch import nn, optim, Tensor
 from netloader.utils import layers
 from netloader.utils.utils import get_device
 
+
 class Network(nn.Module):
     """
     Constructs a neural network from a configuration file
 
     Attributes
     ----------
-    name : string
-        Name of the network, used for saving
     layers : list[dictionary]
         Layers with layer parameters
     clone : Tensor
@@ -38,17 +37,17 @@ class Network(nn.Module):
     """
     def __init__(
             self,
-            spectra_size: int | tuple[int, int],
-            params_size: int,
+            in_size: int,
+            out_size: int,
             learning_rate: float,
             name: str,
             config_dir: str):
         """
         Parameters
         ----------
-        spectra_size : integer
+        in_size : integer
             Size of the input tensor
-        params_size : integer
+        out_size : integer
             Size of the output tensor
         learning_rate : float
             Optimizer initial learning rate
@@ -61,25 +60,14 @@ class Network(nn.Module):
         self.latent_mse_weight = 1e-2
         self.kl_loss_weight = 1e-1
         self.extraction_loss = 1e-1
-        self.name = name
         self.clone = None
         self.extraction = None
         self.kl_loss = torch.tensor(0.)
 
-        # If network is an autoencoder, encoder or decoder
-        if 'autoencoder' in name.lower():
-            input_size = output_size = spectra_size
-        elif 'encoder' in name.lower():
-            input_size = spectra_size
-            output_size = params_size
-        else:
-            input_size = params_size
-            output_size = spectra_size
-
         # Construct layers in CNN
         self.layers, self.network = create_network(
-            input_size,
-            output_size,
+            in_size,
+            out_size,
             f'{config_dir}{name}.json',
         )
 
@@ -179,17 +167,17 @@ def load_network(
 
 
 def create_network(
-        input_size: int | tuple[int, int],
-        output_size: int | tuple[int, int],
+        in_size: int | tuple[int, int],
+        out_size: int | tuple[int, int],
         config_path: str) -> tuple[list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
     Parameters
     ----------
-    input_size : integer
+    in_size : integer
         Size of the input
-    output_size : integer
+    out_size : integer
         Size of the spectra
     config_path : string
         Path to the config file
@@ -203,18 +191,18 @@ def create_network(
     with open(config_path, 'r', encoding='utf-8') as file:
         file = json.load(file)
 
-    if isinstance(input_size, tuple) and len(input_size) == 2:
-        dims, input_size = input_size
+    if isinstance(in_size, tuple) and len(in_size) == 2:
+        dims, in_size = in_size
     else:
-        dims = input_size
+        dims = in_size
 
-    if isinstance(output_size, tuple):
-        output_size = output_size[-1]
+    if isinstance(out_size, tuple):
+        out_size = out_size[-1]
 
     # Initialize variables
     kwargs = {
-        'data_size': [input_size],
-        'output_size': output_size,
+        'data_size': [in_size],
+        'output_size': out_size,
         'dims': [dims],
         **file['net'],
     }
@@ -233,11 +221,11 @@ def create_network(
 
         module_list.append(kwargs['module'])
 
-    if kwargs['data_size'][-1] != output_size:
+    if kwargs['data_size'][-1] != out_size:
         log.error(
-            f"Network output size ({kwargs['data_size']}) != data output size ({output_size})",
+            f"Network output size ({kwargs['data_size']}) != data output size ({out_size})",
         )
-    elif kwargs['dims'][-1] != output_size:
+    elif kwargs['dims'][-1] != out_size:
         log.error(f"Network output filters (num={kwargs['dims'][-1]}) has not been reduced, "
                   'reshape with output = [-1] may be missing')
 

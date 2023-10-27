@@ -1,2 +1,5 @@
 /.idea
 __pycache__/
+/venv/
+/netloader.egg-info/
+/build/
