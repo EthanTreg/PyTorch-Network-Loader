@@ -1,1 +1,165 @@
 # PyTorch Network Loader
+
+Allows the easy creation of neural networks in PyTorch using `.json` files.
+
+## Requirements
+
+- Install dependencies:
+  `pip install -r requirements.txt`
+- PyTorch's dependencies[^1]:  
+  NVIDIA GPU with [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit-archive) ~= v11.6
+  [^1]: Only required for use with NVIDIA GPU
+
+## How to Use
+
+The following imports will be required: `from netloader.network import Network, load_network`.  
+A `.json` file with the desired network architecture will also be required.
+
+### Constructing the `.json` Architecture
+
+The file is structured as a dictionary containing two subdictionaries:
+- `net`: Parameters for the network currently only has one option, `dropout_prob`, which is the dropout probability
+- `layers`: List of dictionaries containing information on each layer, where the first layer takes the input, and the last layer produces the output
+
+#### Layer Compatibilities
+
+`reshape` layers are required for changing from linear layers to other layer types.  
+Linear layers take inputs of dimension N×L (2D),
+where N is the batch size, and L is the length of the input.  
+Other layer types take input of N×C×L (3D), where C is the number of channels.  
+The input and output of the network are also 2D.
+
+Going from 2D to 3D can be done by using `reshape` with `output = [1, -1]`.  
+Going from 3D to 2D, `reshape` will use `output = [-1]`
+
+#### Layer Types
+
+`layers` have several options, each with its own options:
+* `linear`: Linear with SELU:
+    * `factor`: optional float, _output size_ = `factor` × _network output size_,
+      will be used if provided else `features` will be used
+    * `features`: optional integer, output size, won't be used if `factor` is provided
+    * `dropout`: boolean = False, probability equals `dropout_prob`
+    * `batch_norm`: boolean = False, if batch normalisation should be used
+    * `activation`: boolean = True, if a SELU activation should be used
+* `convolutional`: Convolution with padding using replicate and ELU:
+    * `filters`: integer, number of convolutional filters
+    * `dropout`: boolean = True, probability equals `dropout_prob`
+    * `batch_norm`: boolean = False, if batch normalisation should be used
+    * `activation`: boolean = True, if an ELU activation should be used
+    * `kernel`: integer = 3, kernel size
+    * `stride`: integer = 1, stride of the kernel
+    * `padding`: integer or string = 'same',
+      input padding, can an integer or _same_ where _same_ preserves the input shape
+* `recurrent`: Recurrent layer with ELU:
+    * `dropout`: boolean = True, probability equals `dropout_prob`, requires `layers` > 1
+    * `batch_norm`: boolean = False, if batch normalisation should be used
+    * `activation`: boolean = True, if an ELU activation should be used
+    * `layers`: integer = 2, number of GRU layers
+    * `filters`: integer = 1, number of output filters;
+    * `method`: string = 'gru', type of recurrent layer, can be _gru_, _lstm_ or _rnn_
+    * `bidirectional`: string = None,
+      if a bidirectional GRU should be used and the method for combining the two directions,
+      can be _sum_, _mean_ or _concatenation_
+* `conv_upscale`: Scales the layer input by two using convolution and pixel shuffle,
+  uses stride of 1, same padding and no dropout, uses ELU
+    * `filters`: integer, number of convolutional filters
+    * `batch_norm`: boolean = False, if batch normalisation should be used
+    * `activation`: boolean = true, ELU activation
+    * `kernel`: integer = 3, kernel size
+* `conv_transpose`: Scales the layer input by two using transpose convolution,
+  uses kernel size of 2 and stride 2, uses ELU
+    * `filters`: integer, number of convolutional filters
+    * `dropout`: boolean = True, probability equals `dropout_prob`
+    * `batch_norm`: boolean = False, if batch normalisation should be used
+    * `activation`: boolean = True, if an ELU activation should be used
+* `upsample`: Linear interpolation scales layer input by two
+* `conv_depth_downscale`: Reduces C to one, uses kernel size of 1, same padding and ELU
+    * `batch_norm`: boolean = False, if batch normalisation should be used
+    * `activation`: boolean = True, if an ELU activation should be used
+* `conv_downscale`: Downscales the layer input by two through strided convolution,
+  uses kernel size of 2, padding of 1 using replicate and stride 2, uses ELU
+    * `filters`: integer, number of convolutional filters
+    * `dropout`: boolean = True, probability equals `dropout_prob`
+    * `batch_norm`: boolean = False, if batch normalisation should be used
+    * `activation`: boolean = True, if an ELU activation should be used
+* `pool`: Downscales the layer input by two using max pooling
+* `reshape`: Reshapes the dimensions
+    * `output`: tuple[integer] or tuple[integer, integer], dimensions of the output of the layer,
+      ignoring the first dimension of N
+* `sample`: Predicts the mean and standard deviation of a Gaussian distribution
+  and randomly samples from it for a variational autoencoder
+    * `factor`: optional float, _output size_ = `factor` × _network output size_,
+      will be used if provided else `features` will be used
+    * `features`: optional integer, output size, won't be used if `factor` is provided
+* `extract`: Extracts values from the previous layer to pass to the output
+    * `number`: integer, number of values to extract from the previous layer
+* `clone`: Clones a number of features from the previous layer
+    * `number`: integer, number of values to clone from the previous layer
+* `index`: Slices the output from the previous layer
+    * `number`: integer, index slice number
+    * `greater`: boolean = True, if slice should be values greater or less than _number_
+* `concatenate`: Concatenates the previous layer with a specified layer
+    * `layer`: integer, layer index to concatenate the previous layer with
+* `shortcut`: Adds the previous layer with the specified layer
+    * `layer`: integer, layer index to add to the previous layer
+* `skip`: Passes the output from `layer` into the next layer
+    * `layer`: integer, layer index to get the output from
+
+### Loading & Using the Network
+
+The following steps import the architecture into PyTorch:
+
+1. Create a network object by calling `Network` with the arguments: _in\_size_, _out\_size_, _learning\_rate_, _name_, & _config\_dir_.
+2. If loading a network with existing weights, call the function `load_network` with the arguments: _load\_num_, _states\_dir_, & _network_,
+   this will return the number of epochs the network has been trained for, the network with loaded weights, and a list of training and validation losses.
+4. To use the network object, such as for training or evaluation, call the network with the argument _x_, and the network will return the forward pass.
+
+The network object has attributes:
+- `name`: string, name of the network configuration file (without extension)
+- `layers`: list\[dictionary\], layers with layer parameters
+- `kl_loss`: Tensor, KL divergence loss on the latent space, if using a `sample` layer
+- `clone`: Tensor, cloned values from the network if using a `clone` layer
+- `extraction`: Tensor, values extracted from the network if using an `extraction` layer
+- `network`: ModuleList, network layers
+- `optimizer`: Optimizer, optimiser for the network
+- `scheduler`: ReduceLROnPlateau, scheduler for the optimiser
+- `latent_mse_weight`: float = 1e-2, relative weight if performing an MSE loss on the latent space
+- `kl_loss_weight`: float = 1e-1, relative weight if performing a KL divergence loss on the latent space
+- `extraction_loss`: float = 1e-1, relative weight if performing a loss on the extracted features
+
+**Example `decoder.json`**
+```json
+{
+  "net": {
+    "dropout_prob": 0.1
+  },
+  "layers": [
+    {
+      "type": "linear",
+      "features": 120
+    },
+    {
+      "type": "linear",
+      "features": 120
+    },
+    {
+      "type": "linear",
+      "factor": 1
+    }
+  ]
+}
+```
+
+**Example code**
+```python
+import torch
+
+from netloader.network import Network, load_network
+
+decoder = Network(5, 240, 1e-5, 'decoder', '../network_configs/')
+initial_epoch, decoder, (train_loss, val_loss) = load_netowrk(1, '../model_states/', decoder)
+
+x = torch.rand((10, 5))
+output = decoder(x)
+```
