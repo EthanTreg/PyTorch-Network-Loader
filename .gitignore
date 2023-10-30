@@ -3,3 +3,5 @@ __pycache__/
 /venv/
 /netloader.egg-info/
 /build/
+**/*[Tt][Ee][Ss][Tt]*
+**/*[Tt][Ee][Mm][Pp]*
