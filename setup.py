@@ -11,6 +11,6 @@ setup(
     author='Ethan Tregidga',
     author_email='et1g19@soton.ac.uk',
     license='MIT',
-    packages=['netloader'],
+    packages=['netloader', 'netloader.layers', 'netloader.utils'],
     install_requires=['torch'],
 )
