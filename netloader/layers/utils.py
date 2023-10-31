@@ -42,12 +42,7 @@ class Reshape(nn.Module):
         Tensor
             Output tensor
         """
-        if len(self.shape) == 1:
-            dims = 2
-        else:
-            dims = len(self.shape)
-
-        return x.contiguous().view(*x.shape[:-dims], *self.shape)
+        return x.contiguous().view(x.size(0), *self.shape)
 
 
 class Squeeze(nn.Module):
