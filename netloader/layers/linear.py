@@ -2,10 +2,11 @@
 Linear network layers
 """
 import torch
+import numpy as np
 from torch import nn, Tensor
 
 from netloader.utils.utils import get_device
-from netloader.layers.utils import optional_layer
+from netloader.layers.utils import Reshape, optional_layer
 
 
 class Sample(nn.Module):
@@ -105,23 +106,32 @@ def linear(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    # Number of features can be defined by either a factor of the output size or explicitly
-    try:
-        kwargs['dims'].append(int(kwargs['output_size'] * layer['factor']))
-    except KeyError:
-        kwargs['dims'].append(layer['features'])
+    # Remove channels dimension
+    if len(kwargs['shape'][-1]) > 1:
+        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([-1]))
 
-    linear_layer = nn.Linear(in_features=kwargs['dims'][-2], out_features=kwargs['dims'][-1])
+    # Number of features can be defined by either a factor of the output size or explicitly
+    if 'factor' in layer:
+        out_features = int(np.prod(kwargs['output_shape']) * layer['factor'])
+    else:
+        out_features = layer['features']
+
+    linear_layer = nn.Linear(in_features=np.prod(kwargs['shape'][-1]), out_features=out_features)
     kwargs['module'].add_module(f"linear_{kwargs['i']}", linear_layer)
 
     # Optional layers
     optional_layer(False, 'dropout', kwargs, layer, nn.Dropout1d(kwargs['dropout_prob']))
-    optional_layer(False, 'batch_norm', kwargs, layer, nn.BatchNorm1d(kwargs['dims'][-1]))
+    optional_layer(False, 'batch_norm', kwargs, layer, nn.BatchNorm1d(out_features))
     optional_layer(True, 'activation', kwargs, layer, nn.SELU())
 
-    # Data size equals number of nodes
-    kwargs['data_size'].append(kwargs['dims'][-1])
+    # Add channels dimension equal to input channels if input contains channels
+    if len(kwargs['shape'][-1]) > 1:
+        out_shape = [kwargs['shape'][-1][0], int(out_features / kwargs['shape'][-1][0])]
+        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(out_shape))
+    else:
+        out_shape = [out_features]
 
+    kwargs['shape'].append(out_shape)
     return kwargs
 
 
@@ -148,14 +158,13 @@ def upsample(kwargs: dict, _: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['dims'].append(kwargs['dims'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1])
     kwargs['module'].add_module(
         f"upsample_{kwargs['i']}",
         nn.Upsample(scale_factor=2, mode='linear')
     )
     # Data size doubles
-    kwargs['data_size'].append(kwargs['data_size'][-1] * 2)
-
+    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
     return kwargs
 
 
@@ -190,15 +199,22 @@ def sample(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
+    # Remove channels dimension
+    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([-1]))
+
     # Number of features can be defined by either a factor of the output size or explicitly
     try:
-        kwargs['dims'].append(int(kwargs['output_size'] * layer['factor']))
+        out_features = int(np.prod(kwargs['output_shape']) * layer['factor'])
     except KeyError:
-        kwargs['dims'].append(layer['features'])
+        out_features = layer['features']
 
-    kwargs['data_size'].append(kwargs['dims'][-1])
     kwargs['module'].add_module(
         f"sample_{kwargs['i']}",
-        Sample(kwargs['dims'][-2], kwargs['dims'][-1]),
+        Sample(np.prod(kwargs['shape'][-1]), out_features),
     )
+
+    # Add channels dimension equal to input channels
+    out_shape = [kwargs['shape'][-1][0], int(out_features / kwargs['shape'][-1][0])]
+    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(out_shape))
+    kwargs['data_shape'].append(out_shape)
     return kwargs

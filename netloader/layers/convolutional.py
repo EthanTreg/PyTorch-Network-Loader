@@ -55,6 +55,11 @@ class PixelShuffle1d(nn.Module):
         return x
 
 
+def _conv_shape(shape: list[int], padding: int, kernel_size: int, stride: int):
+    shape[1:] = [int((length + 2 * padding - kernel_size) / stride + 1) for length in shape[1:]]
+    return shape
+
+
 def convolutional(kwargs: dict, layer: dict) -> dict:
     """
     Convolutional layer constructor
@@ -98,7 +103,8 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     kernel_size = 3
     stride = 1
     padding = 'same'
-    kwargs['dims'].append(layer['filters'])
+    shape = kwargs['shape'][-1].copy()
+    shape[0] = layer['filters']
 
     # Optional parameters
     if 'kernel' in layer:
@@ -120,8 +126,8 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
         batch_norm = nn.BatchNorm1d
 
     conv = conv(
-        in_channels=kwargs['dims'][-2],
-        out_channels=kwargs['dims'][-1],
+        in_channels=kwargs['shape'][-1][0],
+        out_channels=shape[0],
         kernel_size=kernel_size,
         stride=stride,
         padding=padding,
@@ -132,15 +138,13 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
 
     # Optional layers
     optional_layer(True, 'dropout', kwargs, layer, dropout(kwargs['dropout_prob']))
-    optional_layer(False, 'batch_norm', kwargs, layer, batch_norm(kwargs['dims'][-1]))
+    optional_layer(False, 'batch_norm', kwargs, layer, batch_norm(shape[0]))
     optional_layer(True, 'activation', kwargs, layer, nn.ELU())
 
     if padding != 'same':
-        kwargs['data_size'].append(int(
-            (kwargs['data_size'][-1] + 2 * padding - kernel_size) / stride + 1
-        ))
+        kwargs['shape'].append(_conv_shape(shape, padding, kernel_size, stride))
     else:
-        kwargs['data_size'].append(kwargs['data_size'][-1])
+        kwargs['shape'].append(shape)
 
     return kwargs
 
@@ -190,11 +194,10 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
 
     # Upscaling done using pixel shuffling
     kwargs['module'].add_module(f"pixel_shuffle_{kwargs['i']}", pixel_shuffle(2))
-    kwargs['dims'][-1] = int(kwargs['dims'][-1] / 2)
+    kwargs['shape'][-1][0] = int(kwargs['shape'][-1][0] / 2)
 
     # Data size doubles
-    kwargs['data_size'].append(kwargs['data_size'][-1] * 2)
-
+    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
     return kwargs
 
 
@@ -232,7 +235,8 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['dims'].append(layer['filters'])
+    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'][-1][0] = layer['filters']
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
         transpose = nn.ConvTranspose2d
@@ -244,8 +248,8 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
         batch_norm = nn.BatchNorm1d
 
     conv = transpose(
-        in_channels=kwargs['dims'][-2],
-        out_channels=kwargs['dims'][-1],
+        in_channels=kwargs['shape'][-2][0],
+        out_channels=kwargs['shape'][-1][0],
         kernel_size=2,
         stride=2,
     )
@@ -254,12 +258,11 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
 
     # Optional layers
     optional_layer(True, 'dropout', kwargs, layer, dropout(kwargs['dropout_prob']))
-    optional_layer(False, 'batch_norm', kwargs, layer, batch_norm(kwargs['dims'][-1]))
+    optional_layer(False, 'batch_norm', kwargs, layer, batch_norm(kwargs['shape'][-1][0]))
     optional_layer(True, 'activation', kwargs, layer, nn.ELU())
 
     # Data size doubles
-    kwargs['data_size'].append(kwargs['data_size'][-1] * 2)
-
+    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
     return kwargs
 
 
@@ -296,7 +299,6 @@ def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
     layer['padding'] = 'same'
 
     convolutional(kwargs, layer)
-
     return kwargs
 
 
@@ -339,7 +341,6 @@ def conv_downscale(kwargs: dict, layer: dict) -> dict:
     layer['padding'] = 1
 
     convolutional(kwargs, layer)
-
     return kwargs
 
 
@@ -367,7 +368,7 @@ def pool(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['dims'].append(int(kwargs['dims'][-1]))
+    kwargs['shape'].append(kwargs['shape'][-1])
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
         max_pool = nn.MaxPool2d
@@ -377,6 +378,5 @@ def pool(kwargs: dict, layer: dict) -> dict:
     kwargs['module'].add_module(f"pool_{kwargs['i']}", max_pool(kernel_size=2))
 
     # Data size halves
-    kwargs['data_size'].append(int(kwargs['data_size'][-1] / 2))
-
+    kwargs['shape'][-1][1:] = [int(length / 2) for length in kwargs['shape'][-1][1:]]
     return kwargs

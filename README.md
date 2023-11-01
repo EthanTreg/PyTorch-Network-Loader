@@ -25,21 +25,16 @@ The file is structured as a dictionary containing two sub-dictionaries:
 
 #### Layer Compatibilities
 
-`reshape` layers are required for adding or removing the channels dimension, C, for compatibilities
-with linear layers, which require input $N\times L$, where N is the batch size and L is the length
-of the input.  
+Linear layers can take inputs of either $N\times L$ or $N\times C\times L$, where N is the
+batch size, C is the channels and L is the length of the input.  
 Other layers, such as recurrent, require the dimension C and 1D data, so their inputs must have
 shape $N\times C\times L$.  
 Some layers, such as convolutional, require dimension C, but can take either 1D
 (with argument `2d` = False) or 2D data (with argument `2d` = True), so the inputs would have shape
 $N\times C\times L$ or $N\times C\times H\times W$, respectively, where H is the height and W is
 the width.
-
-To add a channels dimension, use the layer `squeeze` with the parameters `squeeze` = False and
-`dim` = 1.  
-To remove the channels dimension if there is only one channel, use the layer `squeeze` with the
-parameters `squeeze` = True and `dim` = 1, otherwise, use `reshape` with `output` containing one -1
-to merge the two dimensions (i.e. [-1] for 1D data).
+The `reshape` layer can be used to change the shape of the inputs
+for compatibility between the layers.
 
 
 #### Layer Types
@@ -118,9 +113,6 @@ to merge the two dimensions (i.e. [-1] for 1D data).
     the first dimension (N) and subsequent dimensions if the number of dimensions in output
     is less than the dimensions of the input tensor, if output = -1, then last two dimensions are
     flattened
-- `squeeze`: Adds or removes a dimension
-  - `squeeze`: boolean, if dimension should be removed (True) or added (False)
-  - `dim`: integer, which dimension should be edited
 - `extract`: Extracts values from the previous layer to pass to the output
   - `number`: integer, number of values to extract from the previous layer
 - `clone`: Clones a number of features from the previous layer
@@ -139,7 +131,7 @@ to merge the two dimensions (i.e. [-1] for 1D data).
 
 The following steps import the architecture into PyTorch:
 
-1. Create a network object by calling `Network` with the arguments: _in\_size_, _out\_size_,
+1. Create a network object by calling `Network` with the arguments: _in\_shape_, _out\_shape_,
    _learning\_rate_, _name_, & _config\_dir_.
 2. If loading a network with existing weights, call the function `load_network` with the arguments:
    _load\_num_, _states\_dir_, & _network_,

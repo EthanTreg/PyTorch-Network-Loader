@@ -1,7 +1,7 @@
 """
 Miscellaneous network layers
 """
-import torch
+import numpy as np
 from torch import nn, Tensor
 
 
@@ -43,57 +43,6 @@ class Reshape(nn.Module):
             Output tensor
         """
         return x.contiguous().view(x.size(0), *self.shape)
-
-
-class Squeeze(nn.Module):
-    """
-    Squeezes or un-squeezes a dimension
-
-    Attributes
-    ----------
-    remove : boolean
-        If dimension should be squeezed or un-squeezed
-    dim : integer
-        Target dimension
-
-    Methods
-    -------
-    forward(x)
-        Forward pass of squeeze
-    """
-    def __init__(self, remove: bool, dim: int):
-        """
-        Parameters
-        ----------
-        remove : boolean
-            If dimension should be squeezed or un-squeezed
-        dim : integer
-            Target dimension
-        """
-        super().__init__()
-        self.remove = remove
-        self.dim = dim
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of squeeze
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor
-
-        Returns
-        -------
-        Tensor
-            Output tensor
-        """
-        if self.remove:
-            x = torch.squeeze(x, self.dim)
-        else:
-            x = torch.unsqueeze(x, self.dim)
-
-        return x
 
 
 class Index(nn.Module):
@@ -197,63 +146,33 @@ def reshape(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    # If reshape reduces the number of dimensions
-    if len(layer['output']) == 1:
-        kwargs['dims'].append(kwargs['data_size'][-1] * kwargs['dims'][-1])
-
-        # Data size equals the previous size multiplied by the previous dimension
-        kwargs['data_size'].append(kwargs['dims'][-1])
+    # If -1 in output shape, calculate the dimension length from the input dimensions
+    if -1 not in layer['output']:
+        kwargs['shape'].append(layer['output'])
+    elif layer['output'].count(-1) == 1:
+        shape = layer['output'].copy()
+        fixed_shape = np.delete(shape, np.array(shape) == -1)
+        shape[shape.index(-1)] = int(np.prod(kwargs['shape'][-1]) / np.prod(fixed_shape))
+        kwargs['shape'].append(shape)
     else:
-        kwargs['dims'].append(layer['output'][0])
+        raise ValueError(
+            f"Cannot infer output shape as -1 occurs more than once in {layer['output']}"
+        )
 
-        # Data size equals the previous size divided by the first shape dimension
-        kwargs['data_size'].append(int(kwargs['data_size'][-1] / kwargs['dims'][-1]))
+    # If input tensor cannot be reshaped into output shape
+    if np.prod(kwargs['shape'][-1]) != np.prod(kwargs['shape'][-2]):
+        raise ValueError(
+            f"Output size does not match input size"
+            f"for input shape {kwargs['shape'][-2]} and output shape {kwargs['shape'][-1]}"
+        )
 
     kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(layer['output']))
-
-    return kwargs
-
-
-def squeeze(kwargs: dict, layer: dict) -> dict:
-    """
-    Squeezes or un-squeezes a dimension of the tensor
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
-        module : Sequential
-            Sequential module to contain the layer;
-    layer : dictionary
-        squeeze : boolean
-            If dimension should be removed (True) or added (False);
-        dim : integer
-            Which dimension should be edited
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    kwargs['module'].add_module(f"squeeze_{kwargs['i']}", Squeeze(layer['squeeze'], layer['dim']))
-    kwargs['data_size'].append(kwargs['data_size'][-1])
-
-    if layer['squeeze']:
-        kwargs['dims'].append(kwargs['data_size'][-1])
-    else:
-        kwargs['dims'].append(1)
-
     return kwargs
 
 
 def extract(kwargs: dict, layer: dict) -> dict:
     """
-    Extracts a number of values from the tensor, returning two tensors
+    Extracts a number of values from the last dimension, returning two tensors
 
     Parameters
     ----------
@@ -271,8 +190,8 @@ def extract(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['dims'].append(kwargs['dims'][-1] - layer['number'])
-    kwargs['data_size'].append(kwargs['dims'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'][-1][-1] -= layer['number']
     return kwargs
 
 
@@ -295,14 +214,13 @@ def clone(kwargs: dict, _: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['dims'].append(kwargs['dims'][-1])
-    kwargs['data_size'].append(kwargs['data_size'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1])
     return kwargs
 
 
 def index(kwargs: dict, layer: dict) -> dict:
     """
-    Constructs a layer to slice the output from the previous layer
+    Constructs a layer to slice the last dimension from the output from the previous layer
 
     Parameters
     ----------
@@ -324,22 +242,21 @@ def index(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['dims'].append(kwargs['dims'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1])
 
+    # Length of slice
     if 'greater' in layer and (
             (layer['greater'] and layer['number'] < 0) or
             (not layer['greater'] and layer['number'] > 0)
     ):
-        data_size = abs(layer['number'])
+        kwargs['shape'][-1][-1] = abs(layer['number'])
     else:
-        data_size = kwargs['data_size'][-1] - abs(layer['number'])
+        kwargs['shape'][-1][-1] = kwargs['shape'][-1][-1] - abs(layer['number'])
 
-    kwargs['data_size'].append(data_size)
     kwargs['module'].add_module(
         f"index_{kwargs['i']}",
         Index(layer['number'], greater=layer['greater']),
     )
-
     return kwargs
 
 
@@ -357,21 +274,35 @@ def concatenate(kwargs: dict, layer: dict) -> dict:
     layer : dictionary
         layer : integer
             Layer index to concatenate the previous layer output with
-        channel : boolean
-            If concatenation should be performed over the channels or last dimension
+        dim : integer, default = 0
+            Dimension to concatenate to
 
     Returns
     -------
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    if 'channel' not in layer or layer['channel']:
-        kwargs['dims'].append(kwargs['dims'][-1] + kwargs['dims'][layer['layer']])
-        kwargs['data_size'].append(kwargs['data_size'][-1])
-    else:
-        kwargs['data_size'].append(kwargs['data_size'][-1] + kwargs['data_size'][layer['layer']])
-        kwargs['dims'].append(kwargs['data_size'][-1])
+    shape = kwargs['shape'][-1].copy()
+    target_shape = kwargs['shape'][layer['layer']].copy()
 
+    if 'dim' not in layer:
+        dim = 0
+    else:
+        dim = layer['dim']
+
+    in_shape = shape
+    del target_shape[dim]
+    del in_shape[dim]
+
+    # If tensors cannot be concatenated along the specified dimension
+    if target_shape != in_shape:
+        raise ValueError(
+            f"Shape mismatch, input shape {shape} does not match the "
+            f"target shape {kwargs['shape'][layer['layer']]} for concatenation over dimension {dim}"
+        )
+
+    shape[dim] = kwargs['shape'][-1][dim] + kwargs['shape'][layer['layer']][dim]
+    kwargs['shape'].append(shape)
     return kwargs
 
 
@@ -395,12 +326,26 @@ def shortcut(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    if kwargs['dims'][-1] == 1:
-        kwargs['dims'].append(kwargs['dims'][layer['layer']])
-    else:
-        kwargs['dims'].append(kwargs['dims'][-1])
+    shape = np.array(kwargs['shape'][-1]).copy()
+    mask = (kwargs['shape'][-1] != 1) & (kwargs['shape'][layer['layer']] != 1)
 
-    kwargs['data_size'].append(kwargs['data_size'][-1])
+    if not np.array_equal(kwargs['shape'][-1][mask], kwargs['shape'][layer['layer']][mask]):
+        raise ValueError(
+            f"Tensor shapes {kwargs['shape'][-1]} and "
+            f"{kwargs['shape'][layer['layer']]} not compatible for addition."
+        )
+
+    # If input has any dimensions of length one, output will take the target dimension
+    if 1 in kwargs['shape'][-1]:
+        idxs = np.where(np.array(kwargs['shape'][-1]) == 1)[0]
+        shape[idxs] = np.array(kwargs['shape'][layer['layer']])[idxs]
+
+    # If target has any dimensions of length one, output will take the input dimension
+    if 1 in kwargs['shape'][layer['layer']]:
+        idxs = np.where(np.array(kwargs['shape'][layer['layer']]) == 1)[0]
+        shape[idxs] = np.array(kwargs['shape'][-1])[idxs]
+
+    kwargs['shape'].append(shape)
     return kwargs
 
 
@@ -419,6 +364,5 @@ def skip(kwargs: dict, layer: dict) -> dict:
         layer : integer
             Layer index to retrieve the output;
     """
-    kwargs['dims'].append(kwargs['dims'][layer['layer']])
-    kwargs['data_size'].append(kwargs['data_size'][layer['layer']])
+    kwargs['shape'].append(kwargs['shape'][layer['layer']])
     return kwargs

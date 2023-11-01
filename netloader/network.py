@@ -2,7 +2,6 @@
 Constructs a network from layers and can load weights to resume network training
 """
 import json
-import logging as log
 
 import torch
 from torch import nn, optim, Tensor
@@ -47,18 +46,18 @@ class Network(nn.Module):
     """
     def __init__(
             self,
-            in_size: int,
-            out_size: int,
+            in_shape: list[int],
+            out_shape: list[int],
             learning_rate: float,
             name: str,
             config_dir: str):
         """
         Parameters
         ----------
-        in_size : integer
-            Size of the input tensor
-        out_size : integer
-            Size of the output tensor
+        in_shape : list[integer]
+            Shape of the input tensor
+        out_shape : list[integer]
+            shape of the output tensor
         learning_rate : float
             Optimizer initial learning rate
         name : string
@@ -77,8 +76,8 @@ class Network(nn.Module):
 
         # Construct layers in network
         self.layers, self.network = _create_network(
-            in_size,
-            out_size,
+            in_shape,
+            out_shape,
             f'{config_dir}{name}.json',
         )
 
@@ -141,18 +140,18 @@ class Network(nn.Module):
 
 
 def _create_network(
-        in_size: int | tuple[int, int],
-        out_size: int | tuple[int, int],
+        in_shape: list[int],
+        out_shape: list[int],
         config_path: str) -> tuple[list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
     Parameters
     ----------
-    in_size : integer
-        Size of the input
-    out_size : integer
-        Size of the spectra
+    in_shape : integer
+        Shape of the input tensor
+    out_shape : integer
+        Shape of the output tensor
     config_path : string
         Path to the config file
 
@@ -168,19 +167,10 @@ def _create_network(
     if '2d' not in file['net']:
         file['net']['2d'] = False
 
-    if isinstance(in_size, tuple) and len(in_size) == 2:
-        dims, in_size = in_size
-    else:
-        dims = in_size
-
-    if isinstance(out_size, tuple):
-        out_size = out_size[-1]
-
     # Initialize variables
     kwargs = {
-        'data_size': [in_size],
-        'output_size': out_size,
-        'dims': [dims],
+        'shape': [in_shape],
+        'output_shape': out_shape,
         **file['net'],
     }
     module_list = nn.ModuleList()
@@ -189,23 +179,14 @@ def _create_network(
     for i, layer in enumerate(file['layers']):
         kwargs['i'] = i
         kwargs['module'] = nn.Sequential()
-
-        try:
-            kwargs = getattr(layers, layer['type'])(kwargs, layer)
-        except AttributeError as error:
-            log.error(f"Unknown layer: {layer['type']}")
-            raise error
-
+        kwargs = getattr(layers, layer['type'])(kwargs, layer)
         module_list.append(kwargs['module'])
 
     # Check network output dimensions
-    if kwargs['data_size'][-1] != out_size:
-        log.error(
-            f"Network output size ({kwargs['data_size']}) != data output size ({out_size})",
+    if kwargs['shape'][-1] != out_shape:
+        raise ValueError(
+            f"Network output shape {kwargs['shape'][-1]} != data output shape {out_shape}"
         )
-    elif kwargs['dims'][-1] != out_size:
-        log.error(f"Network output filters (num={kwargs['dims'][-1]}) has not been reduced, "
-                  'reshape with output = [-1] may be missing')
 
     return file['layers'], module_list
 

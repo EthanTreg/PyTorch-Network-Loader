@@ -2,9 +2,10 @@
 Recurrent network layers
 """
 import torch
+import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.utils import optional_layer
+from netloader.layers.utils import Reshape, optional_layer
 
 
 class RecurrentOutput(nn.Module):
@@ -109,22 +110,21 @@ def recurrent(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    try:
+    kwargs['shape'].append([kwargs['shape'][-1][0], np.prod(kwargs['shape'][-1][1:])])
+
+    if 'layers' in layer:
         layers = layer['layers']
-    except KeyError:
+    else:
         layers = 2
 
-    try:
-        kwargs['dims'].append(layer['filters'])
-    except KeyError:
-        kwargs['dims'].append(1)
+    if 'filters' in layer:
+        kwargs['shape'][-1][0] = layer['filters']
+    else:
+        kwargs['shape'][-1][0] = 1
 
-    try:
+    if 'bidirectional' in layer and layer['bidirectional'].lower() != 'none':
         bidirectional = layer['bidirectional']
-
-        if bidirectional == 'None':
-            bidirectional = None
-    except KeyError:
+    else:
         bidirectional = None
 
     if layers > 1 and (('dropout' in layer and layer['dropout']) or 'dropout' not in layer):
@@ -133,8 +133,8 @@ def recurrent(kwargs: dict, layer: dict) -> dict:
         dropout_prob = 0
 
     recurrent_kwargs = {
-        'input_size': kwargs['dims'][-2],
-        'hidden_size': kwargs['dims'][-1],
+        'input_size': kwargs['shape'][-1][0],
+        'hidden_size': kwargs['shape'][-1][0],
         'num_layers': layers,
         'batch_first': True,
         'dropout': dropout_prob,
@@ -142,26 +142,30 @@ def recurrent(kwargs: dict, layer: dict) -> dict:
     }
 
     if bidirectional == 'concatenate':
-        kwargs['dims'][-1] *= 2
+        kwargs['shape'][-1][0] *= 2
 
-    try:
-        if layer['method'] == 'rnn':
-            recurrent_layer = nn.RNN(**recurrent_kwargs, nonlinearity='relu')
-        elif layer['method'] == 'lstm':
-            recurrent_layer = nn.LSTM(**recurrent_kwargs)
-        else:
-            recurrent_layer = nn.GRU(**recurrent_kwargs)
-    except KeyError:
+    if 'method' in layer and layer['method'] == 'rnn':
+        recurrent_layer = nn.RNN(**recurrent_kwargs, nonlinearity='relu')
+    elif 'method' in layer and layer['method'] == 'lstm':
+        recurrent_layer = nn.LSTM(**recurrent_kwargs)
+    else:
         recurrent_layer = nn.GRU(**recurrent_kwargs)
 
+    # Convert 2D data to 1D and add recurrent layer
+    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([kwargs['shape'][-1][0], -1]))
     kwargs['module'].add_module(
-        f"GRU_output_{kwargs['i']}",
+        f"recurrent_{kwargs['i']}",
         RecurrentOutput(recurrent_layer, bidirectional=bidirectional)
     )
 
-    optional_layer(False, 'batch_norm', kwargs, layer, nn.BatchNorm1d(kwargs['dims'][-1]))
+    # Optional layers
+    optional_layer(
+        False,
+        'batch_norm',
+        kwargs,
+        layer,
+        nn.BatchNorm1d(kwargs['shape'][-1][0])
+    )
     optional_layer(True, 'activation', kwargs, layer, nn.ELU())
-
-    kwargs['data_size'].append(kwargs['data_size'][-1])
 
     return kwargs
