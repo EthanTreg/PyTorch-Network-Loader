@@ -119,7 +119,7 @@ class Inception(nn.Module):
         x_22 = self.elu(self.conv_22(x_12))
         x_23 = self.elu(self.conv_23(x_13))
 
-        return torch.cat((x_1, x_21, x_22, x_23))
+        return torch.cat((x_1, x_21, x_22, x_23), dim=1)
 
 
 def inception(kwargs: dict, layer: dict) -> dict:
