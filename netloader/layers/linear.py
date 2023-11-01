@@ -104,6 +104,8 @@ def linear(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
+    in_shape = kwargs['shape'][-1].copy()
+
     # Remove channels dimension
     if len(kwargs['shape'][-1]) > 1:
         kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([-1]))
@@ -114,7 +116,7 @@ def linear(kwargs: dict, layer: dict) -> dict:
     else:
         out_features = layer['features']
 
-    linear_layer = nn.Linear(in_features=np.prod(kwargs['shape'][-1]), out_features=out_features)
+    linear_layer = nn.Linear(in_features=np.prod(in_shape), out_features=out_features)
     kwargs['module'].add_module(f"linear_{kwargs['i']}", linear_layer)
 
     # Optional layers
@@ -124,7 +126,7 @@ def linear(kwargs: dict, layer: dict) -> dict:
 
     # Add channels dimension equal to input channels if input contains channels
     if len(kwargs['shape'][-1]) > 1:
-        out_shape = [kwargs['shape'][-1][0], int(out_features / kwargs['shape'][-1][0])]
+        out_shape = [in_shape[0], int(out_features / in_shape[0])]
         kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(out_shape))
     else:
         out_shape = [out_features]
@@ -154,7 +156,7 @@ def upsample(kwargs: dict, _: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['module'].add_module(
         f"upsample_{kwargs['i']}",
         nn.Upsample(scale_factor=2, mode='linear')
@@ -193,8 +195,11 @@ def sample(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
+    in_shape = kwargs['shape'][-1].copy()
+
     # Remove channels dimension
-    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([-1]))
+    if len(kwargs['shape'][-1]) > 1:
+        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([-1]))
 
     # Number of features can be defined by either a factor of the output size or explicitly
     try:
@@ -202,13 +207,14 @@ def sample(kwargs: dict, layer: dict) -> dict:
     except KeyError:
         out_features = layer['features']
 
-    kwargs['module'].add_module(
-        f"sample_{kwargs['i']}",
-        Sample(np.prod(kwargs['shape'][-1]), out_features),
-    )
+    kwargs['module'].add_module(f"sample_{kwargs['i']}", Sample(np.prod(in_shape), out_features))
 
-    # Add channels dimension equal to input channels
-    out_shape = [kwargs['shape'][-1][0], int(out_features / kwargs['shape'][-1][0])]
-    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(out_shape))
+    # Add channels dimension equal to input channels if input contains channels
+    if len(in_shape) > 1:
+        out_shape = [in_shape[0], int(out_features / in_shape[0])]
+        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(out_shape))
+    else:
+        out_shape = [out_features]
+
     kwargs['data_shape'].append(out_shape)
     return kwargs

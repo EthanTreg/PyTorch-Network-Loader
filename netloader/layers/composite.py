@@ -144,12 +144,17 @@ def inception(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['shape'][-1][0] = 256
+
+    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
+        dimension = True
+    else:
+        dimension = False
 
     kwargs['module'].add_module(
         f"inception_{kwargs['i']}",
-        Inception(kwargs['shape'][-2], dimension=layer['2d']),
+        Inception(kwargs['shape'][-2], dimension=dimension),
     )
 
     return kwargs

@@ -186,7 +186,7 @@ def extract(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['shape'][-1][-1] -= layer['number']
     return kwargs
 
@@ -208,7 +208,7 @@ def clone(kwargs: dict, _: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
     return kwargs
 
 
@@ -234,7 +234,7 @@ def index(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
 
     # Length of slice
     if 'greater' in layer and (
@@ -314,26 +314,27 @@ def shortcut(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    shape = np.array(kwargs['shape'][-1]).copy()
-    mask = (kwargs['shape'][-1] != 1) & (kwargs['shape'][layer['layer']] != 1)
+    in_shape = np.array(kwargs['shape'][-1].copy())
+    target_shape = np.array(kwargs['shape'][layer['layer']].copy())
+    mask = (in_shape != 1) & (target_shape != 1)
 
-    if not np.array_equal(kwargs['shape'][-1][mask], kwargs['shape'][layer['layer']][mask]):
+    if not np.array_equal(in_shape[mask], target_shape[mask]):
         raise ValueError(
             f"Tensor shapes {kwargs['shape'][-1]} and "
             f"{kwargs['shape'][layer['layer']]} not compatible for addition."
         )
 
     # If input has any dimensions of length one, output will take the target dimension
-    if 1 in kwargs['shape'][-1]:
-        idxs = np.where(np.array(kwargs['shape'][-1]) == 1)[0]
-        shape[idxs] = np.array(kwargs['shape'][layer['layer']])[idxs]
+    if 1 in in_shape:
+        idxs = np.where(in_shape == 1)[0]
+        in_shape[idxs] = target_shape[idxs]
 
     # If target has any dimensions of length one, output will take the input dimension
-    if 1 in kwargs['shape'][layer['layer']]:
-        idxs = np.where(np.array(kwargs['shape'][layer['layer']]) == 1)[0]
-        shape[idxs] = np.array(kwargs['shape'][-1])[idxs]
+    if 1 in target_shape:
+        idxs = np.where(target_shape == 1)[0]
+        in_shape[idxs] = in_shape[idxs]
 
-    kwargs['shape'].append(shape)
+    kwargs['shape'].append(in_shape)
     return kwargs
 
 
@@ -350,5 +351,5 @@ def skip(kwargs: dict, layer: dict) -> dict:
         layer : integer
             Layer index to retrieve the output;
     """
-    kwargs['shape'].append(kwargs['shape'][layer['layer']])
+    kwargs['shape'].append(kwargs['shape'][layer['layer']].copy())
     return kwargs

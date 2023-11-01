@@ -229,7 +229,7 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['shape'][-1][0] = layer['filters']
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
@@ -358,7 +358,7 @@ def pool(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1])
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
         max_pool = nn.MaxPool2d
