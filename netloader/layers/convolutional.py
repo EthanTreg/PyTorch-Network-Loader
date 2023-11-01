@@ -69,10 +69,8 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
         dropout_prob : float, optional
@@ -158,10 +156,8 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer], optional
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary
@@ -210,10 +206,8 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
         dropout_prob : float, optional
@@ -275,8 +269,8 @@ def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary
@@ -311,10 +305,8 @@ def conv_downscale(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
         dropout_prob : float, optional
@@ -353,10 +345,8 @@ def pool(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary

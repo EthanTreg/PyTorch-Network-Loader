@@ -77,10 +77,8 @@ def linear(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
         output_size : integer, optional
@@ -144,10 +142,8 @@ def upsample(kwargs: dict, _: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     _ : dictionary
@@ -178,10 +174,8 @@ def sample(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
         output_size : integer, optional

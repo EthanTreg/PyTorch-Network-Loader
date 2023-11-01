@@ -129,10 +129,8 @@ def reshape(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary
@@ -177,10 +175,8 @@ def extract(kwargs: dict, layer: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
     layer : dictionary
         number : integer
             Number of values to extract from the previous layer
@@ -202,10 +198,8 @@ def clone(kwargs: dict, _: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
     _ : dictionary
         For compatibility
 
@@ -225,10 +219,8 @@ def index(kwargs: dict, layer: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary
@@ -267,10 +259,8 @@ def concatenate(kwargs: dict, layer: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
     layer : dictionary
         layer : integer
             Layer index to concatenate the previous layer output with
@@ -313,10 +303,8 @@ def shortcut(kwargs: dict, layer: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
     layer : dictionary
         layer : integer
             Layer index to add the previous layer output with;
@@ -356,10 +344,8 @@ def skip(kwargs: dict, layer: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or convolutional/GRU filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
     layer : dictionary
         layer : integer
             Layer index to retrieve the output;

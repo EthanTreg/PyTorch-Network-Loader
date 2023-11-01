@@ -10,7 +10,7 @@ from netloader.layers.utils import Reshape, optional_layer
 
 class RecurrentOutput(nn.Module):
     """
-    GRU wrapper for compatibility with network & can handle output of bidirectional GRUs
+    Recurrent wrapper for compatibility with network & can handle output of bidirectional RNNs
 
     Attributes
     ----------
@@ -22,7 +22,7 @@ class RecurrentOutput(nn.Module):
     Methods
     -------
     forward(x)
-        Returns
+        Forward pass of the recurrent layer
     """
     def __init__(self, recurrent_layer: nn.Module, bidirectional: str = None):
         """
@@ -45,7 +45,7 @@ class RecurrentOutput(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         """
-        Forward pass of the GRU
+        Forward pass of the recurrent layer
 
         Parameters
         ----------
@@ -79,11 +79,8 @@ def recurrent(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_size : list[integer]
-            Hidden layer output length;
-        dims : list[integer]
-            Dimensions in each layer, either linear output features or
-            convolutional/recurrent filters;
+        data_shape : list[integer]
+            Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
         dropout_prob : float, optional
