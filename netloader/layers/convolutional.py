@@ -55,9 +55,55 @@ class PixelShuffle1d(nn.Module):
         return x
 
 
-def _conv_shape(shape: list[int], padding: int, kernel_size: int, stride: int):
-    shape[1:] = [int((length + 2 * padding - kernel_size) / stride + 1) for length in shape[1:]]
+def _kernel_shape(kernel: int, stride: int, padding: int, shape: list[int]):
+    """
+    Calculates the output shape after a kernel operation
+
+    Parameters
+    ----------
+    kernel : integer
+        Size of the kernel
+    stride : integer
+        Stride of the kernel
+    padding : integer
+        Input padding
+    shape : list[integer]
+        Input shape into the layer
+    """
+    shape[1:] = [int((length + 2 * padding - kernel) / stride + 1) for length in shape[1:]]
     return shape
+
+
+def _same_padding(
+        kernel: int,
+        stride: int,
+        in_shape: list[int],
+        out_shape: list[int]) -> list[int]:
+    """
+    Calculates the padding required for specific output shape
+
+    Parameters
+    ----------
+    kernel : integer
+        Size of the kernel
+    stride : integer
+        Stride of the kernel
+    in_shape : list[integer]
+        Input shape into the layer
+    out_shape : list[integer]
+        Output shape from the layer
+
+    Returns
+    -------
+    list[integer]
+        Required padding for specific output shape
+    """
+    padding = []
+
+    for in_length, out_length in zip(in_shape, out_shape):
+        padding.append(int((stride * (out_length - 1) + kernel - in_length) / 2))
+
+    return padding
 
 
 def convolutional(kwargs: dict, layer: dict) -> dict:
@@ -69,7 +115,7 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
@@ -98,7 +144,7 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kernel_size = 3
+    kernel = 3
     stride = 1
     padding = 'same'
     shape = kwargs['shape'][-1].copy()
@@ -106,7 +152,7 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
 
     # Optional parameters
     if 'kernel' in layer:
-        kernel_size = layer['kernel']
+        kernel = layer['kernel']
 
     if 'stride' in layer:
         stride = layer['stride']
@@ -126,7 +172,7 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     conv = conv(
         in_channels=kwargs['shape'][-1][0],
         out_channels=shape[0],
-        kernel_size=kernel_size,
+        kernel_size=kernel,
         stride=stride,
         padding=padding,
         padding_mode='replicate',
@@ -140,37 +186,33 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     optional_layer(True, 'activation', kwargs, layer, nn.ELU())
 
     if padding != 'same':
-        kwargs['shape'].append(_conv_shape(shape, padding, kernel_size, stride))
+        kwargs['shape'].append(_kernel_shape(kernel, stride, padding, shape))
     else:
         kwargs['shape'].append(shape)
 
     return kwargs
 
 
-def conv_upscale(kwargs: dict, layer: dict) -> dict:
+def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
     """
-    Constructs a 2x upscaler using a convolutional layer and pixel shuffling
+    Constructs depth downscaler using convolution with kernel size of 1
 
     Parameters
     ----------
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary
-        filters : integer
-            Number of output convolutional filters;
         2d : boolean, default = False
             If input data is 2D;
         batch_norm : boolean, default = False
             If batch normalisation should be used;
         activation : boolean, default = True
             If ELU activation should be used;
-        kernel : integer, default = 3
-            Size of the kernel;
 
     Returns
     -------
@@ -178,22 +220,52 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
         Returns the input kwargs with any changes made by the function
     """
     layer['dropout'] = False
+    layer['filters'] = 1
+    layer['kernel'] = 1
     layer['stride'] = 1
     layer['padding'] = 'same'
-    layer['filters'] *= 2
-    kwargs = convolutional(kwargs, layer)
 
-    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        pixel_shuffle = nn.PixelShuffle
-    else:
-        pixel_shuffle = PixelShuffle1d
+    convolutional(kwargs, layer)
+    return kwargs
 
-    # Upscaling done using pixel shuffling
-    kwargs['module'].add_module(f"pixel_shuffle_{kwargs['i']}", pixel_shuffle(2))
-    kwargs['shape'][-1][0] = int(kwargs['shape'][-1][0] / 2)
 
-    # Data size doubles
-    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
+def conv_downscale(kwargs: dict, layer: dict) -> dict:
+    """
+    Constructs a convolutional layer with stride 2 for 2x downscaling
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        i : integer
+            Layer number;
+        shape : list[integer]
+            Shape of the outputs from each layer
+        module : Sequential
+            Sequential module to contain the layer;
+        dropout_prob : float, optional
+            Probability of dropout, not required if dropout from layer is False;
+    layer : dictionary
+        filters : integer
+            Number of convolutional filters;
+        2d : boolean, default = False
+            If input data is 2D;
+        dropout : boolean, default = True
+            If dropout should be used;
+        batch_norm : boolean, default = False
+            If batch normalisation should be used;
+        activation : boolean, default = True
+            If ELU activation should be used;
+
+    Returns
+    -------
+    dictionary
+        Returns the input kwargs with any changes made by the function
+    """
+    layer['kernel'] = 3
+    layer['stride'] = 2
+    layer['padding'] = 1
+
+    convolutional(kwargs, layer)
     return kwargs
 
 
@@ -206,7 +278,7 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
@@ -260,26 +332,30 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
     return kwargs
 
 
-def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
+def conv_upscale(kwargs: dict, layer: dict) -> dict:
     """
-    Constructs depth downscaler using convolution with kernel size of 1
+    Constructs a 2x upscaler using a convolutional layer and pixel shuffling
 
     Parameters
     ----------
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary
+        filters : integer
+            Number of output convolutional filters;
         2d : boolean, default = False
             If input data is 2D;
         batch_norm : boolean, default = False
             If batch normalisation should be used;
         activation : boolean, default = True
             If ELU activation should be used;
+        kernel : integer, default = 3
+            Size of the kernel;
 
     Returns
     -------
@@ -287,86 +363,105 @@ def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
         Returns the input kwargs with any changes made by the function
     """
     layer['dropout'] = False
-    layer['filters'] = 1
-    layer['kernel'] = 1
     layer['stride'] = 1
     layer['padding'] = 'same'
+    layer['filters'] *= 2
+    kwargs = convolutional(kwargs, layer)
 
-    convolutional(kwargs, layer)
-    return kwargs
+    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
+        pixel_shuffle = nn.PixelShuffle
+    else:
+        pixel_shuffle = PixelShuffle1d
 
+    # Upscaling done using pixel shuffling
+    kwargs['module'].add_module(f"pixel_shuffle_{kwargs['i']}", pixel_shuffle(2))
+    kwargs['shape'][-1][0] = int(kwargs['shape'][-1][0] / 2)
 
-def conv_downscale(kwargs: dict, layer: dict) -> dict:
-    """
-    Constructs a convolutional layer with stride 2 for 2x downscaling
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number;
-        data_shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer;
-        dropout_prob : float, optional
-            Probability of dropout, not required if dropout from layer is False;
-    layer : dictionary
-        filters : integer
-            Number of convolutional filters;
-        2d : boolean, default = False
-            If input data is 2D;
-        dropout : boolean, default = True
-            If dropout should be used;
-        batch_norm : boolean, default = False
-            If batch normalisation should be used;
-        activation : boolean, default = True
-            If ELU activation should be used;
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    layer['kernel'] = 3
-    layer['stride'] = 2
-    layer['padding'] = 1
-
-    convolutional(kwargs, layer)
+    # Data size doubles
+    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
     return kwargs
 
 
 def pool(kwargs: dict, layer: dict) -> dict:
     """
-    Constructs a max pooling layer for 2x downscaling
+    Constructs a max pooling layer
 
     Parameters
     ----------
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
     layer : dictionary
         2d : boolean, default = False
-            If input data is 2D
+            If input data is 2D;
+        kernel : integer, default = 2
+            Size of the kernel;
+        stride : integer, default = 2
+            Stride of the kernel;
+        padding : integer | string, default = 0
+            Input padding, can an integer or 'same' where 'same' preserves the input shape;
 
     Returns
     -------
     dictionary
         Returns the input kwargs with any changes made by the function
     """
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    kernel = stride = 2
+    padding = 2
+
+    # Optional parameters
+    if 'kernel' in layer:
+        kernel = layer['kernel']
+
+    if 'stride' in layer:
+        stride = layer['stride']
+
+    if 'padding' in layer:
+        padding = layer['padding']
+
+    if padding == 'same':
+        padding = _same_padding(kernel, stride, kwargs['shape'][-1], kwargs['shape'][-1])
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
         max_pool = nn.MaxPool2d
     else:
         max_pool = nn.MaxPool1d
 
-    kwargs['module'].add_module(f"pool_{kwargs['i']}", max_pool(kernel_size=2))
+    kwargs['module'].add_module(
+        f"pool_{kwargs['i']}",
+        max_pool(kernel_size=kernel, stride=stride, padding=padding),
+    )
 
-    # Data size halves
-    kwargs['shape'][-1][1:] = [int(length / 2) for length in kwargs['shape'][-1][1:]]
+    if padding != 'same':
+        kwargs['shape'].append(_kernel_shape(kernel, stride, padding, kwargs['shape'][-1]))
+    else:
+        kwargs['shape'].append(kwargs['shape'][-1].copy())
     return kwargs
+
+
+def pool_downscale(kwargs: dict, layer: dict) -> dict:
+    """
+    Downscales the input using max pooling
+    
+    Parameters
+    ----------
+    kwargs : dictionary
+        i : integer
+            Layer number;
+        shape : list[integer]
+            Shape of the outputs from each layer
+        module : Sequential
+            Sequential module to contain the layer;
+    layer : dictionary
+        factor : integer
+            Factor of downscaling
+        2d : boolean, default = False
+            If input data is 2D;
+    """
+    layer['kernel'] = layer['stride'] = layer['factor']
+    layer['padding'] = 0
+    return pool(kwargs, layer)

@@ -79,7 +79,7 @@ def recurrent(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;

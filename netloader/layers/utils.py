@@ -120,6 +120,134 @@ def optional_layer(
         kwargs['module'].add_module(f"{type(layer_func).__name__}_{kwargs['i']}", layer_func)
 
 
+def clone(kwargs: dict, _: dict) -> dict:
+    """
+    Constructs a layer to clone a number of values from the previous layer
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        shape : list[integer]
+            Shape of the outputs from each layer
+    _ : dictionary
+        For compatibility
+
+    Returns
+    -------
+    dictionary
+        Returns the input kwargs with any changes made by the function
+    """
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    return kwargs
+
+
+def concatenate(kwargs: dict, layer: dict) -> dict:
+    """
+    Constructs a concatenation layer to combine the outputs from two layers
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        shape : list[integer]
+            Shape of the outputs from each layer
+    layer : dictionary
+        layer : integer
+            Layer index to concatenate the previous layer output with
+        dim : integer, default = 0
+            Dimension to concatenate to
+
+    Returns
+    -------
+    dictionary
+        Returns the input kwargs with any changes made by the function
+    """
+    shape = kwargs['shape'][-1].copy()
+    target_shape = kwargs['shape'][layer['layer']].copy()
+
+    if 'dim' not in layer:
+        dim = 0
+    else:
+        dim = layer['dim']
+
+    in_shape = shape
+    del target_shape[dim]
+    del in_shape[dim]
+
+    # If tensors cannot be concatenated along the specified dimension
+    if target_shape != in_shape:
+        raise ValueError(
+            f"Shape mismatch, input shape {shape} does not match the "
+            f"target shape {kwargs['shape'][layer['layer']]} for concatenation over dimension {dim}"
+        )
+
+    shape[dim] = kwargs['shape'][-1][dim] + kwargs['shape'][layer['layer']][dim]
+    kwargs['shape'].append(shape)
+    return kwargs
+
+
+def extract(kwargs: dict, layer: dict) -> dict:
+    """
+    Extracts a number of values from the last dimension, returning two tensors
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        shape : list[integer]
+            Shape of the outputs from each layer
+    layer : dictionary
+        number : integer
+            Number of values to extract from the previous layer
+
+    Returns
+    -------
+    dictionary
+        Returns the input kwargs with any changes made by the function
+    """
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    kwargs['shape'][-1][-1] -= layer['number']
+    return kwargs
+
+
+def index(kwargs: dict, layer: dict) -> dict:
+    """
+    Constructs a layer to slice the last dimension from the output from the previous layer
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        shape : list[integer]
+            Shape of the outputs from each layer
+        module : Sequential
+            Sequential module to contain the layer;
+    layer : dictionary
+        number : integer
+            Index slice number;
+        greater : boolean, default = True
+            If slice should be values greater or less than number
+
+    Returns
+    -------
+    dictionary
+        Returns the input kwargs with any changes made by the function
+    """
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+
+    # Length of slice
+    if 'greater' in layer and (
+            (layer['greater'] and layer['number'] < 0) or
+            (not layer['greater'] and layer['number'] > 0)
+    ):
+        kwargs['shape'][-1][-1] = abs(layer['number'])
+    else:
+        kwargs['shape'][-1][-1] = kwargs['shape'][-1][-1] - abs(layer['number'])
+
+    kwargs['module'].add_module(
+        f"index_{kwargs['i']}",
+        Index(layer['number'], greater=layer['greater']),
+    )
+    return kwargs
+
+
 def reshape(kwargs: dict, layer: dict) -> dict:
     """
     Constructs a reshaping layer to change the data dimensions
@@ -129,7 +257,7 @@ def reshape(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
@@ -168,134 +296,6 @@ def reshape(kwargs: dict, layer: dict) -> dict:
     return kwargs
 
 
-def extract(kwargs: dict, layer: dict) -> dict:
-    """
-    Extracts a number of values from the last dimension, returning two tensors
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        data_shape : list[integer]
-            Shape of the outputs from each layer
-    layer : dictionary
-        number : integer
-            Number of values to extract from the previous layer
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-    kwargs['shape'][-1][-1] -= layer['number']
-    return kwargs
-
-
-def clone(kwargs: dict, _: dict) -> dict:
-    """
-    Constructs a layer to clone a number of values from the previous layer
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        data_shape : list[integer]
-            Shape of the outputs from each layer
-    _ : dictionary
-        For compatibility
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-    return kwargs
-
-
-def index(kwargs: dict, layer: dict) -> dict:
-    """
-    Constructs a layer to slice the last dimension from the output from the previous layer
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        data_shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer;
-    layer : dictionary
-        number : integer
-            Index slice number;
-        greater : boolean, default = True
-            If slice should be values greater or less than number
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-
-    # Length of slice
-    if 'greater' in layer and (
-            (layer['greater'] and layer['number'] < 0) or
-            (not layer['greater'] and layer['number'] > 0)
-    ):
-        kwargs['shape'][-1][-1] = abs(layer['number'])
-    else:
-        kwargs['shape'][-1][-1] = kwargs['shape'][-1][-1] - abs(layer['number'])
-
-    kwargs['module'].add_module(
-        f"index_{kwargs['i']}",
-        Index(layer['number'], greater=layer['greater']),
-    )
-    return kwargs
-
-
-def concatenate(kwargs: dict, layer: dict) -> dict:
-    """
-    Constructs a concatenation layer to combine the outputs from two layers
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        data_shape : list[integer]
-            Shape of the outputs from each layer
-    layer : dictionary
-        layer : integer
-            Layer index to concatenate the previous layer output with
-        dim : integer, default = 0
-            Dimension to concatenate to
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    shape = kwargs['shape'][-1].copy()
-    target_shape = kwargs['shape'][layer['layer']].copy()
-
-    if 'dim' not in layer:
-        dim = 0
-    else:
-        dim = layer['dim']
-
-    in_shape = shape
-    del target_shape[dim]
-    del in_shape[dim]
-
-    # If tensors cannot be concatenated along the specified dimension
-    if target_shape != in_shape:
-        raise ValueError(
-            f"Shape mismatch, input shape {shape} does not match the "
-            f"target shape {kwargs['shape'][layer['layer']]} for concatenation over dimension {dim}"
-        )
-
-    shape[dim] = kwargs['shape'][-1][dim] + kwargs['shape'][layer['layer']][dim]
-    kwargs['shape'].append(shape)
-    return kwargs
-
-
 def shortcut(kwargs: dict, layer: dict) -> dict:
     """
     Constructs a shortcut layer to add the outputs from two layers
@@ -303,7 +303,7 @@ def shortcut(kwargs: dict, layer: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
     layer : dictionary
         layer : integer
@@ -345,7 +345,7 @@ def skip(kwargs: dict, layer: dict) -> dict:
     Parameters
     ----------
     kwargs : dictionary
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
     layer : dictionary
         layer : integer

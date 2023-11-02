@@ -49,12 +49,12 @@ for compatibility between the layers.
   - `dropout`: boolean = False, probability equals `dropout_prob`
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if a SELU activation should be used
-- `upsample`: Linear interpolation scales layer input by two
 - `sample`: Predicts the mean and standard deviation of a Gaussian distribution
   and randomly samples from it for a variational autoencoder
   - `factor`: optional float, _output size_ = `factor` × _network output size_,
     will be used if provided else `features` will be used
   - `features`: optional integer, output size, won't be used if `factor` is provided
+- `upsample`: Linear interpolation scales layer input by two
 
 **Convolutional layers**
 - `convolutional`: Convolution with padding using replicate and ELU:
@@ -67,20 +67,6 @@ for compatibility between the layers.
   - `stride`: integer = 1, stride of the kernel
   - `padding`: integer or string = 'same',
     input padding, can an integer or _same_ where _same_ preserves the input shape
-- `conv_upscale`: Scales the layer input by two using convolution and pixel shuffle,
-  uses stride of 1, same padding and no dropout, uses ELU
-  - `filters`: integer, number of convolutional filters
-  - `2d`: boolean = False, if input data is 2D
-  - `batch_norm`: boolean = False, if batch normalisation should be used
-  - `activation`: boolean = true, ELU activation
-  - `kernel`: integer = 3, kernel size
-- `conv_transpose`: Scales the layer input by two using transpose convolution,
-  uses kernel size of 2 and stride 2, uses ELU
-  - `filters`: integer, number of convolutional filters
-  - `dropout`: boolean = True, probability equals `dropout_prob`
-  - `2d`: boolean = False, if input data is 2D
-  - `batch_norm`: boolean = False, if batch normalisation should be used
-  - `activation`: boolean = True, if an ELU activation should be used
 - `conv_depth_downscale`: Reduces C to one, uses kernel size of 1, same padding and ELU
   - `2d`: boolean = False, if input data is 2D
   - `batch_norm`: boolean = False, if batch normalisation should be used
@@ -92,7 +78,28 @@ for compatibility between the layers.
   - `dropout`: boolean = True, probability equals `dropout_prob`
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
-- `pool`: Downscales the layer input by two using max pooling
+- `conv_transpose`: Scales the layer input by two using transpose convolution,
+  uses kernel size of 2 and stride 2, uses ELU
+  - `filters`: integer, number of convolutional filters
+  - `dropout`: boolean = True, probability equals `dropout_prob`
+  - `2d`: boolean = False, if input data is 2D
+  - `batch_norm`: boolean = False, if batch normalisation should be used
+  - `activation`: boolean = True, if an ELU activation should be used
+- `conv_upscale`: Scales the layer input by two using convolution and pixel shuffle,
+  uses stride of 1, same padding and no dropout, uses ELU
+  - `filters`: integer, number of convolutional filters
+  - `2d`: boolean = False, if input data is 2D
+  - `batch_norm`: boolean = False, if batch normalisation should be used
+  - `activation`: boolean = true, ELU activation
+  - `kernel`: integer = 3, kernel size
+- `pool`: Performs max pooling
+  - `2d`: boolean = False, if input data is 2D
+  - `kernel`: integer, default = 2, size of the kernel 
+  - `stride`: integer, default = 2, stride of the kernel 
+  - `padding` : integer | string, default = 0, input padding, can an integer or 'same'
+    where 'same' preserves the input shape;
+- `pool_downscale`: Downscales the input layer by `factor` using max pooling
+  - `factor`: Factor to downscale the input
   - `2d`: boolean = False, if input data is 2D
 
 **Recurrent layers**
@@ -108,20 +115,20 @@ for compatibility between the layers.
     can be _sum_, _mean_ or _concatenation_
 
 **Utility layers**
+- `clone`: Clones a number of features from the previous layer
+  - `number`: integer, number of values to clone from the previous layer
+- `concatenate`: Concatenates the previous layer with a specified layer
+  - `layer`: integer, layer index to concatenate the previous layer with
+- `extract`: Extracts values from the previous layer to pass to the output
+  - `number`: integer, number of values to extract from the previous layer
+- `index`: Slices the output from the previous layer
+  - `number`: integer, index slice number
+  - `greater`: boolean = True, if slice should be values greater or less than _number_
 - `reshape`: Reshapes the dimensions
   - `output`: tuple[integer] or tuple[integer, integer], output dimensions of input tensor, ignoring
     the first dimension (N) and subsequent dimensions if the number of dimensions in output
     is less than the dimensions of the input tensor, if output = -1, then last two dimensions are
     flattened
-- `extract`: Extracts values from the previous layer to pass to the output
-  - `number`: integer, number of values to extract from the previous layer
-- `clone`: Clones a number of features from the previous layer
-  - `number`: integer, number of values to clone from the previous layer
-- `index`: Slices the output from the previous layer
-  - `number`: integer, index slice number
-  - `greater`: boolean = True, if slice should be values greater or less than _number_
-- `concatenate`: Concatenates the previous layer with a specified layer
-  - `layer`: integer, layer index to concatenate the previous layer with
 - `shortcut`: Adds the previous layer with the specified layer
   - `layer`: integer, layer index to add to the previous layer
 - `skip`: Passes the output from `layer` into the next layer

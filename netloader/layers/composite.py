@@ -131,7 +131,7 @@ def inception(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
@@ -147,10 +147,7 @@ def inception(kwargs: dict, layer: dict) -> dict:
     kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['shape'][-1][0] = 256
 
-    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        dimension = True
-    else:
-        dimension = False
+    dimension = ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d'])
 
     kwargs['module'].add_module(
         f"inception_{kwargs['i']}",

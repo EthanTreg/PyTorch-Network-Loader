@@ -77,7 +77,7 @@ def linear(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
@@ -135,37 +135,6 @@ def linear(kwargs: dict, layer: dict) -> dict:
     return kwargs
 
 
-def upsample(kwargs: dict, _: dict) -> dict:
-    """
-    Constructs a 2x upscaler using linear upsampling
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number;
-        data_shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer;
-    _ : dictionary
-        For compatibility
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-    kwargs['module'].add_module(
-        f"upsample_{kwargs['i']}",
-        nn.Upsample(scale_factor=2, mode='linear')
-    )
-    # Data size doubles
-    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
-    return kwargs
-
-
 def sample(kwargs: dict, layer: dict) -> dict:
     """
     Generates mean and standard deviation and randomly samples from a Gaussian distribution
@@ -176,7 +145,7 @@ def sample(kwargs: dict, layer: dict) -> dict:
     kwargs : dictionary
         i : integer
             Layer number;
-        data_shape : list[integer]
+        shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer;
@@ -216,5 +185,36 @@ def sample(kwargs: dict, layer: dict) -> dict:
     else:
         out_shape = [out_features]
 
-    kwargs['data_shape'].append(out_shape)
+    kwargs['shape'].append(out_shape)
+    return kwargs
+
+
+def upsample(kwargs: dict, _: dict) -> dict:
+    """
+    Constructs a 2x upscaler using linear upsampling
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        i : integer
+            Layer number;
+        shape : list[integer]
+            Shape of the outputs from each layer
+        module : Sequential
+            Sequential module to contain the layer;
+    _ : dictionary
+        For compatibility
+
+    Returns
+    -------
+    dictionary
+        Returns the input kwargs with any changes made by the function
+    """
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    kwargs['module'].add_module(
+        f"upsample_{kwargs['i']}",
+        nn.Upsample(scale_factor=2, mode='linear')
+    )
+    # Data size doubles
+    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
     return kwargs
