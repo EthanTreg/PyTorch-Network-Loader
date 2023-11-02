@@ -162,6 +162,7 @@ def concatenate(kwargs: dict, layer: dict) -> dict:
         Returns the input kwargs with any changes made by the function
     """
     shape = kwargs['shape'][-1].copy()
+    in_shape = shape.copy()
     target_shape = kwargs['shape'][layer['layer']].copy()
 
     if 'dim' not in layer:
@@ -169,7 +170,6 @@ def concatenate(kwargs: dict, layer: dict) -> dict:
     else:
         dim = layer['dim']
 
-    in_shape = shape
     del target_shape[dim]
     del in_shape[dim]
 
