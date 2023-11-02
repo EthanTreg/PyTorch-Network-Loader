@@ -119,6 +119,7 @@ for compatibility between the layers.
   - `number`: integer, number of values to clone from the previous layer
 - `concatenate`: Concatenates the previous layer with a specified layer
   - `layer`: integer, layer index to concatenate the previous layer with
+  - `dim` : integer, default = 0, dimension to concatenate to (not including N)
 - `extract`: Extracts values from the previous layer to pass to the output
   - `number`: integer, number of values to extract from the previous layer
 - `index`: Slices the output from the previous layer

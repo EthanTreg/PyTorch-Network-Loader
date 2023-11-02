@@ -7,7 +7,6 @@ import torch
 from torch import nn, optim, Tensor
 
 from netloader import layers
-from netloader.utils.utils import get_device
 
 
 class Network(nn.Module):
@@ -118,10 +117,12 @@ class Network(nn.Module):
                 self.clone = x[..., :layer['number']].clone()
             # Concatenation layers
             elif layer['type'] == 'concatenate':
-                if 'channel' in layer and layer['channel']:
-                    dim = 1
+                if 'dim' in layer and layer['dim'] >= 0:
+                    dim = layer['dim'] + 1
+                elif 'dim' in layer:
+                    dim = layer['dim']
                 else:
-                    dim = -1
+                    dim = 1
 
                 x = torch.cat((x, outputs[layer['layer']]), dim=dim)
             # Shortcut layers

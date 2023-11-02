@@ -55,7 +55,7 @@ class PixelShuffle1d(nn.Module):
         return x
 
 
-def _kernel_shape(kernel: int, stride: int, padding: int, shape: list[int]):
+def _kernel_shape(kernel: int, stride: int, padding: int | list[int], shape: list[int]):
     """
     Calculates the output shape after a kernel operation
 
@@ -65,12 +65,20 @@ def _kernel_shape(kernel: int, stride: int, padding: int, shape: list[int]):
         Size of the kernel
     stride : integer
         Stride of the kernel
-    padding : integer
+    padding : integer | list[integer]
         Input padding
     shape : list[integer]
         Input shape into the layer
     """
-    shape[1:] = [int((length + 2 * padding - kernel) / stride + 1) for length in shape[1:]]
+    if isinstance(padding, int):
+        padding = [padding]
+
+    if len(padding) == len(shape[1:]):
+        loop_zip = zip(padding, shape[1:])
+    else:
+        loop_zip = zip(padding * len(shape[1:]), shape[1:])
+
+    shape[1:] = [int((length + 2 * pad - kernel) / stride + 1) for pad, length in loop_zip]
     return shape
 
 
@@ -100,7 +108,7 @@ def _same_padding(
     """
     padding = []
 
-    for in_length, out_length in zip(in_shape, out_shape):
+    for in_length, out_length in zip(in_shape[1:], out_shape[1:]):
         padding.append(int((stride * (out_length - 1) + kernel - in_length) / 2))
 
     return padding
