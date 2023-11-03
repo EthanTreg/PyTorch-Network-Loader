@@ -54,9 +54,9 @@ class Network(nn.Module):
         Parameters
         ----------
         in_shape : list[integer]
-            Shape of the input tensor
+            Shape of the input tensor, excluding batch size
         out_shape : list[integer]
-            shape of the output tensor
+            shape of the output tensor, excluding batch size
         learning_rate : float
             Optimizer initial learning rate
         name : string
@@ -140,6 +140,60 @@ class Network(nn.Module):
         return x
 
 
+def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.ModuleList]:
+    """
+    Creates a subnetwork from a configuration file
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        i : integer
+            Layer number
+        shape : list[integer]
+            Shape of the outputs from each layer
+        module : Sequential
+            Sequential module to contain the layer
+        out_shape : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
+        dropout_prob : float, optional
+            Probability of dropout if dropout from layer is True
+    layer : dictionary
+        config_path : string
+            Path to the .json file containing the block architecture
+        channels : integer, optional
+            Number of output channels, won't be used if out_shape is provided, if channels and
+            out_shape aren't provided, the input dimensions will be preserved
+        out_shape : list[integer], optional
+            Output shape of the block, will be used if provided; otherwise, channels will be used
+
+    Returns
+    -------
+    dictionary
+        Returns the input kwargs with any changes made by the function
+    """
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+
+    # Subnetwork output
+    if 'out_shape' in layer:
+        kwargs['shape'][-1] = layer['out_shape']
+    elif 'channels' in layer:
+        kwargs['shape'][-1][0] = layer['channels']
+
+    # Create subnetwork
+    sub_layers, sub_network = _create_network(
+        kwargs['shape'][-2],
+        kwargs['shape'][-1],
+        layer['config_path'],
+    )
+
+    # Fix layers that depend on other layers
+    for sub_layer in sub_layers:
+        if 'layer' in sub_layer and sub_layer['layer'] >= 0:
+            sub_layer['layer'] += kwargs['i']
+
+    return kwargs, sub_layers, sub_network
+
+
 def _create_network(
         in_shape: list[int],
         out_shape: list[int],
@@ -150,9 +204,9 @@ def _create_network(
     Parameters
     ----------
     in_shape : integer
-        Shape of the input tensor
+        Shape of the input tensor, excluding batch size
     out_shape : integer
-        Shape of the output tensor
+        Shape of the output tensor, excluding batch size
     config_path : string
         Path to the config file
 
@@ -161,6 +215,8 @@ def _create_network(
     tuple[list[dictionary], ModuleList]
         Layers in the network with parameters and network construction
     """
+    layer_injections = 0
+
     # Load network configuration file
     with open(config_path, 'r', encoding='utf-8') as file:
         file = json.load(file)
@@ -171,17 +227,29 @@ def _create_network(
     # Initialize variables
     kwargs = {
         'shape': [in_shape],
-        'output_shape': out_shape,
+        'out_shape': out_shape,
         **file['net'],
     }
     module_list = nn.ModuleList()
 
     # Create layers
-    for i, layer in enumerate(file['layers']):
+    for i, layer in enumerate(file['layers'].copy()):
+        i += layer_injections
         kwargs['i'] = i
         kwargs['module'] = nn.Sequential()
-        kwargs = getattr(layers, layer['type'])(kwargs, layer)
-        module_list.append(kwargs['module'])
+
+        # If layer is a composite layer, create the subnetwork
+        if layer['type'] == 'composite':
+            kwargs, sub_layers, sub_network = _composite_layer(kwargs, layer)
+            module_list.extend(sub_network)
+
+            # Replace composite layer with the subnetwork
+            del file['layers'][i]
+            file['layers'][i:i] = sub_layers
+            layer_injections += len(sub_layers) - 1
+        else:
+            kwargs = getattr(layers, layer['type'])(kwargs, layer)
+            module_list.append(kwargs['module'])
 
     # Check network output dimensions
     if kwargs['shape'][-1] != out_shape:

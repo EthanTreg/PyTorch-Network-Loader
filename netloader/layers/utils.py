@@ -218,10 +218,10 @@ def index(kwargs: dict, layer: dict) -> dict:
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
     layer : dictionary
         number : integer
-            Index slice number;
+            Index slice number
         greater : boolean, default = True
             If slice should be values greater or less than number
 
@@ -256,11 +256,11 @@ def reshape(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
     layer : dictionary
         output : integer | list[integer]
             Output dimensions of input tensor, ignoring the first dimension (batch size) and
@@ -307,7 +307,7 @@ def shortcut(kwargs: dict, layer: dict) -> dict:
             Shape of the outputs from each layer
     layer : dictionary
         layer : integer
-            Layer index to add the previous layer output with;
+            Layer index to add the previous layer output with
 
     Returns
     -------
@@ -349,7 +349,7 @@ def skip(kwargs: dict, layer: dict) -> dict:
             Shape of the outputs from each layer
     layer : dictionary
         layer : integer
-            Layer index to retrieve the output;
+            Layer index to retrieve the output
     """
     kwargs['shape'].append(kwargs['shape'][layer['layer']].copy())
     return kwargs

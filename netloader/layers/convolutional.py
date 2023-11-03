@@ -122,30 +122,35 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
+        out_shape : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
         dropout_prob : float, optional
-            Probability of dropout, not required if dropout from layer is False;
+            Probability of dropout, not required if dropout from layer is False
     layer : dictionary
-        filters : integer
-            Number of convolutional filters;
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
         2d : boolean, default = False
-            If input data is 2D;
+            If input data is 2D
         dropout : boolean, default = True
-            If dropout should be used;
+            If dropout should be used
         batch_norm : boolean, default = False
-            If batch normalisation should be used;
+            If batch normalisation should be used
         activation : boolean, default = True
-            If ELU activation should be used;
+            If ELU activation should be used
         kernel : integer, default = 3
-            Size of the kernel;
+            Size of the kernel
         stride : integer, default = 1
-            Stride of the kernel;
+            Stride of the kernel
         padding : integer | string, default = 'same'
-            Input padding, can an integer or 'same' where 'same' preserves the input shape;
+            Input padding, can an integer or 'same' where 'same' preserves the input shape
 
     Returns
     -------
@@ -156,7 +161,11 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     stride = 1
     padding = 'same'
     shape = kwargs['shape'][-1].copy()
-    shape[0] = layer['filters']
+
+    if 'factor' not in layer:
+        shape[0] = layer['filters']
+    else:
+        shape[0] = max(1, int(kwargs['out_shape'][0] * layer['factor']))
 
     # Optional parameters
     if 'kernel' in layer:
@@ -209,18 +218,18 @@ def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
     layer : dictionary
         2d : boolean, default = False
-            If input data is 2D;
+            If input data is 2D
         batch_norm : boolean, default = False
-            If batch normalisation should be used;
+            If batch normalisation should be used
         activation : boolean, default = True
-            If ELU activation should be used;
+            If ELU activation should be used
 
     Returns
     -------
@@ -245,24 +254,29 @@ def conv_downscale(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
+        out_shape : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
         dropout_prob : float, optional
-            Probability of dropout, not required if dropout from layer is False;
+            Probability of dropout, not required if dropout from layer is False
     layer : dictionary
-        filters : integer
-            Number of convolutional filters;
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
         2d : boolean, default = False
-            If input data is 2D;
+            If input data is 2D
         dropout : boolean, default = True
-            If dropout should be used;
+            If dropout should be used
         batch_norm : boolean, default = False
-            If batch normalisation should be used;
+            If batch normalisation should be used
         activation : boolean, default = True
-            If ELU activation should be used;
+            If ELU activation should be used
 
     Returns
     -------
@@ -285,24 +299,29 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
+        out_shape : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
         dropout_prob : float, optional
-            Probability of dropout, not required if dropout from layer is False;
+            Probability of dropout, not required if dropout from layer is False
     layer : dictionary
-        filters : integer
-            Number of convolutional filters;
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
         2d : boolean, default = False
-            If input data is 2D;
+            If input data is 2D
         dropout : boolean, default = True
-            If dropout should be used;
+            If dropout should be used
         batch_norm : boolean, default = False
-            If batch normalisation should be used;
+            If batch normalisation should be used
         activation : boolean, default = True
-            If ELU activation should be used;
+            If ELU activation should be used
 
     Returns
     -------
@@ -310,7 +329,11 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
         Returns the input kwargs with any changes made by the function
     """
     kwargs['shape'].append(kwargs['shape'][-1].copy())
-    kwargs['shape'][-1][0] = layer['filters']
+
+    if 'factor' not in layer:
+        kwargs['shape'][-1][0] = layer['filters']
+    else:
+        kwargs['shape'][-1][0] = max(1, int(kwargs['out_shape'][0] * layer['factor']))
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
         transpose = nn.ConvTranspose2d
@@ -348,22 +371,27 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
+        out_shape : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
     layer : dictionary
-        filters : integer
-            Number of output convolutional filters;
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
         2d : boolean, default = False
-            If input data is 2D;
+            If input data is 2D
         batch_norm : boolean, default = False
-            If batch normalisation should be used;
+            If batch normalisation should be used
         activation : boolean, default = True
-            If ELU activation should be used;
+            If ELU activation should be used
         kernel : integer, default = 3
-            Size of the kernel;
+            Size of the kernel
 
     Returns
     -------
@@ -373,7 +401,12 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
     layer['dropout'] = False
     layer['stride'] = 1
     layer['padding'] = 'same'
-    layer['filters'] *= 2
+
+    if 'factor' in layer:
+        layer['factor'] *= 2
+    else:
+        layer['filters'] *= 2
+
     kwargs = convolutional(kwargs, layer)
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
@@ -398,20 +431,20 @@ def pool(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
     layer : dictionary
         2d : boolean, default = False
-            If input data is 2D;
+            If input data is 2D
         kernel : integer, default = 2
-            Size of the kernel;
+            Size of the kernel
         stride : integer, default = 2
-            Stride of the kernel;
+            Stride of the kernel
         padding : integer | string, default = 0
-            Input padding, can an integer or 'same' where 'same' preserves the input shape;
+            Input padding, can an integer or 'same' where 'same' preserves the input shape
 
     Returns
     -------
@@ -419,7 +452,7 @@ def pool(kwargs: dict, layer: dict) -> dict:
         Returns the input kwargs with any changes made by the function
     """
     kernel = stride = 2
-    padding = 2
+    padding = 0
 
     # Optional parameters
     if 'kernel' in layer:
@@ -459,16 +492,16 @@ def pool_downscale(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
     layer : dictionary
         factor : integer
             Factor of downscaling
         2d : boolean, default = False
-            If input data is 2D;
+            If input data is 2D
     """
     layer['kernel'] = layer['stride'] = layer['factor']
     layer['padding'] = 0

@@ -78,29 +78,29 @@ def recurrent(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
         dropout_prob : float, optional
-            Probability of dropout, only required if layers from layer > 1;
+            Probability of dropout, only required if layers from layer > 1
     layer : dictionary
         dropout : boolean, default = True
-            If dropout should be used;
+            If dropout should be used
         batch_norm : boolean, default = 0
-            If batch normalisation should be used;
+            If batch normalisation should be used
         activation : boolean, default = True
-            If ELU activation should be used;
+            If ELU activation should be used
         layers : integer, default = 2
-            Number of stacked GRU layers;
+            Number of stacked GRU layers
         filters : integer, default = 1
-            Number of output filters;
+            Number of output filters
         method : string, default = gru
-            Type of recurrent layer, can be gru, lstm or rnn;
+            Type of recurrent layer, can be gru, lstm or rnn
         bidirectional : string, default = None
             If a bidirectional recurrence should be used and
-            method for combining the two directions, can be sum, mean or concatenation;
+            method for combining the two directions, can be sum, mean or concatenation
 
     Returns
     -------

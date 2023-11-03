@@ -76,28 +76,28 @@ def linear(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
-        output_size : integer, optional
-            Size of the network's output, required only if layer contains factor and not features;
+            Sequential module to contain the layer
+        out_shape : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
         dropout_prob : float, optional
-            Probability of dropout if dropout from layer is True;
+            Probability of dropout if dropout from layer is True
     layer : dictionary
-        factor : float, optional
-            Output features is equal to the factor of the network's output,
-            will be used if provided, else features will be used;
         features : integer, optional
             Number of output features for the layer,
-            if output_size from kwargs and factor is provided, features will not be used;
+            if out_shape from kwargs and factor is provided, features will not be used
+        factor : float, optional
+            Output features is equal to the factor of the network's output,
+            will be used if provided, else features will be used
         dropout : boolean, default = False
-            If dropout should be used;
+            If dropout should be used
         batch_norm : boolean, default = 0
-            If batch normalisation should be used;
+            If batch normalisation should be used
         activation : boolean, default = True
-            If SELU activation should be used;
+            If SELU activation should be used
 
     Returns
     -------
@@ -112,7 +112,7 @@ def linear(kwargs: dict, layer: dict) -> dict:
 
     # Number of features can be defined by either a factor of the output size or explicitly
     if 'factor' in layer:
-        out_features = int(np.prod(kwargs['output_shape']) * layer['factor'])
+        out_features = max(1, int(np.prod(kwargs['out_shape']) * layer['factor']))
     else:
         out_features = layer['features']
 
@@ -144,20 +144,20 @@ def sample(kwargs: dict, layer: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
-        output_size : integer, optional
-            Size of the network's output, required only if layer contains factor and not features;
+            Sequential module to contain the layer
+        out_shape : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
     layer : dictionary
         factor : float, optional
             Output features is equal to the factor of the network's output,
-            will be used if provided, else features will be used;
+            will be used if provided, else features will be used
         features : integer, optional
             Number of output features for the layer,
-            if output_size from kwargs and factor is provided, features will not be used;
+            if out_shape from kwargs and factor is provided, features will not be used
 
     Returns
     -------
@@ -172,7 +172,7 @@ def sample(kwargs: dict, layer: dict) -> dict:
 
     # Number of features can be defined by either a factor of the output size or explicitly
     try:
-        out_features = int(np.prod(kwargs['output_shape']) * layer['factor'])
+        out_features = max(1, int(np.prod(kwargs['out_shape']) * layer['factor']))
     except KeyError:
         out_features = layer['features']
 
@@ -197,11 +197,11 @@ def upsample(kwargs: dict, _: dict) -> dict:
     ----------
     kwargs : dictionary
         i : integer
-            Layer number;
+            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
         module : Sequential
-            Sequential module to contain the layer;
+            Sequential module to contain the layer
     _ : dictionary
         For compatibility
 

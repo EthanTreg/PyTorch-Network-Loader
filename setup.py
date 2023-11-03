@@ -5,7 +5,7 @@ from setuptools import setup
 
 setup(
     name='netloader',
-    version='0.2.3',
+    version='0.2.4',
     description='Utility to generate PyTorch neural network objects from JSON files',
     url='https://github.com/EthanTreg/PyTorch-Network-Loader',
     author='Ethan Tregidga',
