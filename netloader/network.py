@@ -31,6 +31,8 @@ class Network(nn.Module):
         Network optimizer
     scheduler : ReduceLROnPlateau
         Optimizer scheduler
+    layer_num : integer, default = None
+        Number of layers to use, if None use all layers
     latent_mse_weight : float, default = 1e-2
         Relative weight if performing an MSE loss on the latent space
     kl_loss_weight : float, default = 1e-1
@@ -65,6 +67,7 @@ class Network(nn.Module):
             Path to the network config directory
         """
         super().__init__()
+        self.layer_num = None
         self.latent_mse_weight = 1e-2
         self.kl_loss_weight = 1e-1
         self.extraction_loss = 1e-1
@@ -103,7 +106,7 @@ class Network(nn.Module):
         """
         outputs = [x]
 
-        for i, layer in enumerate(self.layers):
+        for i, layer in enumerate(self.layers[:self.layer_num]):
             # Sampling layer
             if layer['type'] == 'sample':
                 x, self.kl_loss = self.network[i](x)

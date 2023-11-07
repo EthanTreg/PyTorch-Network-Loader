@@ -6,7 +6,7 @@ Allows the easy creation of neural networks in PyTorch using `.json` files.
 
 ### Using Within Projects
 
-- Add netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@v0.2.4 to
+- Add `netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@v0.2.4` to
   `requirements.txt`
 - Install using `pip install -r requirements.txt`
 - Example composite layer can be downloaded under `./composite_layers/inception.json`
@@ -35,13 +35,13 @@ The file is structured as a dictionary containing two sub-dictionaries:
 
 #### Layer Compatibilities
 
-Linear layers can take inputs of either $N\times L$ or $N\times C\times L$, where N is the
-batch size, C is the channels and L is the length of the input.  
-Other layers, such as recurrent, require the dimension C and 1D data, so their inputs must have
+Linear layers can take inputs of either $N\times L$ or $N\times C\times L$, where $N$ is the
+batch size, $C$ is the channels and $L$ is the length of the input.  
+Other layers, such as recurrent, require the dimension $C$ and 1D data, so their inputs must have
 shape $N\times C\times L$.  
-Some layers, such as convolutional, require dimension C, but can take either 1D
+Some layers, such as convolutional, require dimension $C$, but can take either 1D
 (with argument `2d` = false) or 2D data (with argument `2d` = true), so the inputs would have shape
-$N\times C\times L$ or $N\times C\times H\times W$, respectively, where H is the height and W is
+$N\times C\times L$ or $N\times C\times H\times W$, respectively, where $H$ is the height and $W$ is
 the width.
 The `reshape` layer can be used to change the shape of the inputs
 for compatibility between the layers.
@@ -66,6 +66,7 @@ The network object has attributes:
 - `network`: ModuleList, network layers
 - `optimiser`: Optimizer, optimiser for the network
 - `scheduler`: ReduceLROnPlateau, scheduler for the optimiser
+- `layer_num`: integer = None, number of layers to use, if None use all layers
 - `latent_mse_weight`: float = 1e-2, relative weight if performing an MSE loss on the latent space
 - `kl_loss_weight`: float = 1e-1,
   relative weight if performing a KL divergence loss on the latent space
@@ -101,7 +102,7 @@ import torch
 
 from netloader.network import Network
 
-decoder = Network(5, 240, 1e-5, 'decoder', '../network_configs/')
+decoder = Network([5], [240], 1e-5, 'decoder', '../network_configs/')
 
 x = torch.rand((10, 5))
 output = decoder(x)
@@ -140,7 +141,7 @@ output = decoder(x)
   - `stride`: integer = 1, stride of the kernel
   - `padding`: integer or string = 'same',
     input padding, can an integer or _same_ where _same_ preserves the input shape
-- `conv_depth_downscale`: Reduces C to one, uses kernel size of 1, same padding and ELU
+- `conv_depth_downscale`: Reduces $C$ to one, uses kernel size of 1, same padding and ELU
   - `2d`: boolean = False, if input data is 2D
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
@@ -201,7 +202,7 @@ output = decoder(x)
   - `number`: integer, number of values to clone from the previous layer
 - `concatenate`: Concatenates the previous layer with a specified layer
   - `layer`: integer, layer index to concatenate the previous layer with
-  - `dim` : integer, default = 0, dimension to concatenate to (not including N)
+  - `dim` : integer, default = 0, dimension to concatenate to (not including $N$)
 - `extract`: Extracts values from the previous layer to pass to the output
   - `number`: integer, number of values to extract from the previous layer
 - `index`: Slices the output from the previous layer
@@ -209,7 +210,7 @@ output = decoder(x)
   - `greater`: boolean = True, if slice should be values greater or less than _number_
 - `reshape`: Reshapes the dimensions
   - `output`: tuple[integer] or tuple[integer, integer], output dimensions of input tensor, ignoring
-    the first dimension (N) and subsequent dimensions if the number of dimensions in output
+    the first dimension ($N$) and subsequent dimensions if the number of dimensions in output
     is less than the dimensions of the input tensor, if output = -1, then last two dimensions are
     flattened
 - `shortcut`: Adds the previous layer with the specified layer
