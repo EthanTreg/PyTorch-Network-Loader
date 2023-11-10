@@ -17,6 +17,8 @@ class Network(nn.Module):
     ----------
     name : string
         Name of the network, used for saving
+    shapes : list[list[integer]]
+        Layer output shapes
     layers : list[dictionary]
         Layers with layer parameters
     kl_loss : Tensor
@@ -77,7 +79,7 @@ class Network(nn.Module):
         self.kl_loss = torch.tensor(0.)
 
         # Construct layers in network
-        self.layers, self.network = _create_network(
+        self.shapes, self.layers, self.network = _create_network(
             in_shape,
             out_shape,
             f'{config_dir}{name}.json',
@@ -183,7 +185,7 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
         kwargs['shape'][-1][0] = layer['channels']
 
     # Create subnetwork
-    sub_layers, sub_network = _create_network(
+    _, sub_layers, sub_network = _create_network(
         kwargs['shape'][-2],
         kwargs['shape'][-1],
         layer['config_path'],
@@ -200,7 +202,7 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
 def _create_network(
         in_shape: list[int],
         out_shape: list[int],
-        config_path: str) -> tuple[list[dict], nn.ModuleList]:
+        config_path: str) -> tuple[list[list[int]], list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
@@ -215,8 +217,8 @@ def _create_network(
 
     Returns
     -------
-    tuple[list[dictionary], ModuleList]
-        Layers in the network with parameters and network construction
+    tuple[list[list[integer]], list[dictionary], ModuleList]
+        Layer output shapes, layers in the network with parameters and network construction
     """
     layer_injections = 0
 
@@ -260,4 +262,4 @@ def _create_network(
             f"Network output shape {kwargs['shape'][-1]} != data output shape {out_shape}"
         )
 
-    return file['layers'], module_list
+    return kwargs['shape'], file['layers'], module_list
