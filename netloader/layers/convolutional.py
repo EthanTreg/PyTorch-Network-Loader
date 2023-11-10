@@ -457,6 +457,7 @@ def pool(kwargs: dict, layer: dict) -> dict:
     """
     kernel = stride = 2
     padding = 0
+    kwargs = {}
     mode = np.array([[nn.MaxPool1d, nn.MaxPool2d], [nn.AvgPool1d, nn.AvgPool2d]])
 
     # Optional parameters
@@ -481,10 +482,11 @@ def pool(kwargs: dict, layer: dict) -> dict:
         mode = mode[0]
     else:
         mode = mode[1]
+        kwargs = {'count_include_pad': False}
 
     kwargs['module'].add_module(
         f"pool_{kwargs['i']}",
-        mode(kernel_size=kernel, stride=stride, padding=padding),
+        mode(kernel_size=kernel, stride=stride, padding=padding, **kwargs),
     )
 
     if padding != 'same':
