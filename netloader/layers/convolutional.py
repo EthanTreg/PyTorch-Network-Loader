@@ -1,6 +1,7 @@
 """
 Convolutional network layers
 """
+import numpy as np
 from torch import nn, Tensor
 
 from netloader.layers.utils import optional_layer
@@ -55,7 +56,7 @@ class PixelShuffle1d(nn.Module):
         return x
 
 
-def _kernel_shape(kernel: int, stride: int, padding: int | list[int], shape: list[int]):
+def _kernel_shape(stride: int, kernel: int | list[int], padding: int | list[int], shape: list[int]):
     """
     Calculates the output shape after a kernel operation
 
@@ -70,15 +71,15 @@ def _kernel_shape(kernel: int, stride: int, padding: int | list[int], shape: lis
     shape : list[integer]
         Input shape into the layer
     """
+    if isinstance(kernel, int):
+        kernel = [kernel] * len(shape[1:])
+
     if isinstance(padding, int):
-        padding = [padding]
+        padding = [padding] * len(shape[1:])
 
-    if len(padding) == len(shape[1:]):
-        loop_zip = zip(padding, shape[1:])
-    else:
-        loop_zip = zip(padding * len(shape[1:]), shape[1:])
+    for i, (kernel_length, pad, length) in enumerate(zip(kernel, padding, shape[1:])):
+        shape[i + 1] = int((length + 2 * pad - kernel_length) / stride + 1)
 
-    shape[1:] = [int((length + 2 * pad - kernel) / stride + 1) for pad, length in loop_zip]
     return shape
 
 
@@ -145,12 +146,13 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
             If batch normalisation should be used
         activation : boolean, default = True
             If ELU activation should be used
-        kernel : integer, default = 3
+        kernel : integer | list[integer], default = 3
             Size of the kernel
         stride : integer, default = 1
             Stride of the kernel
-        padding : integer | string, default = 'same'
-            Input padding, can an integer or 'same' where 'same' preserves the input shape
+        padding : integer | string | list[integer], default = 'same'
+            Input padding, can an integer, list of integers or
+            'same' where 'same' preserves the input shape
 
     Returns
     -------
@@ -203,7 +205,7 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     optional_layer(True, 'activation', kwargs, layer, nn.ELU())
 
     if padding != 'same':
-        kwargs['shape'].append(_kernel_shape(kernel, stride, padding, shape))
+        kwargs['shape'].append(_kernel_shape(stride, kernel, padding, shape))
     else:
         kwargs['shape'].append(shape)
 
@@ -390,7 +392,7 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
             If batch normalisation should be used
         activation : boolean, default = True
             If ELU activation should be used
-        kernel : integer, default = 3
+        kernel : integer | list[integer], default = 3
             Size of the kernel
 
     Returns
@@ -445,6 +447,8 @@ def pool(kwargs: dict, layer: dict) -> dict:
             Stride of the kernel
         padding : integer | string, default = 0
             Input padding, can an integer or 'same' where 'same' preserves the input shape
+        mode : string, default = 'max'
+            Whether to use max pooling (max) or average pooling (average)
 
     Returns
     -------
@@ -453,6 +457,7 @@ def pool(kwargs: dict, layer: dict) -> dict:
     """
     kernel = stride = 2
     padding = 0
+    mode = np.array([[nn.MaxPool1d, nn.MaxPool2d], [nn.AvgPool1d, nn.AvgPool2d]])
 
     # Optional parameters
     if 'kernel' in layer:
@@ -468,17 +473,22 @@ def pool(kwargs: dict, layer: dict) -> dict:
         padding = _same_padding(kernel, stride, kwargs['shape'][-1], kwargs['shape'][-1])
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        max_pool = nn.MaxPool2d
+        mode = mode[:, 1]
     else:
-        max_pool = nn.MaxPool1d
+        mode = mode[:, 0]
+
+    if 'mode' not in layer or layer['mode'] != 'average':
+        mode = mode[0]
+    else:
+        mode = mode[1]
 
     kwargs['module'].add_module(
         f"pool_{kwargs['i']}",
-        max_pool(kernel_size=kernel, stride=stride, padding=padding),
+        mode(kernel_size=kernel, stride=stride, padding=padding),
     )
 
     if padding != 'same':
-        kwargs['shape'].append(_kernel_shape(kernel, stride, padding, kwargs['shape'][-1]))
+        kwargs['shape'].append(_kernel_shape(stride, kernel, padding, kwargs['shape'][-1]))
     else:
         kwargs['shape'].append(kwargs['shape'][-1].copy())
     return kwargs
@@ -502,6 +512,8 @@ def pool_downscale(kwargs: dict, layer: dict) -> dict:
             Factor of downscaling
         2d : boolean, default = False
             If input data is 2D
+        mode : string, default = 'max'
+            Whether to use max pooling (max) or average pooling (average)
     """
     layer['kernel'] = layer['stride'] = layer['factor']
     layer['padding'] = 0

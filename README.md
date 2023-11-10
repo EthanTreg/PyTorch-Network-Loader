@@ -137,10 +137,10 @@ output = decoder(x)
   - `dropout`: boolean = True, probability equals `dropout_prob`
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
-  - `kernel`: integer = 3, kernel size
+  - `kernel`: integer | list[integer] = 3, kernel size
   - `stride`: integer = 1, stride of the kernel
-  - `padding`: integer or string = 'same',
-    input padding, can an integer or _same_ where _same_ preserves the input shape
+  - `padding`: integer | list[integer] | string = 'same',
+    input padding, can an integer, list of integers or _same_ where _same_ preserves the input shape
 - `conv_depth_downscale`: Reduces $C$ to one, uses kernel size of 1, same padding and ELU
   - `2d`: boolean = False, if input data is 2D
   - `batch_norm`: boolean = False, if batch normalisation should be used
@@ -173,17 +173,19 @@ output = decoder(x)
     won't be used if `filters` is provided
   - `2d`: boolean = False, if input data is 2D
   - `batch_norm`: boolean = False, if batch normalisation should be used
-  - `activation`: boolean = true, ELU activation
-  - `kernel`: integer = 3, kernel size
+  - `activation`: boolean = True, ELU activation
+  - `kernel`: integer | list[integer] = 3, kernel size
 - `pool`: Performs max pooling
   - `2d`: boolean = False, if input data is 2D
-  - `kernel`: integer, default = 2, size of the kernel 
-  - `stride`: integer, default = 2, stride of the kernel 
-  - `padding` : integer | string, default = 0, input padding, can an integer or 'same'
+  - `kernel`: integer = 2, size of the kernel 
+  - `stride`: integer = 2, stride of the kernel 
+  - `padding`: integer | string = 0, input padding, can an integer or 'same'
     where 'same' preserves the input shape;
+  - `mode`: string = 'max', whether to use max pooling ('max') or average pooling ('average')
 - `pool_downscale`: Downscales the input layer by `factor` using max pooling
   - `factor`: float, factor to downscale the input
   - `2d`: boolean = False, if input data is 2D
+  - `mode`: string = 'max', whether to use max pooling ('max') or average pooling ('average')
 
 **Recurrent layers**
 - `recurrent`: Recurrent layer with ELU:
@@ -202,7 +204,7 @@ output = decoder(x)
   - `number`: integer, number of values to clone from the previous layer
 - `concatenate`: Concatenates the previous layer with a specified layer
   - `layer`: integer, layer index to concatenate the previous layer with
-  - `dim` : integer, default = 0, dimension to concatenate to (not including $N$)
+  - `dim` : integer = 0, dimension to concatenate to (not including $N$)
 - `extract`: Extracts values from the previous layer to pass to the output
   - `number`: integer, number of values to extract from the previous layer
 - `index`: Slices the output from the previous layer
