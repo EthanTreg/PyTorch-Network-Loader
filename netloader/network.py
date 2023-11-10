@@ -2,6 +2,7 @@
 Constructs a network from layers and can load weights to resume network training
 """
 import json
+import logging as log
 
 import torch
 from torch import nn, optim, Tensor
@@ -258,7 +259,7 @@ def _create_network(
 
     # Check network output dimensions
     if kwargs['shape'][-1] != out_shape:
-        raise ValueError(
+        log.warning(
             f"Network output shape {kwargs['shape'][-1]} != data output shape {out_shape}"
         )
 
