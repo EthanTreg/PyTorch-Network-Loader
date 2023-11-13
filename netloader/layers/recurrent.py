@@ -5,7 +5,8 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.utils import Reshape, optional_layer
+from netloader.layers.misc import Reshape
+from netloader.layers.utils import optional_layer, check_layer
 
 
 class RecurrentOutput(nn.Module):
@@ -70,7 +71,7 @@ class RecurrentOutput(nn.Module):
         return torch.transpose(x, 1, 2)
 
 
-def recurrent(kwargs: dict, layer: dict) -> dict:
+def recurrent(kwargs: dict, layer: dict):
     """
     Recurrent layer constructor for either RNN, GRU or LSTM
 
@@ -101,13 +102,18 @@ def recurrent(kwargs: dict, layer: dict) -> dict:
         bidirectional : string, default = None
             If a bidirectional recurrence should be used and
             method for combining the two directions, can be sum, mean or concatenation
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     kwargs['shape'].append([kwargs['shape'][-1][0], np.prod(kwargs['shape'][-1][1:])])
+    supported_params = [
+        'dropout',
+        'batch_norm',
+        'activation',
+        'layers',
+        'filters',
+        'method',
+        'bidirectional',
+    ]
+    check_layer(kwargs['i'], supported_params, layer)
 
     if 'layers' in layer:
         layers = layer['layers']

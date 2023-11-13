@@ -1,0 +1,88 @@
+{
+  "net": {
+    "dropout_prob": 0.1,
+    "2d": 1
+  },
+  "layers": [
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_stem.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_a.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_a.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_a.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_a.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_reduction_a.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_reduction_b.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_c.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_c.json"
+    },
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception_c.json"
+    },
+    {
+      "type": "adaptive_pool",
+      "output": [1, 1]
+    },
+    {
+      "type": "reshape",
+      "output": [-1]
+    },
+    {
+      "type": "linear",
+      "factor": 3
+    }
+  ]
+}

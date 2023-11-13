@@ -177,6 +177,7 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
     dictionary
         Returns the input kwargs with any changes made by the function
     """
+    suppress_warning = False
     kwargs['shape'].append(kwargs['shape'][-1].copy())
 
     # Subnetwork output
@@ -184,12 +185,15 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
         kwargs['shape'][-1] = layer['out_shape']
     elif 'channels' in layer:
         kwargs['shape'][-1][0] = layer['channels']
+    else:
+        suppress_warning = True
 
     # Create subnetwork
-    _, sub_layers, sub_network = _create_network(
+    shapes, sub_layers, sub_network = _create_network(
         kwargs['shape'][-2],
         kwargs['shape'][-1],
         layer['config_path'],
+        suppress_warning=suppress_warning,
     )
 
     # Fix layers that depend on other layers
@@ -197,13 +201,16 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
         if 'layer' in sub_layer and sub_layer['layer'] >= 0:
             sub_layer['layer'] += kwargs['i']
 
+    kwargs['shape'][-1] = shapes[-1]
+
     return kwargs, sub_layers, sub_network
 
 
 def _create_network(
         in_shape: list[int],
         out_shape: list[int],
-        config_path: str) -> tuple[list[list[int]], list[dict], nn.ModuleList]:
+        config_path: str,
+        suppress_warning: bool = False) -> tuple[list[list[int]], list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
@@ -215,6 +222,8 @@ def _create_network(
         Shape of the output tensor, excluding batch size
     config_path : string
         Path to the config file
+    suppress_warning : boolean, default = False
+        If output shape mismatch warning should be suppressed
 
     Returns
     -------
@@ -254,11 +263,11 @@ def _create_network(
             file['layers'][i:i] = sub_layers
             layer_injections += len(sub_layers) - 1
         else:
-            kwargs = getattr(layers, layer['type'])(kwargs, layer)
+            getattr(layers, layer['type'])(kwargs, layer)
             module_list.append(kwargs['module'])
 
     # Check network output dimensions
-    if kwargs['shape'][-1] != out_shape:
+    if not suppress_warning and kwargs['shape'][-1] != out_shape:
         log.warning(
             f"Network output shape {kwargs['shape'][-1]} != data output shape {out_shape}"
         )

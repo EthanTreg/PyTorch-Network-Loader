@@ -128,12 +128,15 @@ output = decoder(x)
 - `upsample`: Linear interpolation scales layer input by two
 
 **Convolutional layers**
+- `adaptive_pool`: Uses average pooling to downscale the input to the desired shape
+  - `output`: list[integer], output shape of the layer
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
 - `convolutional`: Convolution with padding using replicate and ELU:
   - `filters`: optional integer, number of convolutional filters, will be used if provided, 
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
-  - `2d`: boolean = False, if input data is 2D
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `dropout`: boolean = True, probability equals `dropout_prob`
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
@@ -142,7 +145,7 @@ output = decoder(x)
   - `padding`: integer | list[integer] | string = 'same',
     input padding, can an integer, list of integers or _same_ where _same_ preserves the input shape
 - `conv_depth_downscale`: Reduces $C$ to one, uses kernel size of 1, same padding and ELU
-  - `2d`: boolean = False, if input data is 2D
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
 - `conv_downscale`: Downscales the layer input by two through strided convolution,
@@ -151,7 +154,7 @@ output = decoder(x)
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
-  - `2d`: boolean = False, if input data is 2D
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `dropout`: boolean = True, probability equals `dropout_prob`
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
@@ -162,7 +165,7 @@ output = decoder(x)
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
   - `dropout`: boolean = True, probability equals `dropout_prob`
-  - `2d`: boolean = False, if input data is 2D
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
 - `conv_upscale`: Scales the layer input by two using convolution and pixel shuffle,
@@ -171,12 +174,12 @@ output = decoder(x)
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
-  - `2d`: boolean = False, if input data is 2D
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, ELU activation
   - `kernel`: integer | list[integer] = 3, kernel size
 - `pool`: Performs max pooling
-  - `2d`: boolean = False, if input data is 2D
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `kernel`: integer = 2, size of the kernel 
   - `stride`: integer = 2, stride of the kernel 
   - `padding`: integer | string = 0, input padding, can an integer or 'same'
@@ -184,7 +187,7 @@ output = decoder(x)
   - `mode`: string = 'max', whether to use max pooling ('max') or average pooling ('average')
 - `pool_downscale`: Downscales the input layer by `factor` using max pooling
   - `factor`: float, factor to downscale the input
-  - `2d`: boolean = False, if input data is 2D
+  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `mode`: string = 'max', whether to use max pooling ('max') or average pooling ('average')
 
 **Recurrent layers**
@@ -211,10 +214,7 @@ output = decoder(x)
   - `number`: integer, index slice number
   - `greater`: boolean = True, if slice should be values greater or less than _number_
 - `reshape`: Reshapes the dimensions
-  - `output`: tuple[integer] or tuple[integer, integer], output dimensions of input tensor, ignoring
-    the first dimension ($N$) and subsequent dimensions if the number of dimensions in output
-    is less than the dimensions of the input tensor, if output = -1, then last two dimensions are
-    flattened
+  - `output`: list[integer], output dimensions of input tensor, ignoring the first dimension ($N$)
 - `shortcut`: Adds the previous layer with the specified layer
   - `layer`: integer, layer index to add to the previous layer
 - `skip`: Passes the output from `layer` into the next layer

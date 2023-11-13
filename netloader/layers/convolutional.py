@@ -4,7 +4,7 @@ Convolutional network layers
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.utils import optional_layer
+from netloader.layers.utils import optional_layer, check_layer
 
 
 class PixelShuffle1d(nn.Module):
@@ -115,7 +115,40 @@ def _same_padding(
     return padding
 
 
-def convolutional(kwargs: dict, layer: dict) -> dict:
+def adaptive_pool(kwargs: dict, layer: dict):
+    """
+    Uses average pooling to downscale the input to the desired shape
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        i : integer
+            Layer number
+        shape : list[integer]
+            Shape of the outputs from each layer
+        module : Sequential
+            Sequential module to contain the layer
+    layer : dictionary
+        output : list[integer]
+            Output shape of the layer
+        2d : boolean, default = False
+            If input data is 2D
+    """
+    supported_params = ['output', '2d']
+    check_layer(kwargs['i'], supported_params, layer)
+
+    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
+        adapt_pool = nn.AdaptiveAvgPool2d
+    else:
+        adapt_pool = nn.AdaptiveAvgPool1d
+
+    kwargs['module'].add_module(f"adaptive_pool_{kwargs['i']}", adapt_pool(layer['output']))
+
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    kwargs['shape'][-1][1:] = layer['output']
+
+
+def convolutional(kwargs: dict, layer: dict):
     """
     Convolutional layer constructor
 
@@ -153,16 +186,23 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
         padding : integer | string | list[integer], default = 'same'
             Input padding, can an integer, list of integers or
             'same' where 'same' preserves the input shape
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     kernel = 3
     stride = 1
     padding = 'same'
     shape = kwargs['shape'][-1].copy()
+    supported_params = [
+        'filters',
+        'factor',
+        '2d',
+        'dropout',
+        'batch_norm',
+        'activation',
+        'kernel',
+        'stride',
+        'padding',
+    ]
+    check_layer(kwargs['i'], supported_params, layer)
 
     if 'factor' not in layer:
         shape[0] = layer['filters']
@@ -209,10 +249,8 @@ def convolutional(kwargs: dict, layer: dict) -> dict:
     else:
         kwargs['shape'].append(shape)
 
-    return kwargs
 
-
-def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
+def conv_depth_downscale(kwargs: dict, layer: dict):
     """
     Constructs depth downscaler using convolution with kernel size of 1
 
@@ -232,23 +270,16 @@ def conv_depth_downscale(kwargs: dict, layer: dict) -> dict:
             If batch normalisation should be used
         activation : boolean, default = True
             If ELU activation should be used
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     layer['dropout'] = False
     layer['filters'] = 1
     layer['kernel'] = 1
     layer['stride'] = 1
     layer['padding'] = 'same'
-
     convolutional(kwargs, layer)
-    return kwargs
 
 
-def conv_downscale(kwargs: dict, layer: dict) -> dict:
+def conv_downscale(kwargs: dict, layer: dict):
     """
     Constructs a convolutional layer with stride 2 for 2x downscaling
 
@@ -279,21 +310,14 @@ def conv_downscale(kwargs: dict, layer: dict) -> dict:
             If batch normalisation should be used
         activation : boolean, default = True
             If ELU activation should be used
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     layer['kernel'] = 3
     layer['stride'] = 2
     layer['padding'] = 1
-
     convolutional(kwargs, layer)
-    return kwargs
 
 
-def conv_transpose(kwargs: dict, layer: dict) -> dict:
+def conv_transpose(kwargs: dict, layer: dict):
     """
     Constructs a 2x upscaler using a transpose convolutional layer with fractional stride
 
@@ -324,13 +348,10 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
             If batch normalisation should be used
         activation : boolean, default = True
             If ELU activation should be used
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     kwargs['shape'].append(kwargs['shape'][-1].copy())
+    supported_params = ['filters', 'factor', '2d', 'dropout', 'batch_norm', 'activation']
+    check_layer(kwargs['i'], supported_params, layer)
 
     if 'factor' not in layer:
         kwargs['shape'][-1][0] = layer['filters']
@@ -362,10 +383,9 @@ def conv_transpose(kwargs: dict, layer: dict) -> dict:
 
     # Data size doubles
     kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
-    return kwargs
 
 
-def conv_upscale(kwargs: dict, layer: dict) -> dict:
+def conv_upscale(kwargs: dict, layer: dict):
     """
     Constructs a 2x upscaler using a convolutional layer and pixel shuffling
 
@@ -394,11 +414,6 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
             If ELU activation should be used
         kernel : integer | list[integer], default = 3
             Size of the kernel
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     layer['dropout'] = False
     layer['stride'] = 1
@@ -409,7 +424,7 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
     else:
         layer['filters'] *= 2
 
-    kwargs = convolutional(kwargs, layer)
+    convolutional(kwargs, layer)
 
     if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
         pixel_shuffle = nn.PixelShuffle
@@ -422,10 +437,9 @@ def conv_upscale(kwargs: dict, layer: dict) -> dict:
 
     # Data size doubles
     kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
-    return kwargs
 
 
-def pool(kwargs: dict, layer: dict) -> dict:
+def pool(kwargs: dict, layer: dict):
     """
     Constructs a max pooling layer
 
@@ -449,16 +463,13 @@ def pool(kwargs: dict, layer: dict) -> dict:
             Input padding, can an integer or 'same' where 'same' preserves the input shape
         mode : string, default = 'max'
             Whether to use max pooling (max) or average pooling (average)
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     kernel = stride = 2
     padding = 0
     avg_kwargs = {}
     mode = np.array([[nn.MaxPool1d, nn.MaxPool2d], [nn.AvgPool1d, nn.AvgPool2d]])
+    supported_params = ['2d', 'kernel', 'stride', 'padding', 'mode']
+    check_layer(kwargs['i'], supported_params, layer)
 
     # Optional parameters
     if 'kernel' in layer:
@@ -490,13 +501,12 @@ def pool(kwargs: dict, layer: dict) -> dict:
     )
 
     if padding != 'same':
-        kwargs['shape'].append(_kernel_shape(stride, kernel, padding, kwargs['shape'][-1]))
+        kwargs['shape'].append(_kernel_shape(stride, kernel, padding, kwargs['shape'][-1].copy()))
     else:
         kwargs['shape'].append(kwargs['shape'][-1].copy())
-    return kwargs
 
 
-def pool_downscale(kwargs: dict, layer: dict) -> dict:
+def pool_downscale(kwargs: dict, layer: dict):
     """
     Downscales the input using max pooling
     
@@ -519,4 +529,4 @@ def pool_downscale(kwargs: dict, layer: dict) -> dict:
     """
     layer['kernel'] = layer['stride'] = layer['factor']
     layer['padding'] = 0
-    return pool(kwargs, layer)
+    pool(kwargs, layer)

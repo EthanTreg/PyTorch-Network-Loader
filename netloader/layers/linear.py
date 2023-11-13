@@ -5,8 +5,9 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
+from netloader.layers.misc import Reshape
 from netloader.utils.utils import get_device
-from netloader.layers.utils import Reshape, optional_layer
+from netloader.layers.utils import optional_layer, check_layer
 
 
 class Sample(nn.Module):
@@ -68,7 +69,7 @@ class Sample(nn.Module):
         return x, kl_loss
 
 
-def linear(kwargs: dict, layer: dict) -> dict:
+def linear(kwargs: dict, layer: dict):
     """
     Linear layer constructor
 
@@ -98,13 +99,10 @@ def linear(kwargs: dict, layer: dict) -> dict:
             If batch normalisation should be used
         activation : boolean, default = True
             If SELU activation should be used
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     in_shape = kwargs['shape'][-1].copy()
+    supported_params = ['features', 'factor', 'dropout', 'batch_norm', 'activation']
+    check_layer(kwargs['i'], supported_params, layer)
 
     # Remove channels dimension
     if len(kwargs['shape'][-1]) > 1:
@@ -132,10 +130,9 @@ def linear(kwargs: dict, layer: dict) -> dict:
         out_shape = [out_features]
 
     kwargs['shape'].append(out_shape)
-    return kwargs
 
 
-def sample(kwargs: dict, layer: dict) -> dict:
+def sample(kwargs: dict, layer: dict):
     """
     Generates mean and standard deviation and randomly samples from a Gaussian distribution
     for a variational autoencoder
@@ -158,13 +155,10 @@ def sample(kwargs: dict, layer: dict) -> dict:
         features : integer, optional
             Number of output features for the layer,
             if out_shape from kwargs and factor is provided, features will not be used
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
     in_shape = kwargs['shape'][-1].copy()
+    supported_params = ['factor', 'features']
+    check_layer(kwargs['i'], supported_params, layer)
 
     # Remove channels dimension
     if len(kwargs['shape'][-1]) > 1:
@@ -186,10 +180,9 @@ def sample(kwargs: dict, layer: dict) -> dict:
         out_shape = [out_features]
 
     kwargs['shape'].append(out_shape)
-    return kwargs
 
 
-def upsample(kwargs: dict, _: dict) -> dict:
+def upsample(kwargs: dict, layer: dict):
     """
     Constructs a 2x upscaler using linear upsampling
 
@@ -202,14 +195,10 @@ def upsample(kwargs: dict, _: dict) -> dict:
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer
-    _ : dictionary
+    layer : dictionary
         For compatibility
-
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
     """
+    check_layer(kwargs['i'], [], layer)
     kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['module'].add_module(
         f"upsample_{kwargs['i']}",
@@ -217,4 +206,3 @@ def upsample(kwargs: dict, _: dict) -> dict:
     )
     # Data size doubles
     kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
-    return kwargs
