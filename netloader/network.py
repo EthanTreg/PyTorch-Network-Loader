@@ -8,6 +8,7 @@ import torch
 from torch import nn, optim, Tensor
 
 from netloader import layers
+from netloader.utils.defaults import DEFAULTS
 
 
 class Network(nn.Module):
@@ -233,22 +234,22 @@ def _create_network(
     layer_injections = 0
 
     # Load network configuration file
-    with open(config_path, 'r', encoding='utf-8') as file:
-        file = json.load(file)
+    with open(config_path, 'r', encoding='utf-8') as config:
+        config = json.load(config)
 
-    if '2d' not in file['net']:
-        file['net']['2d'] = False
+    if '2d' not in config['net']:
+        config['net']['2d'] = False
 
     # Initialize variables
-    kwargs = {
+    kwargs = DEFAULTS | {
         'shape': [in_shape],
         'out_shape': out_shape,
-        **file['net'],
+        **config['net'],
     }
     module_list = nn.ModuleList()
 
     # Create layers
-    for i, layer in enumerate(file['layers'].copy()):
+    for i, layer in enumerate(config['layers'].copy()):
         i += layer_injections
         kwargs['i'] = i
         kwargs['module'] = nn.Sequential()
@@ -259,8 +260,8 @@ def _create_network(
             module_list.extend(sub_network)
 
             # Replace composite layer with the subnetwork
-            del file['layers'][i]
-            file['layers'][i:i] = sub_layers
+            del config['layers'][i]
+            config['layers'][i:i] = sub_layers
             layer_injections += len(sub_layers) - 1
         else:
             getattr(layers, layer['type'])(kwargs, layer)
@@ -272,4 +273,4 @@ def _create_network(
             f"Network output shape {kwargs['shape'][-1]} != data output shape {out_shape}"
         )
 
-    return kwargs['shape'], file['layers'], module_list
+    return kwargs['shape'], config['layers'], module_list

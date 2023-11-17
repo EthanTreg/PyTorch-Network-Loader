@@ -96,7 +96,7 @@ class Index(nn.Module):
         return x[..., :self.number]
 
 
-def clone(kwargs: dict, layer: dict):
+def clone(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a layer to clone a number of values from the previous layer
 
@@ -110,12 +110,14 @@ def clone(kwargs: dict, layer: dict):
     layer : dictionary
         number : integer
             Number of values to clone from the previous layer
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
+    check_layer(['number'], kwargs, layer, check_params=check_params)
     kwargs['shape'].append(kwargs['shape'][-1].copy())
-    check_layer(kwargs['i'], ['number'], layer)
 
 
-def concatenate(kwargs: dict, layer: dict):
+def concatenate(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a concatenation layer to combine the outputs from two layers
 
@@ -131,23 +133,24 @@ def concatenate(kwargs: dict, layer: dict):
             Layer index to concatenate the previous layer output with
         dim : integer, default = 0
             Dimension to concatenate to
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
+    supported_params = ['layer', 'dim']
+    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
+
     shape = kwargs['shape'][-1].copy()
     in_shape = shape.copy()
     target_shape = kwargs['shape'][layer['layer']].copy()
-    supported_params = ['layer', 'dim']
-    check_layer(kwargs['i'], supported_params, layer)
+    dim = layer['dim']
 
-    if 'dim' not in layer:
-        dim = 0
-    else:
-        dim = layer['dim']
-
-    del target_shape[dim]
-    del in_shape[dim]
+    if len(target_shape) > 1 and len(in_shape) > 1:
+        del target_shape[dim]
+        del in_shape[dim]
 
     # If tensors cannot be concatenated along the specified dimension
-    if target_shape != in_shape:
+    if ((target_shape != in_shape and len(target_shape) != 1) or
+            (len(target_shape) != len(in_shape))):
         raise ValueError(
             f"Shape mismatch, input shape {shape} in layer {kwargs['i']} does not match the "
             f"target shape {kwargs['shape'][layer['layer']]} in layer {layer['layer']} "
@@ -158,7 +161,7 @@ def concatenate(kwargs: dict, layer: dict):
     kwargs['shape'].append(shape)
 
 
-def extract(kwargs: dict, layer: dict):
+def extract(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Extracts a number of values from the last dimension, returning two tensors
 
@@ -172,13 +175,15 @@ def extract(kwargs: dict, layer: dict):
     layer : dictionary
         number : integer
             Number of values to extract from the previous layer
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
+    layer = check_layer(['number'], kwargs, layer, check_params=check_params)
     kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['shape'][-1][-1] -= layer['number']
-    check_layer(kwargs['i'], ['number'], layer)
 
 
-def index(kwargs: dict, layer: dict):
+def index(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a layer to slice the last dimension from the output from the previous layer
 
@@ -196,10 +201,12 @@ def index(kwargs: dict, layer: dict):
             Index slice number
         greater : boolean, default = True
             If slice should be values greater or less than number
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
     supported_params = ['number', 'greater']
-    check_layer(kwargs['i'], supported_params, layer)
+    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
 
     # Length of slice
     if 'greater' in layer and (
@@ -216,7 +223,7 @@ def index(kwargs: dict, layer: dict):
     )
 
 
-def reshape(kwargs: dict, layer: dict):
+def reshape(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a reshaping layer to change the data dimensions
 
@@ -232,8 +239,10 @@ def reshape(kwargs: dict, layer: dict):
     layer : dictionary
         output : integer | list[integer]
             Output dimensions of input tensor, ignoring the first dimension (batch size)
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
-    check_layer(kwargs['i'], ['output'], layer)
+    layer = check_layer(['output'], kwargs, layer, check_params=check_params)
 
     # If -1 in output shape, calculate the dimension length from the input dimensions
     if -1 not in layer['output']:
@@ -258,7 +267,7 @@ def reshape(kwargs: dict, layer: dict):
     kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(layer['output']))
 
 
-def shortcut(kwargs: dict, layer: dict):
+def shortcut(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a shortcut layer to add the outputs from two layers
 
@@ -272,16 +281,19 @@ def shortcut(kwargs: dict, layer: dict):
     layer : dictionary
         layer : integer
             Layer index to add the previous layer output with
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
+    layer = check_layer(['layer'], kwargs, layer, check_params=check_params)
     in_shape = np.array(kwargs['shape'][-1].copy())
     target_shape = np.array(kwargs['shape'][layer['layer']].copy())
     mask = (in_shape != 1) & (target_shape != 1)
-    check_layer(kwargs['i'], ['layer'], layer)
 
     if not np.array_equal(in_shape[mask], target_shape[mask]):
         raise ValueError(
-            f"Tensor shapes {kwargs['shape'][-1]} and "
-            f"{kwargs['shape'][layer['layer']]} not compatible for addition."
+            f"Tensor shapes {kwargs['shape'][-1]} in layer {kwargs['i']} and "
+            f"{kwargs['shape'][layer['layer']]} in layer {layer['layer']} "
+            f"not compatible for addition."
         )
 
     # If input has any dimensions of length one, output will take the target dimension
@@ -294,10 +306,10 @@ def shortcut(kwargs: dict, layer: dict):
         idxs = np.where(target_shape == 1)[0]
         in_shape[idxs] = in_shape[idxs]
 
-    kwargs['shape'].append(in_shape)
+    kwargs['shape'].append(in_shape.tolist())
 
 
-def skip(kwargs: dict, layer: dict):
+def skip(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Bypasses previous layers by retrieving the output from the defined layer
 
@@ -311,6 +323,8 @@ def skip(kwargs: dict, layer: dict):
     layer : dictionary
         layer : integer
             Layer index to retrieve the output
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
+    layer = check_layer(['layer'], kwargs, layer, check_params=check_params)
     kwargs['shape'].append(kwargs['shape'][layer['layer']].copy())
-    check_layer(kwargs['i'], ['layer'], layer)

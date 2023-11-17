@@ -69,7 +69,7 @@ class Sample(nn.Module):
         return x, kl_loss
 
 
-def linear(kwargs: dict, layer: dict):
+def linear(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Linear layer constructor
 
@@ -99,10 +99,13 @@ def linear(kwargs: dict, layer: dict):
             If batch normalisation should be used
         activation : boolean, default = True
             If SELU activation should be used
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
-    in_shape = kwargs['shape'][-1].copy()
     supported_params = ['features', 'factor', 'dropout', 'batch_norm', 'activation']
-    check_layer(kwargs['i'], supported_params, layer)
+    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
+
+    in_shape = kwargs['shape'][-1].copy()
 
     # Remove channels dimension
     if len(kwargs['shape'][-1]) > 1:
@@ -118,9 +121,9 @@ def linear(kwargs: dict, layer: dict):
     kwargs['module'].add_module(f"linear_{kwargs['i']}", linear_layer)
 
     # Optional layers
-    optional_layer(False, 'dropout', kwargs, layer, nn.Dropout1d(kwargs['dropout_prob']))
-    optional_layer(False, 'batch_norm', kwargs, layer, nn.BatchNorm1d(out_features))
-    optional_layer(True, 'activation', kwargs, layer, nn.SELU())
+    optional_layer('dropout', kwargs, layer, nn.Dropout1d(kwargs['dropout_prob']))
+    optional_layer('batch_norm', kwargs, layer, nn.BatchNorm1d(out_features))
+    optional_layer('activation', kwargs, layer, nn.SELU())
 
     # Add channels dimension equal to input channels if input contains channels
     if len(kwargs['shape'][-1]) > 1:
@@ -132,7 +135,7 @@ def linear(kwargs: dict, layer: dict):
     kwargs['shape'].append(out_shape)
 
 
-def sample(kwargs: dict, layer: dict):
+def sample(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Generates mean and standard deviation and randomly samples from a Gaussian distribution
     for a variational autoencoder
@@ -155,10 +158,13 @@ def sample(kwargs: dict, layer: dict):
         features : integer, optional
             Number of output features for the layer,
             if out_shape from kwargs and factor is provided, features will not be used
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
-    in_shape = kwargs['shape'][-1].copy()
     supported_params = ['factor', 'features']
-    check_layer(kwargs['i'], supported_params, layer)
+    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
+
+    in_shape = kwargs['shape'][-1].copy()
 
     # Remove channels dimension
     if len(kwargs['shape'][-1]) > 1:
@@ -182,7 +188,7 @@ def sample(kwargs: dict, layer: dict):
     kwargs['shape'].append(out_shape)
 
 
-def upsample(kwargs: dict, layer: dict):
+def upsample(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a 2x upscaler using linear upsampling
 
@@ -197,8 +203,11 @@ def upsample(kwargs: dict, layer: dict):
             Sequential module to contain the layer
     layer : dictionary
         For compatibility
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
-    check_layer(kwargs['i'], [], layer)
+    check_layer([], kwargs, layer, check_params=check_params)
+
     kwargs['shape'].append(kwargs['shape'][-1].copy())
     kwargs['module'].add_module(
         f"upsample_{kwargs['i']}",

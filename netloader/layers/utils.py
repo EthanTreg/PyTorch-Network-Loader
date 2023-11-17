@@ -8,8 +8,7 @@ from torch import nn
 
 
 def optional_layer(
-        default: bool,
-        arg: str,
+        name: str,
         kwargs: dict,
         layer: dict,
         layer_func: nn.Module):
@@ -18,10 +17,8 @@ def optional_layer(
 
     Parameters
     ----------
-    default : boolean
-        If the layer should be used by default
-    arg : string
-        Argument for the user to call this layer
+    name : string
+        Layer name
     kwargs : dictionary
         kwargs dictionary used by the parent
     layer : dictionary
@@ -29,27 +26,43 @@ def optional_layer(
     layer_func : Module
         Optional layer to add to the network
     """
-    if (arg in layer and layer[arg]) or (arg not in layer and default):
-        kwargs['module'].add_module(f"{type(layer_func).__name__}_{kwargs['i']}", layer_func)
+    if layer[name]:
+        kwargs['module'].add_module(f"{name}_{kwargs['i']}", layer_func)
 
 
-def check_layer(layer_num: int, supported_params: list[str], layer: dict):
+def check_layer(
+        supported_params: list[str],
+        kwargs: dict,
+        layer: dict,
+        check_params: bool = True) -> dict:
     """
-    Checks if any layer parameters are unknown
+    Checks if any layer parameters are unknown and merges default values
 
     Parameters
     ----------
-    layer_num : integer
-        Layer number
     supported_params : list[string]
         List of parameters used in the layer
+    kwargs : dictionary
+        Network parameters with layer defaults to merge
     layer : dictionary
         Argument with parameters passed to the layer to check
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
+
+    Returns
+    -------
+    dictionary
+        Layer parameters with defaults if values not provided
     """
-    keys = np.array(list(layer.keys()))
-    supported_params.append('type')
+    if check_params:
+        keys = np.array(list(layer.keys()))
+        supported_params.append('type')
 
-    bad_params = np.argwhere(~np.isin(keys, supported_params)).ravel()
+        bad_params = np.argwhere(~np.isin(keys, supported_params)).ravel()
 
-    if keys[bad_params]:
-        log.warning(f'Unknown parameters in layer {layer_num}: {keys[bad_params]}')
+        if keys[bad_params]:
+            log.warning(
+                f"Unknown parameters for {layer['type']} in layer {kwargs['i']}: {keys[bad_params]}"
+            )
+
+    return kwargs[layer['type']] | layer

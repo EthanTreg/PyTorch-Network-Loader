@@ -9,7 +9,7 @@ from netloader.layers.misc import Reshape
 from netloader.layers.utils import optional_layer, check_layer
 
 
-class RecurrentOutput(nn.Module):
+class Recurrent(nn.Module):
     """
     Recurrent wrapper for compatibility with network & can handle output of bidirectional RNNs
 
@@ -71,7 +71,7 @@ class RecurrentOutput(nn.Module):
         return torch.transpose(x, 1, 2)
 
 
-def recurrent(kwargs: dict, layer: dict):
+def recurrent(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Recurrent layer constructor for either RNN, GRU or LSTM
 
@@ -102,8 +102,9 @@ def recurrent(kwargs: dict, layer: dict):
         bidirectional : string, default = None
             If a bidirectional recurrence should be used and
             method for combining the two directions, can be sum, mean or concatenation
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
     """
-    kwargs['shape'].append([kwargs['shape'][-1][0], np.prod(kwargs['shape'][-1][1:])])
     supported_params = [
         'dropout',
         'batch_norm',
@@ -113,30 +114,22 @@ def recurrent(kwargs: dict, layer: dict):
         'method',
         'bidirectional',
     ]
-    check_layer(kwargs['i'], supported_params, layer)
+    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
 
-    if 'layers' in layer:
-        layers = layer['layers']
-    else:
-        layers = 2
+    kwargs['shape'].append([kwargs['shape'][-1][0], np.prod(kwargs['shape'][-1][1:])])
+    layers = layer['layers']
+    kwargs['shape'][-1][0] = layer['filters']
+    bidirectional = layer['bidirectional']
 
-    if 'filters' in layer:
-        kwargs['shape'][-1][0] = layer['filters']
-    else:
-        kwargs['shape'][-1][0] = 1
-
-    if 'bidirectional' in layer and layer['bidirectional'].lower() != 'none':
-        bidirectional = layer['bidirectional']
-    else:
-        bidirectional = None
-
-    if layers > 1 and (('dropout' in layer and layer['dropout']) or 'dropout' not in layer):
-        dropout_prob = kwargs['dropout_prob']
-    else:
+    if layers == 1:
         dropout_prob = 0
+    elif layer['dropout_prob'] >= 0:
+        dropout_prob = layer['dropout_prob']
+    else:
+        dropout_prob = kwargs['dropout_prob']
 
     recurrent_kwargs = {
-        'input_size': kwargs['shape'][-1][0],
+        'input_size': kwargs['shape'][-2][0],
         'hidden_size': kwargs['shape'][-1][0],
         'num_layers': layers,
         'batch_first': True,
@@ -147,28 +140,22 @@ def recurrent(kwargs: dict, layer: dict):
     if bidirectional == 'concatenate':
         kwargs['shape'][-1][0] *= 2
 
-    if 'method' in layer and layer['method'] == 'rnn':
+    if layer['method'] == 'rnn':
         recurrent_layer = nn.RNN(**recurrent_kwargs, nonlinearity='relu')
-    elif 'method' in layer and layer['method'] == 'lstm':
+    elif layer['method'] == 'lstm':
         recurrent_layer = nn.LSTM(**recurrent_kwargs)
     else:
         recurrent_layer = nn.GRU(**recurrent_kwargs)
 
     # Convert 2D data to 1D and add recurrent layer
-    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([kwargs['shape'][-1][0], -1]))
+    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([kwargs['shape'][-2][0], -1]))
     kwargs['module'].add_module(
         f"recurrent_{kwargs['i']}",
-        RecurrentOutput(recurrent_layer, bidirectional=bidirectional)
+        Recurrent(recurrent_layer, bidirectional=bidirectional)
     )
 
     # Optional layers
-    optional_layer(
-        False,
-        'batch_norm',
-        kwargs,
-        layer,
-        nn.BatchNorm1d(kwargs['shape'][-1][0])
-    )
-    optional_layer(True, 'activation', kwargs, layer, nn.ELU())
+    optional_layer('batch_norm', kwargs, layer, nn.BatchNorm1d(kwargs['shape'][-1][0]))
+    optional_layer('activation', kwargs, layer, nn.ELU())
 
     return kwargs

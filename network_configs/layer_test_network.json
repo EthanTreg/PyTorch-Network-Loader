@@ -1,0 +1,153 @@
+{
+  "net": {
+    "dropout_prob": 0.1,
+    "2d": 1,
+    "Description": "Network to test that all layers are working",
+    "linear": {
+      "dropout": 1
+    }
+  },
+  "layers": [
+    {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception.json",
+      "channels": 128
+    },
+    {
+      "type": "convolutional",
+      "filters": 4,
+      "2d": 1,
+      "dropout":1,
+      "batch_norm": 1,
+      "activation": 1,
+      "kernel": 3,
+      "stride": 1,
+      "padding": "same"
+    },
+    {
+      "type": "conv_depth_downscale",
+      "2d": 1,
+      "batch_norm": 1,
+      "activation": 1
+    },
+    {
+      "type": "conv_downscale",
+      "filters": 4,
+      "2d": 1,
+      "dropout": 1,
+      "batch_norm": 1,
+      "activation": 1
+    },
+    {
+      "type": "conv_transpose",
+      "factor": 0.5,
+      "dropout": 1,
+      "2d": 1,
+      "batch_norm": 0,
+      "activation": 1
+    },
+    {
+      "type": "conv_upscale",
+      "factor": 0.5,
+      "2d": 1,
+      "batch_norm": 0,
+      "activation": 1,
+      "kernel": 5
+    },
+    {
+      "type": "pool",
+      "2d": 1,
+      "kernel": 2,
+      "stride": 2,
+      "padding": 0,
+      "mode": "max"
+    },
+    {
+      "type": "pool_downscale",
+      "factor": 2,
+      "2d": 1,
+      "mode": "average"
+    },
+    {
+      "type": "convolutional",
+      "filters": 32,
+      "stride": 2,
+      "padding": 1,
+      "kernel": 3
+    },
+    {
+      "type": "reshape",
+      "output": [4, -1]
+    },
+    {
+      "type": "recurrent",
+      "dropout": 0.1,
+      "batch_norm": 1,
+      "activation": 1,
+      "layers": 2,
+      "filters": 4,
+      "method": "rnn",
+      "bidirectional": "concatenate"
+    },
+    {
+      "type": "convolutional",
+      "filters": 64,
+      "2d": 0,
+      "dropout": 0,
+      "batch_norm": 1,
+      "activation": 0,
+      "kernel": 5,
+      "stride": 1,
+      "padding": 1
+    },
+    {
+      "type": "adaptive_pool",
+      "output": [1],
+      "2d": 0
+    },
+    {
+      "type": "upsample"
+    },
+    {
+      "type": "reshape",
+      "output": [-1]
+    },
+    {
+      "type": "linear",
+      "features": 128,
+      "batch_norm": 1,
+      "activation": 1
+    },
+    {
+      "type": "shortcut",
+      "layer": -2
+    },
+    {
+      "type": "concatenate",
+      "layer": -2,
+      "dim": -1
+    },
+    {
+      "type": "clone",
+      "number": 5
+    },
+    {
+      "type": "index",
+      "number": 128,
+      "greater": 0
+    },
+    {
+      "type": "extract",
+      "number": 64
+    },
+    {
+      "type": "skip",
+      "layer": -5
+    },
+    {
+      "type": "sample",
+      "features": 128,
+      "bad_param": 1
+    }
+  ]
+}

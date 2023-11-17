@@ -9,7 +9,9 @@ Allows the easy creation of neural networks in PyTorch using `.json` files.
 - Add `netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@v0.2.4` to
   `requirements.txt`
 - Install using `pip install -r requirements.txt`
-- Example composite layer can be downloaded under `./composite_layers/inception.json`
+- Example of [InceptionV4](https://arxiv.org/abs/1602.07261) can be downloaded under
+  `./network_configs/inceptionv4.json` along with the composite layers in
+  `./network_configs/composite_layers/`
 
 ### Locally Running NetLoader
 
@@ -28,10 +30,19 @@ A `.json` file with the desired network architecture is also required.
 ### Constructing the `.json` Architecture
 
 The file is structured as a dictionary containing two sub-dictionaries:
-- `net`: Parameters for the network with two options: float `dropout_prob`, which is the dropout
-  probability, and boolean `2d`, which sets convolutional layers to assume 2D inputs.
+- `net`: Global network parameters with the following options:
+  - `dropout_prob`: float, dropout probability
+  - `2d`: boolean, if layers that can accept 2D and 1D inputs should assume 2D inputs
+  - dictionary, default values for each layer that override the values in `default.py`,
+    the dictionary contains sub-dictionaries named _layer_name_, which contain the parameters
+    found the section [Layer Types](#Layer-Types) with the corresponding layer name
 - `layers`: List of dictionaries containing information on each layer, where the first layer takes
   the input, and the last layer produces the output
+
+Examples of the layers can be found under the section [Layer Types](#Layer-Types) and an example of creating
+the `.json` file can be found in the section
+[Loading & Using the Network](#Loading-&-Using-the-Network) with more examples in the directory
+`network_configs`.
 
 #### Layer Compatibilities
 
@@ -45,8 +56,6 @@ $N\times C\times L$ or $N\times C\times H\times W$, respectively, where $H$ is t
 the width.
 The `reshape` layer can be used to change the shape of the inputs
 for compatibility between the layers.
-
-Examples of the layers can be found under the section [Layer Types](#Layer-Types)
 
 ### Loading & Using the Network
 
@@ -73,11 +82,15 @@ The network object has attributes:
 - `extraction_loss`: float = 1e-1, relative weight if performing a loss on the extracted features
 
 **Example `decoder.json`**
+
 ```json
 {
   "net": {
     "dropout_prob": 0.1,
-    "2d": false
+    "2d": false,
+    "linear": {
+      "dropout": 1
+    }
   },
   "layers": [
     {
@@ -129,14 +142,14 @@ output = decoder(x)
 
 **Convolutional layers**
 - `adaptive_pool`: Uses average pooling to downscale the input to the desired shape
-  - `output`: list[integer], output shape of the layer
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
+  - `output`: list[integer], output shape of the layer ignoring $C$
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
 - `convolutional`: Convolution with padding using replicate and ELU:
   - `filters`: optional integer, number of convolutional filters, will be used if provided, 
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
   - `dropout`: boolean = True, probability equals `dropout_prob`
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
@@ -145,7 +158,7 @@ output = decoder(x)
   - `padding`: integer | list[integer] | string = 'same',
     input padding, can an integer, list of integers or _same_ where _same_ preserves the input shape
 - `conv_depth_downscale`: Reduces $C$ to one, uses kernel size of 1, same padding and ELU
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
 - `conv_downscale`: Downscales the layer input by two through strided convolution,
@@ -154,7 +167,7 @@ output = decoder(x)
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
   - `dropout`: boolean = True, probability equals `dropout_prob`
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
@@ -164,8 +177,8 @@ output = decoder(x)
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
   - `dropout`: boolean = True, probability equals `dropout_prob`
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
 - `conv_upscale`: Scales the layer input by two using convolution and pixel shuffle,
@@ -174,12 +187,12 @@ output = decoder(x)
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, ELU activation
   - `kernel`: integer | list[integer] = 3, kernel size
 - `pool`: Performs max pooling
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
   - `kernel`: integer = 2, size of the kernel 
   - `stride`: integer = 2, stride of the kernel 
   - `padding`: integer | string = 0, input padding, can an integer or 'same'
@@ -187,12 +200,13 @@ output = decoder(x)
   - `mode`: string = 'max', whether to use max pooling ('max') or average pooling ('average')
 - `pool_downscale`: Downscales the input layer by `factor` using max pooling
   - `factor`: float, factor to downscale the input
-  - `2d`: boolean = False, if input data is 2D, if not provided, `2d` from `net` is used
+  - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
   - `mode`: string = 'max', whether to use max pooling ('max') or average pooling ('average')
 
 **Recurrent layers**
 - `recurrent`: Recurrent layer with ELU:
-  - `dropout`: boolean = True, probability equals `dropout_prob`, requires `layers` > 1
+  - `dropout_prob`: float = -1, dropout probability, if < 0, `dropout_prob` from `net` is used,
+    requires `layers` > 1
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
   - `layers`: integer = 2, number of GRU layers
