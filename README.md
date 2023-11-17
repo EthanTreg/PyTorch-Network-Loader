@@ -41,7 +41,7 @@ The file is structured as a dictionary containing two sub-dictionaries:
 
 Examples of the layers can be found under the section [Layer Types](#Layer-Types) and an example of creating
 the `.json` file can be found in the section
-[Loading & Using the Network](#Loading-&-Using-the-Network) with more examples in the directory
+[Loading & Using the Network](#Loading--Using-the-Network) with more examples in the directory
 `network_configs`.
 
 #### Layer Compatibilities
