@@ -84,11 +84,9 @@ def recurrent(kwargs: dict, layer: dict, check_params: bool = True):
             Shape of the outputs from each layer
         module : Sequential
             Sequential module to contain the layer
-        dropout_prob : float, optional
-            Probability of dropout, only required if layers from layer > 1
     layer : dictionary
-        dropout : boolean, default = True
-            If dropout should be used
+        dropout : float, default =  0.1
+            Probability of dropout
         batch_norm : boolean, default = 0
             If batch normalisation should be used
         activation : boolean, default = True
@@ -122,18 +120,16 @@ def recurrent(kwargs: dict, layer: dict, check_params: bool = True):
     bidirectional = layer['bidirectional']
 
     if layers == 1:
-        dropout_prob = 0
-    elif layer['dropout_prob'] >= 0:
-        dropout_prob = layer['dropout_prob']
+        dropout = 0
     else:
-        dropout_prob = kwargs['dropout_prob']
+        dropout = layer['dropout']
 
     recurrent_kwargs = {
         'input_size': kwargs['shape'][-2][0],
         'hidden_size': kwargs['shape'][-1][0],
         'num_layers': layers,
         'batch_first': True,
-        'dropout': dropout_prob,
+        'dropout': dropout,
         'bidirectional': bidirectional is not None,
     }
 

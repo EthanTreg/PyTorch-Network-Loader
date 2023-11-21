@@ -31,7 +31,6 @@ A `.json` file with the desired network architecture is also required.
 
 The file is structured as a dictionary containing two sub-dictionaries:
 - `net`: Global network parameters with the following options:
-  - `dropout_prob`: float, dropout probability
   - `2d`: boolean, if layers that can accept 2D and 1D inputs should assume 2D inputs
   - dictionary, default values for each layer that override the values in `default.py`,
     the dictionary contains sub-dictionaries named _layer_name_, which contain the parameters
@@ -86,7 +85,6 @@ The network object has attributes:
 ```json
 {
   "net": {
-    "dropout_prob": 0.1,
     "2d": false,
     "linear": {
       "dropout": 1
@@ -130,7 +128,7 @@ output = decoder(x)
   - `features`: optional integer, output size, won't be used if `factor` is provided
   - `factor`: optional float, _features_ = `factor`$\times$_network output size_,
     will be used if provided else `features` will be used
-  - `dropout`: boolean = False, probability equals `dropout_prob`
+  - `dropout`: float = 0.01, dropout probability
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if a SELU activation should be used
 - `sample`: Predicts the mean and standard deviation of a Gaussian distribution
@@ -150,7 +148,7 @@ output = decoder(x)
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
   - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
-  - `dropout`: boolean = True, probability equals `dropout_prob`
+  - `dropout`: float = 0.1, dropout probability
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
   - `kernel`: integer | list[integer] = 3, kernel size
@@ -168,7 +166,7 @@ output = decoder(x)
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
   - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
-  - `dropout`: boolean = True, probability equals `dropout_prob`
+  - `dropout`: float = 0.1, dropout probability
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
 - `conv_transpose`: Scales the layer input by two using transpose convolution,
@@ -178,7 +176,7 @@ output = decoder(x)
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
     won't be used if `filters` is provided
   - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
-  - `dropout`: boolean = True, probability equals `dropout_prob`
+  - `dropout`: float = 0.1, dropout probability
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
 - `conv_upscale`: Scales the layer input by two using convolution and pixel shuffle,
@@ -246,3 +244,6 @@ In the network.json file, the block can be inserted by creating a `composite` la
     if `channels` and `out_shape` aren't provided, the input dimensions will be preserved
   - `out_shape`: optional list[intger], output shape of the block, will be used if provided;
     otherwise, `channels` will be used
+  - `defaults`: optional dictionary, default values for each layer that override the network's
+    default values, the dictionary contains sub-dictionaries named layer_name, which contain the
+    parameters found in the layers above with the corresponding layer name

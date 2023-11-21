@@ -3,19 +3,19 @@ Default values for layers
 """
 DEFAULTS = {
   'linear': {
-    'dropout': False,
     'batch_norm': False,
     'activation': True,
+    'dropout': 0.01,
   },
   'sample': {},
   'upsample': {},
   'adaptive_pool': {},
   'convolutional': {
-    'dropout': True,
     'batch_norm': False,
     'activation': True,
     'kernel': 3,
     'stride': 1,
+    'dropout': 0.1,
     'padding': 'same',
   },
   'conv_depth_downscale': {
@@ -23,14 +23,14 @@ DEFAULTS = {
     'activation': True,
   },
   'conv_downscale': {
-    'dropout': True,
     'batch_norm': False,
     'activation': True,
+    'dropout': 0.1,
   },
   'conv_transpose': {
-    'dropout': True,
     'batch_norm': False,
     'activation': True,
+    'dropout': 0.1,
   },
   'conv_upscale': {
     'batch_norm': False,
@@ -51,7 +51,7 @@ DEFAULTS = {
     'activation': True,
     'layers': 2,
     'filters': 1,
-    'dropout_prob': -1,
+    'dropout': 0.1,
     'method': 'gru',
     'bidirectional': None,
   },

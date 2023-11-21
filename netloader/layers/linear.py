@@ -84,8 +84,6 @@ def linear(kwargs: dict, layer: dict, check_params: bool = True):
             Sequential module to contain the layer
         out_shape : list[integer], optional
             Shape of the network's output, required only if layer contains factor
-        dropout_prob : float, optional
-            Probability of dropout if dropout from layer is True
     layer : dictionary
         features : integer, optional
             Number of output features for the layer,
@@ -93,8 +91,8 @@ def linear(kwargs: dict, layer: dict, check_params: bool = True):
         factor : float, optional
             Output features is equal to the factor of the network's output,
             will be used if provided, else features will be used
-        dropout : boolean, default = False
-            If dropout should be used
+        dropout : float, default =  0.01
+            Probability of dropout
         batch_norm : boolean, default = 0
             If batch normalisation should be used
         activation : boolean, default = True
@@ -121,7 +119,7 @@ def linear(kwargs: dict, layer: dict, check_params: bool = True):
     kwargs['module'].add_module(f"linear_{kwargs['i']}", linear_layer)
 
     # Optional layers
-    optional_layer('dropout', kwargs, layer, nn.Dropout1d(kwargs['dropout_prob']))
+    optional_layer('dropout', kwargs, layer, nn.Dropout1d(layer['dropout']))
     optional_layer('batch_norm', kwargs, layer, nn.BatchNorm1d(out_features))
     optional_layer('activation', kwargs, layer, nn.SELU())
 

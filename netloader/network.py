@@ -85,6 +85,7 @@ class Network(nn.Module):
             in_shape,
             out_shape,
             f'{config_dir}{name}.json',
+            defaults=DEFAULTS,
         )
 
         self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
@@ -162,8 +163,6 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
             Sequential module to contain the layer
         out_shape : list[integer], optional
             Shape of the network's output, required only if layer contains factor
-        dropout_prob : float, optional
-            Probability of dropout if dropout from layer is True
     layer : dictionary
         config_path : string
             Path to the .json file containing the block architecture
@@ -172,6 +171,10 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
             out_shape aren't provided, the input dimensions will be preserved
         out_shape : list[integer], optional
             Output shape of the block, will be used if provided; otherwise, channels will be used
+        defaults : dictionary, optional
+            Default values for each layer that override the network's
+            default values, the dictionary contains sub-dictionaries named layer_name,
+            which contain the parameters found in the layers above with the corresponding layer name
 
     Returns
     -------
@@ -179,6 +182,7 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
         Returns the input kwargs with any changes made by the function
     """
     suppress_warning = False
+    defaults = DEFAULTS.copy()
     kwargs['shape'].append(kwargs['shape'][-1].copy())
 
     # Subnetwork output
@@ -189,12 +193,16 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
     else:
         suppress_warning = True
 
+    for key in layer['defaults'].keys():
+        defaults[key] = defaults[key] | layer['defaults'][key]
+
     # Create subnetwork
     shapes, sub_layers, sub_network = _create_network(
         kwargs['shape'][-2],
         kwargs['shape'][-1],
         layer['config_path'],
         suppress_warning=suppress_warning,
+        defaults=defaults,
     )
 
     # Fix layers that depend on other layers
@@ -211,7 +219,8 @@ def _create_network(
         in_shape: list[int],
         out_shape: list[int],
         config_path: str,
-        suppress_warning: bool = False) -> tuple[list[list[int]], list[dict], nn.ModuleList]:
+        suppress_warning: bool = False,
+        defaults: dict = None) -> tuple[list[list[int]], list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
@@ -241,7 +250,7 @@ def _create_network(
         config['net']['2d'] = False
 
     # Initialize variables
-    kwargs = DEFAULTS | {
+    kwargs = defaults | {
         'shape': [in_shape],
         'out_shape': out_shape,
         **config['net'],

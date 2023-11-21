@@ -1,6 +1,5 @@
 {
   "net": {
-    "dropout_prob": 0.1,
     "2d": 1,
     "Description": "Network to test that all layers are working",
     "linear": {
@@ -11,7 +10,12 @@
     {
       "type": "composite",
       "config_path": "../network_configs/composite_layers/inception.json",
-      "channels": 128
+      "channels": 128,
+      "defaults": {
+        "convolutional": {
+          "dropout": 0.2
+        }
+      }
     },
     {
       "type": "convolutional",

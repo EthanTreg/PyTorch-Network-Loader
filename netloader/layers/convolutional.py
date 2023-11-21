@@ -164,8 +164,6 @@ def convolutional(kwargs: dict, layer: dict, check_params: bool = True):
             Sequential module to contain the layer
         out_shape : list[integer], optional
             Shape of the network's output, required only if layer contains factor
-        dropout_prob : float, optional
-            Probability of dropout, not required if dropout from layer is False
     layer : dictionary
         2d : boolean, optional
             If input data is 2D, if not provided, 2d from net is used, if not provided,
@@ -175,8 +173,8 @@ def convolutional(kwargs: dict, layer: dict, check_params: bool = True):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        dropout : boolean, default = True
-            If dropout should be used
+        dropout : float, default = 0.1
+            Probability of dropout
         batch_norm : boolean, default = False
             If batch normalisation should be used
         activation : boolean, default = True
@@ -235,7 +233,7 @@ def convolutional(kwargs: dict, layer: dict, check_params: bool = True):
     kwargs['module'].add_module(f"conv_{kwargs['i']}", conv)
 
     # Optional layers
-    optional_layer('dropout', kwargs, layer, dropout(kwargs['dropout_prob']))
+    optional_layer('dropout', kwargs, layer, dropout(layer['dropout']))
     optional_layer('batch_norm', kwargs, layer, batch_norm(shape[0]))
     optional_layer('activation', kwargs, layer, nn.ELU())
 
@@ -271,10 +269,10 @@ def conv_depth_downscale(kwargs: dict, layer: dict, check_params: bool = True):
     supported_params = ['2d', 'batch_norm', 'activation']
     layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
 
-    layer['dropout'] = False
     layer['filters'] = 1
     layer['kernel'] = 1
     layer['stride'] = 1
+    layer['dropout'] = 0
     layer['padding'] = 'same'
     convolutional(kwargs, layer, check_params=False)
 
@@ -294,8 +292,6 @@ def conv_downscale(kwargs: dict, layer: dict, check_params=True):
             Sequential module to contain the layer
         out_shape : list[integer], optional
             Shape of the network's output, required only if layer contains factor
-        dropout_prob : float, optional
-            Probability of dropout, not required if dropout from layer is False
     layer : dictionary
         2d : boolean, optional
             If input data is 2D, if not provided, 2d from net is used
@@ -304,8 +300,8 @@ def conv_downscale(kwargs: dict, layer: dict, check_params=True):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        dropout : boolean, default = True
-            If dropout should be used
+        dropout : float, default = 0.1
+            Probability of dropout
         batch_norm : boolean, default = False
             If batch normalisation should be used
         activation : boolean, default = True
@@ -337,8 +333,6 @@ def conv_transpose(kwargs: dict, layer: dict, check_params: bool = True):
             Sequential module to contain the layer
         out_shape : list[integer], optional
             Shape of the network's output, required only if layer contains factor
-        dropout_prob : float, optional
-            Probability of dropout, not required if dropout from layer is False
     layer : dictionary
         2d : boolean, optional
             If input data is 2D, if not provided, 2d from net is used
@@ -347,8 +341,8 @@ def conv_transpose(kwargs: dict, layer: dict, check_params: bool = True):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        dropout : boolean, default = True
-            If dropout should be used
+        dropout : float, default =  0.1
+            Probability of dropout
         batch_norm : boolean, default = False
             If batch normalisation should be used
         activation : boolean, default = True
@@ -384,7 +378,7 @@ def conv_transpose(kwargs: dict, layer: dict, check_params: bool = True):
     kwargs['module'].add_module(f"conv_transpose_{kwargs['i']}", conv)
 
     # Optional layers
-    optional_layer('dropout', kwargs, layer, dropout(kwargs['dropout_prob']))
+    optional_layer('dropout', kwargs, layer, dropout(layer['dropout']))
     optional_layer('batch_norm', kwargs, layer, batch_norm(kwargs['shape'][-1][0]))
     optional_layer('activation', kwargs, layer, nn.ELU())
 
@@ -427,8 +421,8 @@ def conv_upscale(kwargs: dict, layer: dict, check_params: bool = True):
     supported_params = ['2d', 'filters', 'factor', 'batch_norm', 'activation', 'kernel']
     layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
 
-    layer['dropout'] = False
     layer['stride'] = 1
+    layer['dropout'] = 0
     layer['padding'] = 'same'
 
     if layer['2d']:
