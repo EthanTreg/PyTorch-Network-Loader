@@ -249,11 +249,16 @@ def _create_network(
     if '2d' not in config['net']:
         config['net']['2d'] = False
 
-    # Initialize variables
+    # Override defaults from net parameters
+    for key, value in config['net'].items():
+        if isinstance(value, dict):
+            defaults[key] = defaults[key] | value
+        else:
+            defaults[key] = value
+
     kwargs = defaults | {
         'shape': [in_shape],
         'out_shape': out_shape,
-        **config['net'],
     }
     module_list = nn.ModuleList()
 

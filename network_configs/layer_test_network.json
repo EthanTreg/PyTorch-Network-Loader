@@ -4,6 +4,9 @@
     "Description": "Network to test that all layers are working",
     "linear": {
       "dropout": 1
+    },
+    "convolutional": {
+      "dropout": 0.3
     }
   },
   "layers": [
