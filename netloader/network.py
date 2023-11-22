@@ -193,8 +193,10 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
     else:
         suppress_warning = True
 
-    for key in layer['defaults'].keys():
-        defaults[key] = defaults[key] | layer['defaults'][key]
+    # Override default values if composite layer has default values
+    if 'defaults' in layer.keys():
+        for key in layer['defaults'].keys():
+            defaults[key] = defaults[key] | layer['defaults'][key]
 
     # Create subnetwork
     shapes, sub_layers, sub_network = _create_network(

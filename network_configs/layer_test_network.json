@@ -21,6 +21,11 @@
       }
     },
     {
+      "type": "composite",
+      "config_path": "../network_configs/composite_layers/inception.json",
+      "channels": 128
+    },
+    {
       "type": "convolutional",
       "filters": 4,
       "2d": 1,
