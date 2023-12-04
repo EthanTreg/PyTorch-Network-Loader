@@ -2,6 +2,7 @@
 Default values for layers
 """
 DEFAULTS = {
+  'checkpoints': False,
   'linear': {
     'batch_norm': False,
     'activation': True,
@@ -55,6 +56,7 @@ DEFAULTS = {
     'method': 'gru',
     'bidirectional': None,
   },
+  'checkpoint': {},
   'clone': {},
   'concatenate': {
     'dim': 0,

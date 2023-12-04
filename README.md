@@ -32,6 +32,8 @@ A `.json` file with the desired network architecture is also required.
 The file is structured as a dictionary containing two sub-dictionaries:
 - `net`: Global network parameters with the following options:
   - `2d`: boolean, if layers that can accept 2D and 1D inputs should assume 2D inputs
+  - `checkpoints`: boolean = False, if checkpoints should be exclusively used, otherwise, the output
+    from every layer will be cached, more user-friendly, but larger memory consumption
   - dictionary, default values for each layer that override the values in `default.py`,
     the dictionary contains sub-dictionaries named _layer_name_, which contain the parameters
     found the section [Layer Types](#Layer-Types) with the corresponding layer name
@@ -215,10 +217,13 @@ output = decoder(x)
     can be _sum_, _mean_ or _concatenation_
 
 **Utility layers**
+- `checkpoint`: Saves the output from the previous layer for use in future layers
 - `clone`: Clones a number of features from the previous layer
   - `number`: integer, number of values to clone from the previous layer
 - `concatenate`: Concatenates the previous layer with a specified layer
   - `layer`: integer, layer index to concatenate the previous layer with
+  - `checkpoint`: boolean = False, if `layer` should be relative to checkpoints or network layers,
+    if `checkpoints` in `net` is True, `layer` will always be relative to checkpoints
   - `dim` : integer = 0, dimension to concatenate to (not including $N$)
 - `extract`: Extracts values from the previous layer to pass to the output
   - `number`: integer, number of values to extract from the previous layer
@@ -229,8 +234,12 @@ output = decoder(x)
   - `output`: list[integer], output dimensions of input tensor, ignoring the first dimension ($N$)
 - `shortcut`: Adds the previous layer with the specified layer
   - `layer`: integer, layer index to add to the previous layer
+  - `checkpoint`: boolean = False, if `layer` should be relative to checkpoints or network layers,
+    if `checkpoints` in `net` is True, `layer` will always be relative to checkpoints
 - `skip`: Passes the output from `layer` into the next layer
   - `layer`: integer, layer index to get the output from
+  - `checkpoint`: boolean = False, if `layer` should be relative to checkpoints or network layers,
+    if `checkpoints` in `net` is True, `layer` will always be relative to checkpoints
 
 **Composite layers**  
 Custom blocks can be made from the layers above and inserted into the network.

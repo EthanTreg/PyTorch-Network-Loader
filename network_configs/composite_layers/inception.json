@@ -1,13 +1,19 @@
 {
   "net": {
-    "dropout_prob": 0.1,
-    "2d": 1
+    "2d": 1,
+    "checkpoints": 1
   },
   "layers": [
+    {
+      "type": "checkpoint"
+    },
     {
       "type": "convolutional",
       "factor": 0.25,
       "kernel": 1
+    },
+    {
+      "type": "checkpoint"
     },
     {
       "type": "skip",
@@ -24,7 +30,10 @@
     },
     {
       "type": "concatenate",
-      "layer": -4
+      "layer": -1
+    },
+    {
+      "type": "checkpoint"
     },
     {
       "type": "skip",
@@ -42,7 +51,10 @@
     },
     {
       "type": "concatenate",
-      "layer": -4
+      "layer": -1
+    },
+    {
+      "type": "checkpoint"
     },
     {
       "type": "skip",
@@ -61,7 +73,7 @@
     },
     {
       "type": "concatenate",
-      "layer": -4
+      "layer": -1
     }
   ]
 }

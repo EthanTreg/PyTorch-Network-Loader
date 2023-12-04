@@ -96,6 +96,28 @@ class Index(nn.Module):
         return x[..., :self.number]
 
 
+def checkpoint(kwargs: dict, layer:dict, check_params: bool = True):
+    """
+    Constructs a layer to create a checkpoint for using the output from the previous layer in
+    future layers
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        check_num : integer
+            Number of checkpoints
+        shape : list[integer]
+            Shape of the outputs from each layer
+    layer : dictionary
+        For compatibility
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
+    """
+    check_layer([], kwargs, layer, check_params=check_params)
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    kwargs['check_shape'].append(kwargs['shape'][-1].copy())
+
+
 def clone(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a layer to clone a number of values from the previous layer
@@ -103,8 +125,6 @@ def clone(kwargs: dict, layer: dict, check_params: bool = True):
     Parameters
     ----------
     kwargs : dictionary
-        i : integer
-            Layer number
         shape : list[integer]
             Shape of the outputs from each layer
     layer : dictionary
@@ -131,33 +151,36 @@ def concatenate(kwargs: dict, layer: dict, check_params: bool = True):
     layer : dictionary
         layer : integer
             Layer index to concatenate the previous layer output with
+        checkpoint : boolean, default = False
+            If layer index should be relative to checkpoint layers
         dim : integer, default = 0
             Dimension to concatenate to
     check_params : boolean, default = True
         If layer arguments should be checked if they are valid
     """
-    supported_params = ['layer', 'dim']
+    supported_params = ['layer', 'checkpoint', 'dim']
     layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
     shape = kwargs['shape'][-1].copy()
-    in_shape = shape.copy()
-    target_shape = kwargs['shape'][layer['layer']].copy()
     dim = layer['dim']
 
-    if len(target_shape) > 1 and len(in_shape) > 1:
-        del target_shape[dim]
-        del in_shape[dim]
+    # If checkpoints are being used
+    if ('checkpoint' in layer and layer['checkpoint']) or kwargs['checkpoints']:
+        shapes = kwargs['check_shape']
+    else:
+        shapes = kwargs['shape']
+
+    target = shapes[layer['layer']].copy()
 
     # If tensors cannot be concatenated along the specified dimension
-    if ((target_shape != in_shape and len(target_shape) != 1) or
-            (len(target_shape) != len(in_shape))):
+    if ((target[:dim] + target[dim + 1:] != shape[:dim] + shape[dim + 1:]) or
+            (len(target) != len(shape))):
         raise ValueError(
             f"Shape mismatch, input shape {shape} in layer {kwargs['i']} does not match the "
-            f"target shape {kwargs['shape'][layer['layer']]} in layer {layer['layer']} "
+            f"target shape {target} in layer/checkpoint {layer['layer']} "
             f"for concatenation over dimension {dim}"
         )
 
-    shape[dim] = kwargs['shape'][-1][dim] + kwargs['shape'][layer['layer']][dim]
+    shape[dim] = shape[dim] + target[dim]
     kwargs['shape'].append(shape)
 
 
@@ -281,32 +304,41 @@ def shortcut(kwargs: dict, layer: dict, check_params: bool = True):
     layer : dictionary
         layer : integer
             Layer index to add the previous layer output with
+        checkpoint : boolean, default = False
+            If layer index should be relative to checkpoint layers
     check_params : boolean, default = True
         If layer arguments should be checked if they are valid
     """
-    layer = check_layer(['layer'], kwargs, layer, check_params=check_params)
-    in_shape = np.array(kwargs['shape'][-1].copy())
-    target_shape = np.array(kwargs['shape'][layer['layer']].copy())
-    mask = (in_shape != 1) & (target_shape != 1)
+    supported_params = ['layer', 'checkpoint']
+    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
+    shape = np.array(kwargs['shape'][-1].copy())
 
-    if not np.array_equal(in_shape[mask], target_shape[mask]):
+    # If checkpoints are being used
+    if ('checkpoint' in layer and layer['checkpoint']) or kwargs['checkpoints']:
+        shapes = kwargs['check_shape']
+    else:
+        shapes = kwargs['shape']
+
+    target = np.array(shapes[layer['layer']].copy())
+    mask = (shape != 1) & (target != 1)
+
+    if not np.array_equal(shape[mask], target[mask]):
         raise ValueError(
-            f"Tensor shapes {kwargs['shape'][-1]} in layer {kwargs['i']} and "
-            f"{kwargs['shape'][layer['layer']]} in layer {layer['layer']} "
+            f"Tensor shapes {shape} in layer {kwargs['i']} and {target} in layer {layer['layer']} "
             f"not compatible for addition."
         )
 
     # If input has any dimensions of length one, output will take the target dimension
-    if 1 in in_shape:
-        idxs = np.where(in_shape == 1)[0]
-        in_shape[idxs] = target_shape[idxs]
+    if 1 in shape:
+        idxs = np.where(shape == 1)[0]
+        shape[idxs] = target[idxs]
 
     # If target has any dimensions of length one, output will take the input dimension
-    if 1 in target_shape:
-        idxs = np.where(target_shape == 1)[0]
-        in_shape[idxs] = in_shape[idxs]
+    if 1 in target:
+        idxs = np.where(target == 1)[0]
+        shape[idxs] = shape[idxs]
 
-    kwargs['shape'].append(in_shape.tolist())
+    kwargs['shape'].append(shape.tolist())
 
 
 def skip(kwargs: dict, layer: dict, check_params: bool = True):
@@ -323,8 +355,18 @@ def skip(kwargs: dict, layer: dict, check_params: bool = True):
     layer : dictionary
         layer : integer
             Layer index to retrieve the output
+        checkpoint : boolean, default = False
+            If layer index should be relative to checkpoint layers
     check_params : boolean, default = True
         If layer arguments should be checked if they are valid
     """
-    layer = check_layer(['layer'], kwargs, layer, check_params=check_params)
-    kwargs['shape'].append(kwargs['shape'][layer['layer']].copy())
+    supported_params = ['layer', 'checkpoint']
+    layer = layer | check_layer(supported_params, kwargs, layer, check_params=check_params)
+
+    # If checkpoints are being used
+    if ('checkpoint' in layer and layer['checkpoint']) or kwargs['checkpoints']:
+        shapes = kwargs['check_shape']
+    else:
+        shapes = kwargs['shape']
+
+    kwargs['shape'].append(shapes[layer['layer']].copy())

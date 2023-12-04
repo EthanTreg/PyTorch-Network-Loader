@@ -153,5 +153,3 @@ def recurrent(kwargs: dict, layer: dict, check_params: bool = True):
     # Optional layers
     optional_layer('batch_norm', kwargs, layer, nn.BatchNorm1d(kwargs['shape'][-1][0]))
     optional_layer('activation', kwargs, layer, nn.ELU())
-
-    return kwargs

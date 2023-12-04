@@ -1,6 +1,7 @@
 {
   "net": {
     "2d": 1,
+    "checkpoints": 0,
     "Description": "Network to test that all layers are working",
     "linear": {
       "dropout": 1
@@ -125,6 +126,9 @@
       "output": [-1]
     },
     {
+      "type": "checkpoint"
+    },
+    {
       "type": "linear",
       "features": 128,
       "batch_norm": 1,
@@ -132,12 +136,17 @@
     },
     {
       "type": "shortcut",
-      "layer": -2
+      "checkpoint": 1,
+      "layer": -1
     },
     {
       "type": "concatenate",
-      "layer": -2,
+      "checkpoint": 1,
+      "layer": -1,
       "dim": -1
+    },
+    {
+      "type": "checkpoint"
     },
     {
       "type": "clone",
@@ -154,7 +163,7 @@
     },
     {
       "type": "skip",
-      "layer": -5
+      "layer": -4
     },
     {
       "type": "sample",

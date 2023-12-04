@@ -35,6 +35,9 @@ class Network(nn.Module):
         Network optimizer
     scheduler : ReduceLROnPlateau
         Optimizer scheduler
+    checkpoints : boolean, default = False
+        If outputs from each layer should not be saved to reduce memory usage, but with more limited
+        layer output referencing
     layer_num : integer, default = None
         Number of layers to use, if None use all layers
     latent_mse_weight : float, default = 1e-2
@@ -81,7 +84,7 @@ class Network(nn.Module):
         self.kl_loss = torch.tensor(0.)
 
         # Construct layers in network
-        self.shapes, self.layers, self.network = _create_network(
+        self._checkpoints, self.shapes, _, self.layers, self.network = _create_network(
             in_shape,
             out_shape,
             f'{config_dir}{name}.json',
@@ -109,41 +112,52 @@ class Network(nn.Module):
         Tensor
             Output tensor from the network
         """
-        outputs = [x]
+        checkpoints = []
+
+        if not self._checkpoints:
+            outputs = [x]
 
         for i, layer in enumerate(self.layers[:self.layer_num]):
-            # Sampling layer
-            if layer['type'] == 'sample':
-                x, self.kl_loss = self.network[i](x)
-                self.kl_loss *= self.kl_loss_weight
-            # Extraction layer
-            elif layer['type'] == 'extract':
-                self.extraction = x[..., :layer['number']]
-                x = x[..., layer['number']:]
+            # Checkpoint layer
+            if layer['type'] == 'checkpoint':
+                checkpoints.append(x)
             # Cloning layer
             elif layer['type'] == 'clone':
                 self.clone = x[..., :layer['number']].clone()
             # Concatenation layers
             elif layer['type'] == 'concatenate':
-                if 'dim' in layer and layer['dim'] >= 0:
-                    dim = layer['dim'] + 1
-                elif 'dim' in layer:
-                    dim = layer['dim']
+                if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
+                    x = _concatenate(layer, x, checkpoints)
                 else:
-                    dim = 1
+                    x = _concatenate(layer, x, outputs)
 
-                x = torch.cat((x, outputs[layer['layer']]), dim=dim)
+            # Extraction layer
+            elif layer['type'] == 'extract':
+                self.extraction = x[..., :layer['number']]
+                x = x[..., layer['number']:]
+            # Sampling layer
+            elif layer['type'] == 'sample':
+                x, self.kl_loss = self.network[i](x)
+                self.kl_loss *= self.kl_loss_weight
             # Shortcut layers
             elif layer['type'] == 'shortcut':
-                x = x + outputs[layer['layer']]
+                if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
+                    x = x + checkpoints[layer['layer']]
+                else:
+                    x = x + outputs[layer['layer']]
+
             # Skip layers
             elif layer['type'] == 'skip':
-                x = outputs[layer['layer']]
+                if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
+                    x = checkpoints[layer['layer']]
+                else:
+                    x = outputs[layer['layer']]
             # All other layers
             else:
                 x = self.network[i](x)
 
-            outputs.append(x)
+            if not self._checkpoints:
+                outputs.append(x)
 
         return x
 
@@ -185,7 +199,7 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
     defaults = DEFAULTS.copy()
     kwargs['shape'].append(kwargs['shape'][-1].copy())
 
-    # Subnetwork output
+    # Subnetwork output if provided
     if 'out_shape' in layer:
         kwargs['shape'][-1] = layer['out_shape']
     elif 'channels' in layer:
@@ -199,7 +213,7 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
             defaults[key] = defaults[key] | layer['defaults'][key]
 
     # Create subnetwork
-    shapes, sub_layers, sub_network = _create_network(
+    checkpoints, shapes, check_shapes, sub_layers, sub_network = _create_network(
         kwargs['shape'][-2],
         kwargs['shape'][-1],
         layer['config_path'],
@@ -209,12 +223,52 @@ def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.Mo
 
     # Fix layers that depend on other layers
     for sub_layer in sub_layers:
-        if 'layer' in sub_layer and sub_layer['layer'] >= 0:
+        if 'layer' not in sub_layer or (sub_layer['layer'] < 0 and not checkpoints):
+            continue
+
+        if sub_layer['layer'] < 0:
+            sub_layer['checkpoint'] = 1
+        elif checkpoints or ('checkpoint' in layer and layer['checkpoint']):
+            sub_layer['layer'] += len(kwargs['check_shape'])
+            sub_layer['checkpoint'] = 1
+        else:
             sub_layer['layer'] += kwargs['i']
 
     kwargs['shape'][-1] = shapes[-1]
-
+    kwargs['check_shape'].extend(check_shapes)
     return kwargs, sub_layers, sub_network
+
+
+def _concatenate(layer: dict, x: Tensor, outputs: list[Tensor]) -> Tensor:
+    """
+    Concatenates the output from the previous layer and from the specified layer along a
+    specified dimension
+
+    Parameters
+    ----------
+    layer : dictionary
+        layer : integer
+            Layer index to concatenate the previous layer output with
+        dim : integer, default = 0
+            Dimension to concatenate to
+    x : Tensor
+        Output from the previous layer
+    outputs : list[Tensor]
+        Layer outputs to index for concatenation
+
+    Returns
+    -------
+    Tensor
+        Concatenated tensor
+    """
+    if 'dim' in layer and layer['dim'] >= 0:
+        dim = layer['dim'] + 1
+    elif 'dim' in layer:
+        dim = layer['dim']
+    else:
+        dim = 1
+
+    return torch.cat((x, outputs[layer['layer']]), dim=dim)
 
 
 def _create_network(
@@ -222,7 +276,8 @@ def _create_network(
         out_shape: list[int],
         config_path: str,
         suppress_warning: bool = False,
-        defaults: dict = None) -> tuple[list[list[int]], list[dict], nn.ModuleList]:
+        defaults: dict = None,
+) -> tuple[bool, list[list[int]], list[list[int]], list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
@@ -239,8 +294,9 @@ def _create_network(
 
     Returns
     -------
-    tuple[list[list[integer]], list[dictionary], ModuleList]
-        Layer output shapes, layers in the network with parameters and network construction
+    tuple[bool, list[list[integer]], list[dictionary], ModuleList]
+        If layer outputs should not be saved, layer output shapes, checkpoint shapes,
+        layers in the network with parameters and network construction
     """
     layer_injections = 0
 
@@ -260,6 +316,7 @@ def _create_network(
 
     kwargs = defaults | {
         'shape': [in_shape],
+        'check_shape': [],
         'out_shape': out_shape,
     }
     module_list = nn.ModuleList()
@@ -289,4 +346,10 @@ def _create_network(
             f"Network output shape {kwargs['shape'][-1]} != data output shape {out_shape}"
         )
 
-    return kwargs['shape'], config['layers'], module_list
+    return (
+        kwargs['checkpoints'],
+        kwargs['shape'],
+        kwargs['check_shape'],
+        config['layers'],
+        module_list,
+    )
