@@ -395,7 +395,7 @@ def conv_transpose(kwargs: dict, layer: dict, check_params: bool = True):
     optional_layer('activation', kwargs, layer, nn.ELU())
 
     # Data size doubles
-    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
+    kwargs['shape'][-1][1:] = [length * 2 + out_padding for length in kwargs['shape'][-1][1:]]
 
 
 def conv_upscale(kwargs: dict, layer: dict, check_params: bool = True):
