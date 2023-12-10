@@ -181,6 +181,7 @@ output = decoder(x)
   - `dropout`: float = 0.1, dropout probability
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if an ELU activation should be used
+  - `out_padding`: integer = 0, padding applied to the output
 - `conv_upscale`: Scales the layer input by two using convolution and pixel shuffle,
   uses stride of 1, same padding and no dropout, uses ELU
   - `filters`: optional integer, number of convolutional filters, will be used if provided, 

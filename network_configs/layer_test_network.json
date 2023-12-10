@@ -57,7 +57,8 @@
       "dropout": 1,
       "2d": 1,
       "batch_norm": 0,
-      "activation": 1
+      "activation": 1,
+      "out_padding": 1
     },
     {
       "type": "conv_upscale",

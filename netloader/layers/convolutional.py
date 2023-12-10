@@ -347,12 +347,23 @@ def conv_transpose(kwargs: dict, layer: dict, check_params: bool = True):
             If batch normalisation should be used
         activation : boolean, default = True
             If ELU activation should be used
+        out_padding : integer, default = 0
+            Padding applied to the output
     check_params : boolean, default = True
         If layer arguments should be checked if they are valid
     """
-    supported_params = ['2d', 'filters', 'factor', 'dropout', 'batch_norm', 'activation']
+    supported_params = [
+        '2d',
+        'filters',
+        'factor',
+        'dropout',
+        'batch_norm',
+        'activation',
+        'out_padding',
+    ]
     layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
     kwargs['shape'].append(kwargs['shape'][-1].copy())
+    out_padding = layer['out_padding']
 
     if 'factor' not in layer:
         kwargs['shape'][-1][0] = layer['filters']
@@ -373,6 +384,7 @@ def conv_transpose(kwargs: dict, layer: dict, check_params: bool = True):
         out_channels=kwargs['shape'][-1][0],
         kernel_size=2,
         stride=2,
+        output_padding=out_padding,
     )
 
     kwargs['module'].add_module(f"conv_transpose_{kwargs['i']}", conv)

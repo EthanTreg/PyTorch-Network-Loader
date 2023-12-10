@@ -130,7 +130,6 @@ class Network(nn.Module):
                     x = _concatenate(layer, x, checkpoints)
                 else:
                     x = _concatenate(layer, x, outputs)
-
             # Extraction layer
             elif layer['type'] == 'extract':
                 self.extraction = x[..., :layer['number']]
@@ -145,7 +144,6 @@ class Network(nn.Module):
                     x = x + checkpoints[layer['layer']]
                 else:
                     x = x + outputs[layer['layer']]
-
             # Skip layers
             elif layer['type'] == 'skip':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
