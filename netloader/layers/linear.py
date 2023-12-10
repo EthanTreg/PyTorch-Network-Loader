@@ -107,7 +107,7 @@ def linear(kwargs: dict, layer: dict, check_params: bool = True):
 
     # Remove channels dimension
     if len(kwargs['shape'][-1]) > 1:
-        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([-1]))
+        kwargs['module'].add_module(f"pre_reshape_{kwargs['i']}", Reshape([-1]))
 
     # Number of features can be defined by either a factor of the output size or explicitly
     if 'factor' in layer:
@@ -126,7 +126,7 @@ def linear(kwargs: dict, layer: dict, check_params: bool = True):
     # Add channels dimension equal to input channels if input contains channels
     if len(kwargs['shape'][-1]) > 1:
         out_shape = [in_shape[0], int(out_features / in_shape[0])]
-        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(out_shape))
+        kwargs['module'].add_module(f"post_reshape_{kwargs['i']}", Reshape(out_shape))
     else:
         out_shape = [out_features]
 
@@ -166,7 +166,7 @@ def sample(kwargs: dict, layer: dict, check_params: bool = True):
 
     # Remove channels dimension
     if len(kwargs['shape'][-1]) > 1:
-        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([-1]))
+        kwargs['module'].add_module(f"pre_reshape_{kwargs['i']}", Reshape([-1]))
 
     # Number of features can be defined by either a factor of the output size or explicitly
     try:
@@ -179,7 +179,7 @@ def sample(kwargs: dict, layer: dict, check_params: bool = True):
     # Add channels dimension equal to input channels if input contains channels
     if len(in_shape) > 1:
         out_shape = [in_shape[0], int(out_features / in_shape[0])]
-        kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape(out_shape))
+        kwargs['module'].add_module(f"post_reshape_{kwargs['i']}", Reshape(out_shape))
     else:
         out_shape = [out_features]
 

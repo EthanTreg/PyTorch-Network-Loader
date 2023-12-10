@@ -130,10 +130,18 @@
       "type": "checkpoint"
     },
     {
+      "type": "reshape",
+      "output": [1, -1]
+    },
+    {
       "type": "linear",
       "features": 128,
       "batch_norm": 1,
       "activation": 1
+    },
+    {
+      "type": "reshape",
+      "output": [-1]
     },
     {
       "type": "shortcut",
