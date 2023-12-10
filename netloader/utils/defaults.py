@@ -31,7 +31,7 @@ DEFAULTS = {
   'conv_transpose': {
     'batch_norm': False,
     'activation': True,
-    'padding': 0,
+    'out_padding': 0,
     'dropout': 0.1,
   },
   'conv_upscale': {
