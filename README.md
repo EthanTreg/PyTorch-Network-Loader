@@ -126,7 +126,9 @@ output = decoder(x)
 `layers` have several options, each with its own options:
 
 **Linear layers**
-- `linear`: Linear with SELU:
+- `ordered_bottleneck`: Information-ordered bottleneck to randomly change the size of the bottleneck
+  in an autoencoder to encode the most important information in the first values of the latent space
+- `linear`: Linear with SELU
   - `features`: optional integer, output size, won't be used if `factor` is provided
   - `factor`: optional float, _features_ = `factor`$\times$_network output size_,
     will be used if provided else `features` will be used
@@ -144,7 +146,7 @@ output = decoder(x)
 - `adaptive_pool`: Uses average pooling to downscale the input to the desired shape
   - `output`: list[integer], output shape of the layer ignoring $C$
   - `2d`: optional boolean, if input data is 2D, if not provided, `2d` from `net` is used
-- `convolutional`: Convolution with padding using replicate and ELU:
+- `convolutional`: Convolution with padding using replicate and ELU
   - `filters`: optional integer, number of convolutional filters, will be used if provided, 
     else `factor` will be used
   - `factor`: optional float, _filters_ = `factor`$\times$_network output channels_, 
@@ -205,7 +207,7 @@ output = decoder(x)
   - `mode`: string = 'max', whether to use max pooling ('max') or average pooling ('average')
 
 **Recurrent layers**
-- `recurrent`: Recurrent layer with ELU:
+- `recurrent`: Recurrent layer with ELU
   - `dropout_prob`: float = -1, dropout probability, if < 0, `dropout_prob` from `net` is used,
     requires `layers` > 1
   - `batch_norm`: boolean = False, if batch normalisation should be used

@@ -10,6 +10,45 @@ from netloader.utils.utils import get_device
 from netloader.layers.utils import optional_layer, check_layer
 
 
+class OrderedBottleneck(nn.Module):
+    """
+    Information-ordered bottleneck to randomly change the size of the bottleneck in an autoencoder
+    to encode the most important information in the first values of the latent space
+
+    Attributes
+    ----------
+    device : Device
+        Which device to use
+
+    Methods
+    -------
+    forward(x)
+        Forward pass of the information-ordered bottleneck layer
+    """
+    def __init__(self):
+        super().__init__()
+        self.device = get_device()[1]
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Forward pass of the information-ordered bottleneck layer
+
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor
+
+        Returns
+        -------
+        Tensor
+            Input zeroed from a random index to the last value
+        """
+        idx = np.random.randint(x.size(-1))
+        gate = torch.zeros(x.size(-1)).to(self.device)
+        gate[:idx + 1] = 1
+        return x * gate
+
+
 class Sample(nn.Module):
     """
     Samples random values from a Gaussian distribution for a variational autoencoder
@@ -67,6 +106,30 @@ class Sample(nn.Module):
         kl_loss = 0.5 * torch.mean(mean ** 2 + std ** 2 - 2 * torch.log(std) - 1)
 
         return x, kl_loss
+
+
+def ordered_bottleneck(kwargs: dict, layer: dict, check_params: bool = True):
+    """
+    Information-ordered bottleneck to randomly change the size of the bottleneck in an autoencoder
+    to encode the most important information in the first values of the latent space
+
+    Parameters
+    ----------
+    kwargs : dictionary
+        i : integer
+            Layer number
+        shape : list[integer]
+            Shape of the outputs from each layer
+        module : Sequential
+            Sequential module to contain the layer
+    layer : dictionary
+        For compatibility
+    check_params : boolean, default = True
+        If layer arguments should be checked if they are valid
+    """
+    check_layer([], kwargs, layer, check_params=check_params)
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    kwargs['module'].add_module(f"ordered_bottleneck_{kwargs['i']}", OrderedBottleneck())
 
 
 def linear(kwargs: dict, layer: dict, check_params: bool = True):

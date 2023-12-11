@@ -178,6 +178,9 @@
       "type": "sample",
       "features": 128,
       "bad_param": 1
+    },
+    {
+      "type": "ordered_bottleneck"
     }
   ]
 }

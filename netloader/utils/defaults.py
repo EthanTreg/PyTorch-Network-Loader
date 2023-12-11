@@ -3,6 +3,7 @@ Default values for layers
 """
 DEFAULTS = {
   'checkpoints': False,
+  'ordered_bottleneck': {},
   'linear': {
     'batch_norm': False,
     'activation': True,
