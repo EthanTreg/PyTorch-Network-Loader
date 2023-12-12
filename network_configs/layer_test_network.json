@@ -62,7 +62,7 @@
     },
     {
       "type": "conv_upscale",
-      "factor": 0.5,
+      "filters": 2,
       "2d": 1,
       "batch_norm": 0,
       "activation": 1,
@@ -90,6 +90,9 @@
       "kernel": 3
     },
     {
+      "type": "sample"
+    },
+    {
       "type": "reshape",
       "output": [4, -1]
     },
@@ -105,7 +108,7 @@
     },
     {
       "type": "convolutional",
-      "filters": 64,
+      "filters": 128,
       "2d": 0,
       "dropout": 0,
       "batch_norm": 1,
@@ -113,6 +116,9 @@
       "kernel": 5,
       "stride": 1,
       "padding": 1
+    },
+    {
+      "type": "sample"
     },
     {
       "type": "adaptive_pool",
@@ -175,12 +181,19 @@
       "layer": -4
     },
     {
+      "type": "reshape",
+      "output": [2, -1]
+    },
+    {
       "type": "sample",
-      "features": 128,
       "bad_param": 1
     },
     {
       "type": "ordered_bottleneck"
+    },
+    {
+      "type": "reshape",
+      "output": [-1]
     }
   ]
 }

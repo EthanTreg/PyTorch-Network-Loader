@@ -43,6 +43,9 @@ class OrderedBottleneck(nn.Module):
         Tensor
             Input zeroed from a random index to the last value
         """
+        if not self.training:
+            return x
+
         idx = np.random.randint(x.size(-1))
         gate = torch.zeros(x.size(-1)).to(self.device)
         gate[:idx + 1] = 1
@@ -51,14 +54,12 @@ class OrderedBottleneck(nn.Module):
 
 class Sample(nn.Module):
     """
-    Samples random values from a Gaussian distribution for a variational autoencoder
+    Samples random values from a Gaussian distribution for a variational autoencoder,
+    mean and standard deviation are the first and second half of the input channels with the last
+    channel ignored if there are an odd number
 
     Attributes
     ----------
-    mean_layer : Module
-        Linear layer to predict values for the mean of the distribution
-    std_layer : Module
-        Linear layer to predict values for the standard deviation of the distribution
     sample_layer : Module
         Layer to sample values from a Gaussian distribution
 
@@ -67,20 +68,9 @@ class Sample(nn.Module):
     forward(x)
         Forward pass of the sampling layer
     """
-    def __init__(self, in_features: int, out_features: int):
-        """
-        Parameters
-        ----------
-        in_features : integer
-            Number of input features for linear layer
-        out_features : integer
-            Number of output features for linear layer
-        """
+    def __init__(self):
         super().__init__()
         device = get_device()[1]
-
-        self.mean_layer = nn.Linear(in_features=in_features, out_features=out_features)
-        self.std_layer = nn.Linear(in_features=in_features, out_features=out_features)
         self.sample_layer = torch.distributions.Normal(
             torch.tensor(0.).to(device),
             torch.tensor(1.).to(device),
@@ -100,11 +90,11 @@ class Sample(nn.Module):
         tuple[Tensor, Tensor]
             Output tensor and KL Divergence loss
         """
-        mean = self.mean_layer(x)
-        std = torch.exp(self.std_layer(x))
+        split = int(x.size(1) / 2)
+        mean = x[:, :split]
+        std = torch.exp(x[:, split:2 * split])
         x = mean + std * self.sample_layer(mean.shape)
         kl_loss = 0.5 * torch.mean(mean ** 2 + std ** 2 - 2 * torch.log(std) - 1)
-
         return x, kl_loss
 
 
@@ -198,8 +188,9 @@ def linear(kwargs: dict, layer: dict, check_params: bool = True):
 
 def sample(kwargs: dict, layer: dict, check_params: bool = True):
     """
-    Generates mean and standard deviation and randomly samples from a Gaussian distribution
-    for a variational autoencoder
+    Samples random values from a Gaussian distribution for a variational autoencoder,
+    mean and standard deviation are the first and second half of the input channels with the last
+    channel ignored if there are an odd number
 
     Parameters
     ----------
@@ -213,40 +204,14 @@ def sample(kwargs: dict, layer: dict, check_params: bool = True):
         out_shape : list[integer], optional
             Shape of the network's output, required only if layer contains factor
     layer : dictionary
-        factor : float, optional
-            Output features is equal to the factor of the network's output,
-            will be used if provided, else features will be used
-        features : integer, optional
-            Number of output features for the layer,
-            if out_shape from kwargs and factor is provided, features will not be used
+        For compatibility
     check_params : boolean, default = True
         If layer arguments should be checked if they are valid
     """
-    supported_params = ['factor', 'features']
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    in_shape = kwargs['shape'][-1].copy()
-
-    # Remove channels dimension
-    if len(kwargs['shape'][-1]) > 1:
-        kwargs['module'].add_module(f"pre_reshape_{kwargs['i']}", Reshape([-1]))
-
-    # Number of features can be defined by either a factor of the output size or explicitly
-    try:
-        out_features = max(1, int(np.prod(kwargs['out_shape']) * layer['factor']))
-    except KeyError:
-        out_features = layer['features']
-
-    kwargs['module'].add_module(f"sample_{kwargs['i']}", Sample(np.prod(in_shape), out_features))
-
-    # Add channels dimension equal to input channels if input contains channels
-    if len(in_shape) > 1:
-        out_shape = [in_shape[0], int(out_features / in_shape[0])]
-        kwargs['module'].add_module(f"post_reshape_{kwargs['i']}", Reshape(out_shape))
-    else:
-        out_shape = [out_features]
-
-    kwargs['shape'].append(out_shape)
+    check_layer([], kwargs, layer, check_params=check_params)
+    kwargs['shape'].append(kwargs['shape'][-1].copy())
+    kwargs['shape'][-1][0] = int(kwargs['shape'][-1][0] / 2)
+    kwargs['module'].add_module(f"sample_{kwargs['i']}", Sample())
 
 
 def upsample(kwargs: dict, layer: dict, check_params: bool = True):

@@ -135,11 +135,8 @@ output = decoder(x)
   - `dropout`: float = 0.01, dropout probability
   - `batch_norm`: boolean = False, if batch normalisation should be used
   - `activation`: boolean = True, if a SELU activation should be used
-- `sample`: Predicts the mean and standard deviation of a Gaussian distribution
-  and randomly samples from it for a variational autoencoder
-  - `features`: optional integer, output size, won't be used if `factor` is provided
-  - `factor`: optional float, _features_ = `factor`$\times$_network output size_,
-    will be used if provided else `features` will be used
+- `sample`: Gets the mean and standard deviation of a Gaussian distribution from $C$ in the previous
+  layer, halving $C$, and randomly samples from it for a variational autoencoder
 - `upsample`: Linear interpolation scales layer input by two
 
 **Convolutional layers**

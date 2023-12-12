@@ -35,9 +35,6 @@ class Network(nn.Module):
         Network optimizer
     scheduler : ReduceLROnPlateau
         Optimizer scheduler
-    checkpoints : boolean, default = False
-        If outputs from each layer should not be saved to reduce memory usage, but with more limited
-        layer output referencing
     layer_num : integer, default = None
         Number of layers to use, if None use all layers
     latent_mse_weight : float, default = 1e-2
@@ -124,7 +121,7 @@ class Network(nn.Module):
             # Cloning layer
             elif layer['type'] == 'clone':
                 self.clone = x[..., :layer['number']].clone()
-            # Concatenation layers
+            # Concatenation layer
             elif layer['type'] == 'concatenate':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
                     x = _concatenate(layer, x, checkpoints)
@@ -138,13 +135,13 @@ class Network(nn.Module):
             elif layer['type'] == 'sample':
                 x, self.kl_loss = self.network[i](x)
                 self.kl_loss *= self.kl_loss_weight
-            # Shortcut layers
+            # Shortcut layer
             elif layer['type'] == 'shortcut':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
                     x = x + checkpoints[layer['layer']]
                 else:
                     x = x + outputs[layer['layer']]
-            # Skip layers
+            # Skip layer
             elif layer['type'] == 'skip':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
                     x = checkpoints[layer['layer']]
@@ -156,7 +153,6 @@ class Network(nn.Module):
 
             if not self._checkpoints:
                 outputs.append(x)
-
         return x
 
 
