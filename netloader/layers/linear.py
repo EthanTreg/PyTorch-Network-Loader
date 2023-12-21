@@ -19,14 +19,23 @@ class OrderedBottleneck(nn.Module):
     ----------
     device : Device
         Which device to use
+    min_size : integer, default = 0
+        Minimum gate size
 
     Methods
     -------
     forward(x)
         Forward pass of the information-ordered bottleneck layer
     """
-    def __init__(self):
+    def __init__(self, min_size: int = 0):
+        """
+        Parameters
+        ----------
+        min_size : integer, default = 0
+            Minimum gate size
+        """
         super().__init__()
+        self.min_size = min_size
         self.device = get_device()[1]
 
     def forward(self, x: Tensor) -> Tensor:
@@ -46,7 +55,7 @@ class OrderedBottleneck(nn.Module):
         if not self.training:
             return x
 
-        idx = np.random.randint(x.size(-1))
+        idx = np.random.randint(self.min_size, x.size(-1))
         gate = torch.zeros(x.size(-1)).to(self.device)
         gate[:idx + 1] = 1
         return x * gate
@@ -113,13 +122,17 @@ def ordered_bottleneck(kwargs: dict, layer: dict, check_params: bool = True):
         module : Sequential
             Sequential module to contain the layer
     layer : dictionary
-        For compatibility
+        min_size : integer, default = 0
+            Minimum gate size
     check_params : boolean, default = True
         If layer arguments should be checked if they are valid
     """
-    check_layer([], kwargs, layer, check_params=check_params)
+    layer = check_layer(['min_size'], kwargs, layer, check_params=check_params)
     kwargs['shape'].append(kwargs['shape'][-1].copy())
-    kwargs['module'].add_module(f"ordered_bottleneck_{kwargs['i']}", OrderedBottleneck())
+    kwargs['module'].add_module(
+        f"ordered_bottleneck_{kwargs['i']}",
+        OrderedBottleneck(layer['min_size']),
+    )
 
 
 def linear(kwargs: dict, layer: dict, check_params: bool = True):

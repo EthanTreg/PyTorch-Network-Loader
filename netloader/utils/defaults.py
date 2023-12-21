@@ -3,7 +3,9 @@ Default values for layers
 """
 DEFAULTS = {
   'checkpoints': False,
-  'ordered_bottleneck': {},
+  'ordered_bottleneck': {
+    'min_size': 0,
+  },
   'linear': {
     'batch_norm': False,
     'activation': True,

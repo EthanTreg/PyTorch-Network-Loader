@@ -189,7 +189,8 @@
       "bad_param": 1
     },
     {
-      "type": "ordered_bottleneck"
+      "type": "ordered_bottleneck",
+      "min_size": 0
     },
     {
       "type": "reshape",
