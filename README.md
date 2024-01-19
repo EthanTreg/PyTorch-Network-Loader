@@ -219,7 +219,8 @@ output = decoder(x)
 **Utility layers**
 - `checkpoint`: Saves the output from the previous layer for use in future layers
 - `clone`: Clones a number of features from the previous layer
-  - `number`: integer, number of values to clone from the previous layer
+  - `number`: integer, number of values to clone from the previous layer, if 0, will clone all
+    values in the previous layer
 - `concatenate`: Concatenates the previous layer with a specified layer
   - `layer`: integer, layer index to concatenate the previous layer with
   - `checkpoint`: boolean = False, if `layer` should be relative to checkpoints or network layers,

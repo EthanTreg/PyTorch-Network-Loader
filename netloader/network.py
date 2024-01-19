@@ -120,7 +120,10 @@ class Network(nn.Module):
                 checkpoints.append(x)
             # Cloning layer
             elif layer['type'] == 'clone':
-                self.clone = x[..., :layer['number']].clone()
+                if layer['number'] == 0:
+                    self.clone = x.clone()
+                else:
+                    self.clone = x[..., :layer['number']].clone()
             # Concatenation layer
             elif layer['type'] == 'concatenate':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
