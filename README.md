@@ -70,9 +70,8 @@ The following steps import the architecture into PyTorch:
 The network object has attributes:
 - `name`: string, name of the network configuration file (without extension)
 - `layers`: list\[dictionary\], layers with layer parameters
+- `checkpoints`: list\[Tensor\], cloned values from the network's `checkpoint` layers
 - `kl_loss`: Tensor, KL divergence loss on the latent space, if using a `sample` layer
-- `clone`: Tensor, cloned values from the network if using a `clone` layer
-- `extraction`: Tensor, values extracted from the network if using an `extraction` layer
 - `network`: ModuleList, network layers
 - `optimiser`: Optimizer, optimiser for the network
 - `scheduler`: ReduceLROnPlateau, scheduler for the optimiser
@@ -80,7 +79,6 @@ The network object has attributes:
 - `latent_mse_weight`: float = 1e-2, relative weight if performing an MSE loss on the latent space
 - `kl_loss_weight`: float = 1e-1,
   relative weight if performing a KL divergence loss on the latent space
-- `extraction_loss`: float = 1e-1, relative weight if performing a loss on the extracted features
 
 **Example `decoder.json`**
 
@@ -218,16 +216,11 @@ output = decoder(x)
 
 **Utility layers**
 - `checkpoint`: Saves the output from the previous layer for use in future layers
-- `clone`: Clones a number of features from the previous layer
-  - `number`: integer, number of values to clone from the previous layer, if 0, will clone all
-    values in the previous layer
 - `concatenate`: Concatenates the previous layer with a specified layer
   - `layer`: integer, layer index to concatenate the previous layer with
   - `checkpoint`: boolean = False, if `layer` should be relative to checkpoints or network layers,
     if `checkpoints` in `net` is True, `layer` will always be relative to checkpoints
   - `dim` : integer = 0, dimension to concatenate to (not including $N$)
-- `extract`: Extracts values from the previous layer to pass to the output
-  - `number`: integer, number of values to extract from the previous layer
 - `index`: Slices the output from the previous layer
   - `number`: integer, index slice number
   - `greater`: boolean = True, if slice should be values greater or less than _number_

@@ -118,25 +118,6 @@ def checkpoint(kwargs: dict, layer:dict, check_params: bool = True):
     kwargs['check_shape'].append(kwargs['shape'][-1].copy())
 
 
-def clone(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Constructs a layer to clone a number of values from the previous layer
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        shape : list[integer]
-            Shape of the outputs from each layer
-    layer : dictionary
-        number : integer
-            Number of values to clone from the previous layer
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    check_layer(['number'], kwargs, layer, check_params=check_params)
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-
-
 def concatenate(kwargs: dict, layer: dict, check_params: bool = True):
     """
     Constructs a concatenation layer to combine the outputs from two layers
@@ -182,28 +163,6 @@ def concatenate(kwargs: dict, layer: dict, check_params: bool = True):
 
     shape[dim] = shape[dim] + target[dim]
     kwargs['shape'].append(shape)
-
-
-def extract(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Extracts a number of values from the last dimension, returning two tensors
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-    layer : dictionary
-        number : integer
-            Number of values to extract from the previous layer
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    layer = check_layer(['number'], kwargs, layer, check_params=check_params)
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-    kwargs['shape'][-1][-1] -= layer['number']
 
 
 def index(kwargs: dict, layer: dict, check_params: bool = True):

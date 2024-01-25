@@ -164,17 +164,9 @@
       "type": "checkpoint"
     },
     {
-      "type": "clone",
-      "number": 0
-    },
-    {
       "type": "index",
       "number": 128,
       "greater": 0
-    },
-    {
-      "type": "extract",
-      "number": 64
     },
     {
       "type": "skip",

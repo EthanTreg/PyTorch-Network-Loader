@@ -61,11 +61,9 @@ DEFAULTS = {
     'bidirectional': None,
   },
   'checkpoint': {},
-  'clone': {},
   'concatenate': {
     'dim': 0,
   },
-  'extract': {},
   'index': {
     'greater': True,
   },

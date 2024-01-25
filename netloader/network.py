@@ -23,12 +23,10 @@ class Network(nn.Module):
         Layer output shapes
     layers : list[dictionary]
         Layers with layer parameters
+    checkpoints : list[Tensor]
+        Outputs from each checkpoint
     kl_loss : Tensor
         KL divergence loss on the latent space, if using a sample layer
-    clone : Tensor
-        Cloned values from the network if using a sample layer
-    extraction : Tensor
-        Values extracted from the network1 if using an extraction layer
     network : ModuleList
         Network construction
     optimiser : Optimizer
@@ -41,8 +39,6 @@ class Network(nn.Module):
         Relative weight if performing an MSE loss on the latent space
     kl_loss_weight : float, default = 1e-1
         Relative weight if performing a KL divergence loss on the latent space
-    extraction_loss : float, default = 1e-1
-        Relative weight if performing a loss on the extracted features
 
     Methods
     -------
@@ -74,10 +70,8 @@ class Network(nn.Module):
         self.layer_num = None
         self.latent_mse_weight = 1e-2
         self.kl_loss_weight = 1e-1
-        self.extraction_loss = 1e-1
         self.name = name
-        self.clone = None
-        self.extraction = None
+        self.checkpoints = []
         self.kl_loss = torch.tensor(0.)
 
         # Construct layers in network
@@ -109,7 +103,7 @@ class Network(nn.Module):
         Tensor
             Output tensor from the network
         """
-        checkpoints = []
+        self.checkpoints = []
 
         if not self._checkpoints:
             outputs = [x]
@@ -117,23 +111,13 @@ class Network(nn.Module):
         for i, layer in enumerate(self.layers[:self.layer_num]):
             # Checkpoint layer
             if layer['type'] == 'checkpoint':
-                checkpoints.append(x)
-            # Cloning layer
-            elif layer['type'] == 'clone':
-                if layer['number'] == 0:
-                    self.clone = x.clone()
-                else:
-                    self.clone = x[..., :layer['number']].clone()
+                self.checkpoints.append(x.clone())
             # Concatenation layer
             elif layer['type'] == 'concatenate':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
-                    x = _concatenate(layer, x, checkpoints)
+                    x = _concatenate(layer, x, self.checkpoints)
                 else:
                     x = _concatenate(layer, x, outputs)
-            # Extraction layer
-            elif layer['type'] == 'extract':
-                self.extraction = x[..., :layer['number']]
-                x = x[..., layer['number']:]
             # Sampling layer
             elif layer['type'] == 'sample':
                 x, self.kl_loss = self.network[i](x)
@@ -141,13 +125,13 @@ class Network(nn.Module):
             # Shortcut layer
             elif layer['type'] == 'shortcut':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
-                    x = x + checkpoints[layer['layer']]
+                    x = x + self.checkpoints[layer['layer']]
                 else:
                     x = x + outputs[layer['layer']]
             # Skip layer
             elif layer['type'] == 'skip':
                 if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
-                    x = checkpoints[layer['layer']]
+                    x = self.checkpoints[layer['layer']]
                 else:
                     x = outputs[layer['layer']]
             # All other layers
