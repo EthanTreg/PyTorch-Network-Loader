@@ -6,7 +6,7 @@ Allows the easy creation of neural networks in PyTorch using `.json` files.
 
 ### Using Within Projects
 
-- Add `netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@v0.2.4` to
+- Add `netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@LATEST-VERSION` to
   `requirements.txt`
 - Install using `pip install -r requirements.txt`
 - Example of [InceptionV4](https://arxiv.org/abs/1602.07261) can be downloaded under
