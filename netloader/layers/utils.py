@@ -56,7 +56,7 @@ def check_layer(
     """
     if check_params:
         keys = np.array(list(layer.keys()))
-        supported_params.append('type')
+        supported_params.extend(['type', 'group'])
 
         bad_params = np.argwhere(~np.isin(keys, supported_params)).ravel()
 

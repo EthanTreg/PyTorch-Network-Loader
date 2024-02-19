@@ -35,6 +35,8 @@ class Network(nn.Module):
         Optimizer scheduler
     layer_num : integer, default = None
         Number of layers to use, if None use all layers
+    group : integer, default = 0
+        Which group is the active group if a layer has the group attribute
     latent_mse_weight : float, default = 1e-2
         Relative weight if performing an MSE loss on the latent space
     kl_loss_weight : float, default = 1e-1
@@ -68,6 +70,7 @@ class Network(nn.Module):
         """
         super().__init__()
         self.layer_num = None
+        self.group = 0
         self.latent_mse_weight = 1e-2
         self.kl_loss_weight = 1e-1
         self.name = name
@@ -109,6 +112,9 @@ class Network(nn.Module):
             outputs = [x]
 
         for i, layer in enumerate(self.layers[:self.layer_num]):
+            if 'group' in layer and layer['group'] != self.group:
+                continue
+
             # Checkpoint layer
             if layer['type'] == 'checkpoint':
                 self.checkpoints.append(x.clone())
@@ -272,6 +278,8 @@ def _create_network(
         Path to the config file
     suppress_warning : boolean, default = False
         If output shape mismatch warning should be suppressed
+    defaults : dictionary, default = DEFAULTS
+        Default values for the parameters for each type of layer
 
     Returns
     -------
@@ -284,6 +292,9 @@ def _create_network(
     # Load network configuration file
     with open(config_path, 'r', encoding='utf-8') as config:
         config = json.load(config)
+
+    if defaults is None:
+        defaults = DEFAULTS
 
     if '2d' not in config['net']:
         config['net']['2d'] = False

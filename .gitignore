@@ -5,4 +5,3 @@ __pycache__/
 /build/
 **/*[Tt][Ee][Ss][Tt]*
 **/*[Tt][Ee][Mm][Pp]*
-!/network_configs/layer_test_network.json

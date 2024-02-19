@@ -76,6 +76,7 @@ The network object has attributes:
 - `optimiser`: Optimizer, optimiser for the network
 - `scheduler`: ReduceLROnPlateau, scheduler for the optimiser
 - `layer_num`: integer = None, number of layers to use, if None use all layers
+- `group`: integer = 0, which group is the active group if a layer has the group attribute
 - `latent_mse_weight`: float = 1e-2, relative weight if performing an MSE loss on the latent space
 - `kl_loss_weight`: float = 1e-1,
   relative weight if performing a KL divergence loss on the latent space
@@ -87,7 +88,7 @@ The network object has attributes:
   "net": {
     "2d": false,
     "linear": {
-      "dropout": 1
+      "dropout": 0.1
     }
   },
   "layers": [
@@ -121,7 +122,13 @@ output = decoder(x)
 
 ### Layer Types
 
-`layers` have several options, each with its own options:
+`layers` have several options, each with its own parameters.
+
+All layers can take the optional `group` parameter which means that that layer will only be active
+if the network attribute `group` is equal to the layer's `group`.  
+This is most useful if the head gets changed during training.  
+`skip` layers should be used between groups so that the expected input shape is correct.  
+See `layer_examples.json` under `network_configs` to see how to use groups and other layers.
 
 **Linear layers**
 - `ordered_bottleneck`: Information-ordered bottleneck to randomly change the size of the bottleneck

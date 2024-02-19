@@ -178,15 +178,28 @@
     },
     {
       "type": "sample",
-      "bad_param": 1
+      "bad_param": 1,
+      "group": 0
     },
     {
       "type": "ordered_bottleneck",
-      "min_size": 0
+      "min_size": 0,
+      "group": 0
+    },
+    {
+      "type": "skip",
+      "layer": -3,
+      "group": 1
     },
     {
       "type": "reshape",
       "output": [-1]
+    },
+    {
+      "type": "linear",
+      "features": 3,
+      "dropout": 0,
+      "group": 1
     }
   ]
 }
