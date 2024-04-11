@@ -8,7 +8,7 @@ import torch
 from torch import nn, optim, Tensor
 
 from netloader import layers
-from netloader.utils.defaults import DEFAULTS
+from netloader.layers.utils import BaseMultiLayer
 
 
 class Network(nn.Module):
@@ -25,8 +25,6 @@ class Network(nn.Module):
         Layers with layer parameters
     checkpoints : list[Tensor]
         Outputs from each checkpoint
-    kl_loss : Tensor
-        KL divergence loss on the latent space, if using a sample layer
     network : ModuleList
         Network construction
     optimiser : Optimizer
@@ -37,15 +35,17 @@ class Network(nn.Module):
         Number of layers to use, if None use all layers
     group : integer, default = 0
         Which group is the active group if a layer has the group attribute
-    latent_mse_weight : float, default = 1e-2
-        Relative weight if performing an MSE loss on the latent space
     kl_loss_weight : float, default = 1e-1
         Relative weight if performing a KL divergence loss on the latent space
+    kl_loss : Tensor, default = 0
+        KL divergence loss on the latent space, if using a sample layer
 
     Methods
     -------
-    forward(x)
+    forward(x) -> Tensor
         Forward pass of the network
+    to(*args, **kwargs) -> Network
+        Moves and/or casts the parameters and buffers
     """
     def __init__(
             self,
@@ -71,7 +71,6 @@ class Network(nn.Module):
         super().__init__()
         self.layer_num = None
         self.group = 0
-        self.latent_mse_weight = 1e-2
         self.kl_loss_weight = 1e-1
         self.name = name
         self.checkpoints = []
@@ -82,7 +81,6 @@ class Network(nn.Module):
             in_shape,
             out_shape,
             f'{config_dir}{name}.json',
-            defaults=DEFAULTS,
         )
 
         self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
@@ -98,14 +96,15 @@ class Network(nn.Module):
 
         Parameters
         ----------
-        x : Tensor
-            Input tensor
+        x : (N,...) Tensor
+            Input tensor with batch size N
 
         Returns
         -------
-        Tensor
+        (N,...) Tensor
             Output tensor from the network
         """
+        outputs = None
         self.checkpoints = []
 
         if not self._checkpoints:
@@ -115,147 +114,160 @@ class Network(nn.Module):
             if 'group' in layer and layer['group'] != self.group:
                 continue
 
-            # Checkpoint layer
-            if layer['type'] == 'checkpoint':
-                self.checkpoints.append(x.clone())
-            # Concatenation layer
-            elif layer['type'] == 'concatenate':
-                if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
-                    x = _concatenate(layer, x, self.checkpoints)
-                else:
-                    x = _concatenate(layer, x, outputs)
-            # Sampling layer
-            elif layer['type'] == 'sample':
-                x, self.kl_loss = self.network[i](x)
-                self.kl_loss *= self.kl_loss_weight
-            # Shortcut layer
-            elif layer['type'] == 'shortcut':
-                if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
-                    x = x + self.checkpoints[layer['layer']]
-                else:
-                    x = x + outputs[layer['layer']]
-            # Skip layer
-            elif layer['type'] == 'skip':
-                if ('checkpoint' in layer and layer['checkpoint']) or self._checkpoints:
-                    x = self.checkpoints[layer['layer']]
-                else:
-                    x = outputs[layer['layer']]
-            # All other layers
-            else:
-                x = self.network[i](x)
+            try:
+                x = self.network[i](x, outputs=outputs, checkpoints=self.checkpoints, net=self)
+            except RuntimeError:
+                log.error(f"Error in {layer['type']} (layer {i})")
+                raise
 
             if not self._checkpoints:
                 outputs.append(x)
         return x
 
+    def to(self, *args, **kwargs):
+        super().to(*args, **kwargs)
+        self.kl_loss = self.kl_loss.to(*args, **kwargs)
+        return self
 
-def _composite_layer(kwargs: dict, layer: dict) -> tuple[dict, list[dict], nn.ModuleList]:
+
+class Composite(BaseMultiLayer):
     """
     Creates a subnetwork from a configuration file
 
-    Parameters
+    Attributes
     ----------
-    kwargs : dictionary
-        i : integer
+    layers : ModuleList
+        Layers to loop through in the forward pass
+    shapes : list[list[integer]]
+        Layer output shapes
+
+    Methods
+    -------
+    forward(x) -> Tensor
+        Forward pass of the subnetwork
+    extra_repr() -> string
+        Displays layer parameters when printing the network
+    """
+    def __init__(
+            self,
+            net_check: bool,
+            idx: int,
+            name: str,
+            config_dir: str,
+            shapes: list[list[int]],
+            check_shapes: list[list[int]],
+            checkpoint: bool = False,
+            channels: int = None,
+            shape: list[int] = None,
+            defaults: dict = None,
+            **kwargs):
+        """
+        Parameters
+        ----------
+        net_check : boolean
+            If layer index should be relative to checkpoint layers
+        idx : integer
             Layer number
-        shape : list[integer]
+        name : string
+            Name of the subnetwork
+        config_dir : string
+            Path to the directory with the network configuration file
+        shapes : list[integer]
             Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-        out_shape : list[integer], optional
-            Shape of the network's output, required only if layer contains factor
-    layer : dictionary
-        config_path : string
-            Path to the .json file containing the block architecture
+        check_shapes : list[list[integer]]
+            Shape of the outputs from each checkpoint
+        checkpoint : boolean, default = False
+            If layer index should be relative to checkpoint layers
         channels : integer, optional
             Number of output channels, won't be used if out_shape is provided, if channels and
             out_shape aren't provided, the input dimensions will be preserved
-        out_shape : list[integer], optional
+        shape : list[integer], optional
             Output shape of the block, will be used if provided; otherwise, channels will be used
-        defaults : dictionary, optional
-            Default values for each layer that override the network's
-            default values, the dictionary contains sub-dictionaries named layer_name,
-            which contain the parameters found in the layers above with the corresponding layer name
+        defaults : dictionary, default = None
+            Default values for the parameters for each type of layer
 
-    Returns
-    -------
-    dictionary
-        Returns the input kwargs with any changes made by the function
-    """
-    suppress_warning = False
-    defaults = DEFAULTS.copy()
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(
+            net_check,
+            0,
+            shapes,
+            check_shapes,
+            checkpoint=checkpoint,
+            idx=idx,
+            **kwargs,
+        )
+        self._name = name
+        shapes.append(shapes[-1].copy())
 
-    # Subnetwork output if provided
-    if 'out_shape' in layer:
-        kwargs['shape'][-1] = layer['out_shape']
-    elif 'channels' in layer:
-        kwargs['shape'][-1][0] = layer['channels']
-    else:
-        suppress_warning = True
+        # Subnetwork output if provided
+        if shape:
+            shapes[-1] = shape
+        elif channels:
+            shapes[-1][0] = channels
 
-    # Override default values if composite layer has default values
-    if 'defaults' in layer.keys():
-        for key in layer['defaults'].keys():
-            defaults[key] = defaults[key] | layer['defaults'][key]
+        if '.json' not in self._name:
+            self._name += '.json'
 
-    # Create subnetwork
-    checkpoints, shapes, check_shapes, sub_layers, sub_network = _create_network(
-        kwargs['shape'][-2],
-        kwargs['shape'][-1],
-        layer['config_path'],
-        suppress_warning=suppress_warning,
-        defaults=defaults,
-    )
+        # Create subnetwork
+        _, self.shapes, *_, self.layers = _create_network(
+            shapes[-2],
+            shapes[-1],
+            f'{config_dir}{self._name}',
+            suppress_warning=True,
+            defaults=defaults,
+        )
+        shapes[-1] = self.shapes[-1]
 
-    # Fix layers that depend on other layers
-    for sub_layer in sub_layers:
-        if 'layer' not in sub_layer or (sub_layer['layer'] < 0 and not checkpoints):
-            continue
+    def forward(
+            self,
+            x: Tensor,
+            outputs: list[Tensor],
+            checkpoints: list[Tensor],
+            net: Network,
+            *_) -> Tensor:
+        """
+        Forward pass of the composite layer
 
-        if sub_layer['layer'] < 0:
-            sub_layer['checkpoint'] = 1
-        elif checkpoints or ('checkpoint' in layer and layer['checkpoint']):
-            sub_layer['layer'] += len(kwargs['check_shape'])
-            sub_layer['checkpoint'] = 1
-        else:
-            sub_layer['layer'] += kwargs['i']
+        Parameters
+        ----------
+        x : (N,...) Tensor
+            Input tensor with batch size N
 
-    kwargs['shape'][-1] = shapes[-1]
-    kwargs['check_shape'].extend(check_shapes)
-    return kwargs, sub_layers, sub_network
+        Returns
+        -------
+        (N,...) Tensor
+            Output tensor from the composite layer
+        """
+        outputs = None
+        checkpoints = []
 
+        if not self._checkpoint:
+            outputs = [x]
 
-def _concatenate(layer: dict, x: Tensor, outputs: list[Tensor]) -> Tensor:
-    """
-    Concatenates the output from the previous layer and from the specified layer along a
-    specified dimension
+        for i, layer in enumerate(self.layers):
+            try:
+                x = layer(x, outputs=outputs, checkpoints=checkpoints, net=net)
+            except RuntimeError:
+                log.error(f'Error in {type(layer).__name__} (layer {i})')
+                raise
 
-    Parameters
-    ----------
-    layer : dictionary
-        layer : integer
-            Layer index to concatenate the previous layer output with
-        dim : integer, default = 0
-            Dimension to concatenate to
-    x : Tensor
-        Output from the previous layer
-    outputs : list[Tensor]
-        Layer outputs to index for concatenation
+            if not self._checkpoint:
+                outputs.append(x)
 
-    Returns
-    -------
-    Tensor
-        Concatenated tensor
-    """
-    if 'dim' in layer and layer['dim'] >= 0:
-        dim = layer['dim'] + 1
-    elif 'dim' in layer:
-        dim = layer['dim']
-    else:
-        dim = 1
+        return x
 
-    return torch.cat((x, outputs[layer['layer']]), dim=dim)
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network
+
+        Returns
+        -------
+        string
+            Layer parameters
+        """
+        return f'name={self._name}, checkpoint={self._checkpoint}, out_shape={self.shapes[-1]}'
 
 
 def _create_network(
@@ -278,7 +290,7 @@ def _create_network(
         Path to the config file
     suppress_warning : boolean, default = False
         If output shape mismatch warning should be suppressed
-    defaults : dictionary, default = DEFAULTS
+    defaults : dictionary, default = None
         Default values for the parameters for each type of layer
 
     Returns
@@ -287,61 +299,47 @@ def _create_network(
         If layer outputs should not be saved, layer output shapes, checkpoint shapes,
         layers in the network with parameters and network construction
     """
-    layer_injections = 0
+    shapes = [in_shape]
+    check_shapes = []
+    net_check = False
+    module_list = nn.ModuleList()
+
+    if defaults is None:
+        defaults = {}
 
     # Load network configuration file
     with open(config_path, 'r', encoding='utf-8') as config:
         config = json.load(config)
 
-    if defaults is None:
-        defaults = DEFAULTS
+    if 'checkpoints' in config['net']:
+        net_check = config['net']['checkpoints']
 
-    if '2d' not in config['net']:
-        config['net']['2d'] = False
-
-    # Override defaults from net parameters
-    for key, value in config['net'].items():
-        if isinstance(value, dict):
-            defaults[key] = defaults[key] | value
-        else:
-            defaults[key] = value
-
-    kwargs = defaults | {
-        'shape': [in_shape],
-        'check_shape': [],
-        'out_shape': out_shape,
-    }
-    module_list = nn.ModuleList()
+    config['net'] = config['net'] | defaults
 
     # Create layers
     for i, layer in enumerate(config['layers'].copy()):
-        i += layer_injections
-        kwargs['i'] = i
-        kwargs['module'] = nn.Sequential()
+        if layer['type'] in config['net']:
+            layer = config['net'][layer['type']] | layer
 
-        # If layer is a composite layer, create the subnetwork
-        if layer['type'] == 'composite':
-            kwargs, sub_layers, sub_network = _composite_layer(kwargs, layer)
-            module_list.extend(sub_network)
-
-            # Replace composite layer with the subnetwork
-            del config['layers'][i]
-            config['layers'][i:i] = sub_layers
-            layer_injections += len(sub_layers) - 1
+        if layer['type'] == 'Composite':
+            layer_class = Composite
         else:
-            getattr(layers, layer['type'])(kwargs, layer)
-            module_list.append(kwargs['module'])
+            layer_class = getattr(layers, layer['type'])
+
+        module_list.append(layer_class(
+            net_check=net_check,
+            idx=i,
+            net_out=out_shape,
+            shapes=shapes,
+            check_shapes=check_shapes,
+            **layer,
+        ))
+        module_list[-1].initialise_layers()
 
     # Check network output dimensions
-    if not suppress_warning and kwargs['shape'][-1] != out_shape:
+    if not suppress_warning and shapes[-1] != out_shape:
         log.warning(
-            f"Network output shape {kwargs['shape'][-1]} != data output shape {out_shape}"
+            f'Network output shape {shapes[-1]} != data output shape {out_shape}'
         )
 
-    return (
-        kwargs['checkpoints'],
-        kwargs['shape'],
-        kwargs['check_shape'],
-        config['layers'],
-        module_list,
-    )
+    return net_check, shapes, check_shapes, config['layers'], module_list

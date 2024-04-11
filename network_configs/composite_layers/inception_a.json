@@ -1,77 +1,76 @@
 {
   "net": {
-    "dropout_prob": 0.1,
-    "2d": 1
+    "dropout_prob": 0.1
   },
   "layers": [
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "kernel": 1,
       "padding": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 64,
       "kernel": 1,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "padding": 1
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -4
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 64,
       "kernel": 1,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "padding": 1
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "padding": 1
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -5
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "pool",
+      "type": "Pool",
       "kernel": 3,
       "stride": 1,
       "padding": 1,
       "mode": "average"
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "kernel": 1,
       "padding": 0
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -4
     }
   ]

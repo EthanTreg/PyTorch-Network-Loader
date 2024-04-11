@@ -1,35 +1,36 @@
 {
   "net": {
-    "2d": 1,
     "checkpoints": 0,
     "Description": "Network to test that all layers are working",
-    "linear": {
+    "Linear": {
       "dropout": 1
     },
-    "convolutional": {
+    "Conv": {
       "dropout": 0.3
+    },
+    "Composite": {
+      "config_dir": "../network_configs/composite_layers/"
     }
   },
   "layers": [
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception.json",
+      "type": "Composite",
+      "name": "inception",
       "channels": 128,
       "defaults": {
-        "convolutional": {
+        "Conv": {
           "dropout": 0.2
         }
       }
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception.json",
+      "type": "Composite",
+      "name": "inception",
       "channels": 128
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 4,
-      "2d": 1,
       "dropout":1,
       "batch_norm": 1,
       "activation": 1,
@@ -38,78 +39,71 @@
       "padding": "same"
     },
     {
-      "type": "conv_depth_downscale",
-      "2d": 1,
+      "type": "ConvDepthDownscale",
       "batch_norm": 1,
       "activation": 1
     },
     {
-      "type": "conv_downscale",
+      "type": "ConvDownscale",
       "filters": 4,
-      "2d": 1,
       "dropout": 1,
       "batch_norm": 1,
       "activation": 1
     },
     {
-      "type": "conv_transpose",
+      "type": "ConvTranspose",
       "factor": 0.5,
       "dropout": 1,
-      "2d": 1,
       "batch_norm": 0,
       "activation": 1,
       "out_padding": 1
     },
     {
-      "type": "conv_upscale",
+      "type": "ConvUpscale",
       "filters": 2,
-      "2d": 1,
       "batch_norm": 0,
       "activation": 1,
       "kernel": 5
     },
     {
-      "type": "pool",
-      "2d": 1,
+      "type": "Pool",
       "kernel": 2,
       "stride": 2,
       "padding": 0,
       "mode": "max"
     },
     {
-      "type": "pool_downscale",
-      "factor": 2,
-      "2d": 1,
+      "type": "PoolDownscale",
+      "scale": 2,
       "mode": "average"
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 32,
       "stride": 2,
       "padding": 1,
       "kernel": 3
     },
     {
-      "type": "sample"
+      "type": "Sample"
     },
     {
-      "type": "reshape",
-      "output": [4, -1]
+      "type": "Reshape",
+      "shape": [4, -1]
     },
     {
-      "type": "recurrent",
+      "type": "Recurrent",
       "dropout": 0.1,
       "batch_norm": 1,
-      "activation": 1,
+      "activation": 0,
       "layers": 2,
       "filters": 4,
       "method": "rnn",
       "bidirectional": "concatenate"
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 128,
-      "2d": 0,
       "dropout": 0,
       "batch_norm": 1,
       "activation": 0,
@@ -118,86 +112,85 @@
       "padding": 1
     },
     {
-      "type": "sample"
+      "type": "Sample"
     },
     {
-      "type": "adaptive_pool",
-      "output": [1],
-      "2d": 0
+      "type": "AdaptivePool",
+      "shape": [1]
     },
     {
-      "type": "upsample"
+      "type": "Upsample"
     },
     {
-      "type": "reshape",
-      "output": [-1]
+      "type": "Reshape",
+      "shape": [-1]
     },
     {
-      "type": "checkpoint"
+      "type": "Checkpoint"
     },
     {
-      "type": "reshape",
-      "output": [1, -1]
+      "type": "Reshape",
+      "shape": [1, -1]
     },
     {
-      "type": "linear",
+      "type": "Linear",
       "features": 128,
       "batch_norm": 1,
       "activation": 1
     },
     {
-      "type": "reshape",
-      "output": [-1]
+      "type": "Reshape",
+      "shape": [-1]
     },
     {
-      "type": "shortcut",
+      "type": "Shortcut",
       "checkpoint": 1,
       "layer": -1
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "checkpoint": 1,
       "layer": -1,
       "dim": -1
     },
     {
-      "type": "checkpoint"
+      "type": "Checkpoint"
     },
     {
-      "type": "index",
+      "type": "Index",
       "number": 128,
       "greater": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": -4
     },
     {
-      "type": "reshape",
-      "output": [2, -1]
+      "type": "Reshape",
+      "shape": [2, -1]
     },
     {
-      "type": "sample",
+      "type": "Sample",
       "bad_param": 1,
       "group": 0
     },
     {
-      "type": "ordered_bottleneck",
+      "type": "OrderedBottleneck",
       "min_size": 0,
       "group": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": -3,
       "group": 1
     },
     {
-      "type": "reshape",
-      "output": [-1]
+      "type": "Reshape",
+      "shape": [-1]
     },
     {
-      "type": "linear",
-      "features": 3,
+      "type": "Linear",
+      "factor": 1,
       "dropout": 0,
       "group": 1
     }

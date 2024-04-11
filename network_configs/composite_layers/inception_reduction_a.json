@@ -5,42 +5,42 @@
   },
   "layers": [
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 384,
       "stride": 2,
       "padding": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 192,
       "kernel": 1,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 224,
       "padding": 1
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 256,
       "stride": 2,
       "padding": 0
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": 1
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "pool",
+      "type": "Pool",
       "kernel": 3,
       "stride": 2,
       "padding": 0

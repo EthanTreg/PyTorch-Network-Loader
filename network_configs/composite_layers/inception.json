@@ -1,78 +1,77 @@
 {
   "net": {
-    "2d": 1,
     "checkpoints": 1
   },
   "layers": [
     {
-      "type": "checkpoint"
+      "type": "Checkpoint"
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "factor": 0.25,
       "kernel": 1
     },
     {
-      "type": "checkpoint"
+      "type": "Checkpoint"
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "factor": 0.375,
       "kernel": 1
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "factor": 0.5
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -1
     },
     {
-      "type": "checkpoint"
+      "type": "Checkpoint"
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "factor": 0.0625,
       "kernel": 1
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "factor": 0.125,
       "kernel": 5
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -1
     },
     {
-      "type": "checkpoint"
+      "type": "Checkpoint"
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "pool",
+      "type": "Pool",
       "kernel": 3,
       "stride": 1,
       "padding": "same"
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "factor": 0.125,
       "kernel": 1
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -1
     }
   ]

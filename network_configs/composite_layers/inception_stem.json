@@ -5,101 +5,101 @@
   },
   "layers": [
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 32,
       "stride": 2,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 32,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 64,
       "padding": 1
     },
     {
-      "type": "pool",
+      "type": "Pool",
       "kernel": 3,
       "stride": 2,
       "padding": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": -2
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "stride": 2,
       "padding": 0
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -3
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 64,
       "kernel": 1,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "padding": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": -3
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 64,
       "kernel": 1,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 64,
       "kernel": [1, 7],
       "padding": [0, 3]
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 64,
       "kernel": [7, 1],
       "padding": [3, 0]
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 96,
       "padding": 0
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -6
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 192,
       "stride": 2,
       "padding": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": -2
     },
     {
-      "type": "pool",
+      "type": "Pool",
       "kernel": 3,
       "stride": 2,
       "padding": 0
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -3
     }
   ]

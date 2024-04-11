@@ -1,108 +1,107 @@
 {
   "net": {
-    "dropout_prob": 0.1,
-    "2d": 1
+    "dropout_prob": 0.1
   },
   "layers": [
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 384,
       "kernel": 1,
       "stride": 1,
       "padding": 0
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 192,
       "kernel": 1,
       "stride": 1,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 224,
       "kernel": [1, 7],
       "stride": 1,
       "padding": [0, 3]
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 256,
       "kernel": [7, 1],
       "stride": 1,
       "padding": [3, 0]
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -5
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 192,
       "kernel": 1,
       "stride": 1,
       "padding": 0
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 192,
       "kernel": [7, 1],
       "stride": 1,
       "padding": [3, 0]
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 224,
       "kernel": [1, 7],
       "stride": 1,
       "padding": [0, 3]
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 224,
       "kernel": [7, 1],
       "stride": 1,
       "padding": [3, 0]
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 256,
       "kernel": [1, 7],
       "stride": 1,
       "padding": [0, 3]
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -7
     },
     {
-      "type": "skip",
+      "type": "Skip",
       "layer": 0
     },
     {
-      "type": "pool",
+      "type": "Pool",
       "mode": "average",
       "kernel": 3,
       "stride": 1,
       "padding": 1
     },
     {
-      "type": "convolutional",
+      "type": "Conv",
       "filters": 128,
       "kernel": 1,
       "stride": 1,
       "padding": 0
     },
     {
-      "type": "concatenate",
+      "type": "Concatenate",
       "layer": -4
     }
   ]

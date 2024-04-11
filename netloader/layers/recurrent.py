@@ -6,150 +6,150 @@ import numpy as np
 from torch import nn, Tensor
 
 from netloader.layers.misc import Reshape
-from netloader.layers.utils import optional_layer, check_layer
+from netloader.layers.utils import BaseLayer
 
 
-class Recurrent(nn.Module):
-    """
-    Recurrent wrapper for compatibility with network & can handle output of bidirectional RNNs
-
-    Attributes
-    ----------
-    bidirectional : string, default = None
-        If GRU is bidirectional, and if so, what method to use,
-        can be either mean, sum or concatenation,
-        if None, GRU is mono-directional and concatenate will be used
-
-    Methods
-    -------
-    forward(x)
-        Forward pass of the recurrent layer
-    """
-    def __init__(self, recurrent_layer: nn.Module, bidirectional: str = None):
-        """
-        Parameters
-        ----------
-        bidirectional : string, default = None
-            If GRU is bidirectional, and if so, what method to use,
-            can be either mean, sum or concatenate,
-            if None, GRU is mono-directional and concatenation will be used
-        """
-        super().__init__()
-        self.options = [None, 'sum', 'mean', 'concatenate']
-        self.bidirectional = bidirectional
-        self.recurrent_layer = recurrent_layer
-
-        if self.bidirectional not in self.options:
-            raise ValueError(
-                f'{self.bidirectional} is not a valid bidirectional method, options: {self.options}'
-            )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """
-        Forward pass of the recurrent layer
-
-        Parameters
-        ----------
-        x : Tensor, shape (N, 1, L)
-            Input tensor
-
-        Returns
-        -------
-        Tensor, shape (N, 1, L)
-            Output tensor
-        """
-        x = self.recurrent_layer(torch.transpose(x, 1, 2))[0]
-
-        if self.bidirectional and self.bidirectional != self.options[3]:
-            x = x.view(*x.size()[:2], 2, -1)
-
-            if self.bidirectional == self.options[1]:
-                x = torch.sum(x, dim=-2)
-            elif self.bidirectional == self.options[2]:
-                x = torch.mean(x, dim=-2)
-
-        return torch.transpose(x, 1, 2)
-
-
-def recurrent(kwargs: dict, layer: dict, check_params: bool = True):
+class Recurrent(BaseLayer):
     """
     Recurrent layer constructor for either RNN, GRU or LSTM
 
-    Parameters
+    Attributes
     ----------
-    kwargs : dictionary
-        i : integer
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+
+    Methods
+    -------
+    forward(x) -> Tensor
+        Forward pass of the recurrent layer
+    extra_repr() -> string
+        Displays layer parameters when printing the network
+    """
+    def __init__(
+            self,
+            idx: int,
+            shapes: list[list[int]],
+            batch_norm: bool = False,
+            activation: bool = True,
+            layers: int = 2,
+            filters: int = 1,
+            dropout: float = 0.1,
+            method: str = 'gru',
+            bidirectional: str = None,
+            **kwargs):
+        """
+        Parameters
+        ----------
+        idx : integer
             Layer number
-        shape : list[integer]
+        shapes : list[list[integer]]
             Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-    layer : dictionary
-        dropout : float, default =  0.1
-            Probability of dropout
-        batch_norm : boolean, default = 0
+        batch_norm : boolean, default = False
             If batch normalisation should be used
         activation : boolean, default = True
             If ELU activation should be used
         layers : integer, default = 2
-            Number of stacked GRU layers
+            Number of stacked recurrent layers
         filters : integer, default = 1
             Number of output filters
-        method : string, default = gru
-            Type of recurrent layer, can be gru, lstm or rnn
-        bidirectional : string, default = None
-            If a bidirectional recurrence should be used and
-            method for combining the two directions, can be sum, mean or concatenation
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = [
-        'dropout',
-        'batch_norm',
-        'activation',
-        'layers',
-        'filters',
-        'method',
-        'bidirectional',
-    ]
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
+        dropout : float, default =  0.1
+            Probability of dropout, requires layers > 1
+        method : {'gru', 'rnn', 'lstm'}
+            Type of recurrent layer
+        bidirectional : {None, 'sum', 'mean', 'concatenate'}
+            If a bidirectional recurrence should be used and method for combining the two
+            directions
 
-    kwargs['shape'].append([kwargs['shape'][-1][0], np.prod(kwargs['shape'][-1][1:])])
-    layers = layer['layers']
-    kwargs['shape'][-1][0] = layer['filters']
-    bidirectional = layer['bidirectional']
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(idx=idx, **kwargs)
+        self._activation = activation
+        self._batch_norm = batch_norm
+        self._dropout = dropout
+        self._method = method
+        self._bidirectional = bidirectional
+        self._options = [None, 'sum', 'mean', 'concatenate']
+        shape = [filters, np.prod(shapes[-1][1:])]
 
-    if layers == 1:
-        dropout = 0
-    else:
-        dropout = layer['dropout']
+        if self._bidirectional not in self._options:
+            raise ValueError(f'{self._bidirectional} in layer {idx} is not a valid bidirectional '
+                             f'method, valid options are: {self._options}')
 
-    recurrent_kwargs = {
-        'input_size': kwargs['shape'][-2][0],
-        'hidden_size': kwargs['shape'][-1][0],
-        'num_layers': layers,
-        'batch_first': True,
-        'dropout': dropout,
-        'bidirectional': bidirectional is not None,
-    }
+        if layers == 1:
+            self._dropout = 0
 
-    if bidirectional == 'concatenate':
-        kwargs['shape'][-1][0] *= 2
+        recurrent_kwargs = {
+            'input_size': shapes[-1][0],
+            'hidden_size': shape[0],
+            'num_layers': layers,
+            'batch_first': True,
+            'dropout': self._dropout,
+            'bidirectional': self._bidirectional is not None,
+        }
 
-    if layer['method'] == 'rnn':
-        recurrent_layer = nn.RNN(**recurrent_kwargs, nonlinearity='relu')
-    elif layer['method'] == 'lstm':
-        recurrent_layer = nn.LSTM(**recurrent_kwargs)
-    else:
-        recurrent_layer = nn.GRU(**recurrent_kwargs)
+        if bidirectional == 'concatenate':
+            shape[0] *= 2
 
-    # Convert 2D data to 1D and add recurrent layer
-    kwargs['module'].add_module(f"reshape_{kwargs['i']}", Reshape([kwargs['shape'][-2][0], -1]))
-    kwargs['module'].add_module(
-        f"recurrent_{kwargs['i']}",
-        Recurrent(recurrent_layer, bidirectional=bidirectional)
-    )
+        if self._method == 'rnn':
+            recurrent = nn.RNN(**recurrent_kwargs, nonlinearity='relu')
+        elif self._method == 'lstm':
+            recurrent = nn.LSTM(**recurrent_kwargs)
+        else:
+            recurrent = nn.GRU(**recurrent_kwargs)
 
-    # Optional layers
-    optional_layer('batch_norm', kwargs, layer, nn.BatchNorm1d(kwargs['shape'][-1][0]))
-    optional_layer('activation', kwargs, layer, nn.ELU())
+        # Convert 2D data to 1D and add recurrent layer
+        self.layers.append(Reshape([shapes[-1][0], -1]))
+        self.layers.append(recurrent)
+
+        # Optional layers
+        if self._activation and self._method != 'rnn':
+            self.layers.append(nn.ELU())
+
+        if self._batch_norm:
+            self.layers.append(nn.BatchNorm1d(shape[0]))
+
+        shapes.append(shape)
+
+    def forward(self, x: Tensor, **_) -> Tensor:
+        r"""
+        Forward pass of the recurrent layer
+
+        Parameters
+        ----------
+        x : `(N,C_{in},L)` Tensor
+            Input tensor
+
+        Returns
+        -------
+        `(N,C_{out},L)` Tensor
+            Output tensor
+        """
+        x = self.layers[0](x)
+        x = self.layers[1](torch.transpose(x, 1, 2))[0]
+
+        if self._bidirectional in ['sum', 'mean']:
+            x = x.view(*x.size()[:2], 2, -1)
+
+            if self._bidirectional == self._options[1]:
+                x = torch.sum(x, dim=-2)
+            elif self._bidirectional == self._options[2]:
+                x = torch.mean(x, dim=-2)
+
+        x = torch.transpose(x, 1, 2)
+
+        for layer in self.layers[2:]:
+            x = layer(x)
+
+        return x
+
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network
+
+        Returns
+        -------
+        string
+            Layer parameters
+        """
+        return f'bidirectional_method={self._bidirectional}, activation={bool(self._activation)}'

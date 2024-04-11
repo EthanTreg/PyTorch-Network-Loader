@@ -1,91 +1,741 @@
 """
 Convolutional network layers
 """
-import numpy as np
+import torch
 from torch import nn, Tensor
 
-from netloader.layers.utils import optional_layer, check_layer
+from netloader.layers.utils import BaseLayer
 
 
-class PixelShuffle1d(nn.Module):
+class AdaptivePool(BaseLayer):
     """
-    Used for upscaling by scale factor r for an input (*, C x r, L) to an output (*, C, L x r)
-
-    Equivalent to torch.nn.PixelShuffle but for 1D
+    Uses pooling to downscale the input to the desired shape
 
     Attributes
     ----------
-    upscale_factor : integer
-        Upscaling factor
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
 
     Methods
     -------
-    forward(x)
-        Forward pass of PixelShuffle1D
+    forward(x) -> Tensor
+        Forward pass of the adaptive pool layer
+    extra_repr() -> str
+        Displays layer parameters when printing the network
     """
-    def __init__(self, upscale_factor: int):
+    def __init__(
+            self,
+            idx: int,
+            shape: int | list[int],
+            shapes: list[list[int]],
+            channels: bool = True,
+            mode: str = 'average',
+            **kwargs):
         """
         Parameters
         ----------
-        upscale_factor : integer
-            Upscaling factor
-        """
-        super().__init__()
-        self.upscale_factor = upscale_factor
+        idx : integer
+            Layer number
+        shape : integer | list[integer]
+            Output shape of the layer
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        channels : boolean, default = True
+            If the input includes a channels dimension
+        mode : {'average', 'max'}
+            Whether to use 'max' or 'average' pooling
 
-    def forward(self, x: Tensor) -> Tensor:
+        **kwargs
+            Leftover parameters to pass to base layer for checking
         """
+        super().__init__(idx=idx, **kwargs)
+        self._channels = channels
+        self._mode = mode
+        self._out_shape = shape
+        adapt_pool = [
+            [nn.AdaptiveAvgPool1d, nn.AdaptiveAvgPool2d, nn.AdaptiveAvgPool3d],
+            [nn.AdaptiveMaxPool1d, nn.AdaptiveMaxPool2d, nn.AdaptiveMaxPool3d],
+        ]
+
+        if self._mode == 'average':
+            adapt_pool = adapt_pool[0]
+        else:
+            adapt_pool = adapt_pool[1]
+
+        if len(shapes[-1]) - self._channels - 1 > len(adapt_pool):
+            raise ValueError(
+                f'Input shape {shapes[-1]} in layer {idx} has too many dimensions if channels is '
+                f'{bool(self._channels)}, maximum supported dimensions is 4 if channels is True'
+            )
+
+        self.layers.append(adapt_pool[len(shapes[-1]) - self._channels - 1](self._out_shape))
+
+        if isinstance(self._out_shape, int):
+            self._out_shape = [self._out_shape] * (len(shapes[-1]) - self._channels)
+        elif len(self._out_shape) == 1:
+            self._out_shape = self._out_shape * (len(shapes[-1]) - self._channels)
+        elif len(self._out_shape) != len(shapes[-1]) - self._channels:
+            raise ValueError(
+                f'Target output shape {self._out_shape} in layer {idx} does not match the input '
+                f'shape {shapes[-1]} if channels is {bool(self._channels)}, output shape must be '
+                f'either 1, or {len(shapes[-1]) - self._channels}'
+            )
+
+        shapes.append(shapes[-1].copy())
+        shapes[-1][self._channels:] = self._out_shape
+
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network
+
+        Returns
+        -------
+        string
+            Layer parameters
+        """
+        return f'channels={bool(self._channels)}, mode={self._mode}'
+
+
+class Conv(BaseLayer):
+    """
+    Convolutional layer constructor
+
+    Supports 1D and 2D convolution
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            idx: int,
+            shapes: list[list[int]],
+            filters: int = None,
+            factor: float = None,
+            net_out: list[int] = None,
+            batch_norm: bool = False,
+            activation: bool = True,
+            stride: int | list[int] = 1,
+            kernel: int | list[int] = 3,
+            padding: int | str | list[int] = 'same',
+            dropout: float = 0.1,
+            **kwargs):
+        """
+        Parameters
+        ----------
+        idx : integer
+            Layer number
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
+        net_out : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
+        batch_norm : boolean, default = False
+            If batch normalisation should be used
+        activation : boolean, default = True
+            If ELU activation should be used
+        stride : integer | list[integer], default = 1
+            Stride of the kernel
+        kernel : integer | list[integer], default = 3
+            Size of the kernel
+        padding : integer | string | list[integer], default = 'same'
+            Input padding, can an integer, list of integers or
+            'same' where 'same' preserves the input shape
+        dropout : float, default = 0.1
+            Probability of dropout
+
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(idx=idx, **kwargs)
+        self._activation = activation
+        self._batch_norm = batch_norm
+        self._dropout = dropout
+        shape = shapes[-1].copy()
+
+        if isinstance(padding, str) and padding != 'same':
+            raise ValueError(f'Unknown padding: {padding} in layer {idx}, padding must be either '
+                             f"'same' or an integer")
+
+        if padding != 'same' and (
+                torch.tensor(shape[1:]) + torch.tensor(padding) < torch.tensor(kernel)
+        ).any():
+            raise ValueError(f'Kernel size {kernel} in layer {idx} is too large for input shape '
+                             f'{shape} and padding {padding}')
+
+        if (torch.tensor(stride) > 1).any() and padding == 'same':
+            raise ValueError(f'Same padding in layer {idx} is not supported for strided '
+                             f'convolution')
+
+        if factor:
+            shape[0] = max(1, int(net_out[0] * factor))
+        elif filters:
+            shape[0] = filters
+        else:
+            raise ValueError(f'Either factor or filters is required as input in layer {idx}')
+
+        if len(shape) == 2:
+            conv = nn.Conv1d
+            dropout = nn.Dropout1d
+            batch_norm = nn.BatchNorm1d
+        elif len(shape) == 3:
+            conv = nn.Conv2d
+            dropout = nn.Dropout2d
+            batch_norm = nn.BatchNorm2d
+        elif len(shape) == 4:
+            conv = nn.Conv3d
+            dropout = nn.Dropout3d
+            batch_norm = nn.BatchNorm3d
+        else:
+            raise ValueError(f'Convolution in layer {idx} does not support tensors with more than '
+                             f'4 dimensions or less than 2, input shape is {shape}')
+
+        self.layers.append(conv(
+            in_channels=shapes[-1][0],
+            out_channels=shape[0],
+            kernel_size=kernel,
+            stride=stride,
+            padding=padding,
+            padding_mode='replicate',
+        ))
+
+        # Optional layers
+        if self._activation:
+            self.layers.append(nn.ELU())
+
+        if self._batch_norm:
+            self.layers.append(batch_norm(shape[0]))
+
+        if self._dropout:
+            self.layers.append(dropout(self._dropout))
+
+        if padding == 'same':
+            shapes.append(shape)
+        else:
+            shapes.append(_kernel_shape(stride, kernel, padding, shape))
+
+
+class ConvDepthDownscale(Conv):
+    """
+    Constructs depth downscaler using convolution with kernel size of 1
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            idx: int,
+            shapes: list[list[int]],
+            net_out: list[int],
+            batch_norm: bool = False,
+            activation: bool = True,
+            dropout: float = 0,
+            **kwargs):
+        """
+        Parameters
+        ----------
+        idx : integer
+            Layer number
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        net_out : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
+        batch_norm : boolean, default = False
+            If batch normalisation should be used
+        activation : boolean, default = True
+            If ELU activation should be used
+        dropout : float, default = 0
+            Probability of dropout
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(
+            idx=idx,
+            shapes=shapes,
+            filters=1,
+            net_out=net_out,
+            batch_norm=batch_norm,
+            activation=activation,
+            stride=1,
+            dropout=dropout,
+            kernel=1,
+            padding='same',
+            **kwargs,
+        )
+
+
+class ConvDownscale(Conv):
+    """
+    Constructs a strided convolutional layer for downscaling
+
+    The scale factor is equal to the stride and kernel size
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(self,
+                 idx: int,
+                 shapes: list[list[int]],
+                 filters: int = None,
+                 factor: float = None,
+                 net_out: list[int] = None,
+                 batch_norm: bool = False,
+                 activation: bool = True,
+                 scale: int = 2,
+                 dropout: float = 0.1,
+                 **kwargs):
+        """
+        Parameters
+        ----------
+        idx : integer
+            Layer number
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
+        net_out : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
+        batch_norm : boolean, default = False
+            If batch normalisation should be used
+        activation : boolean, default = True
+            If ELU activation should be used
+        scale : integer, default = 2
+            Stride and size of the kernel, which acts as the downscaling factor
+        dropout : float, default = 0.1
+            Probability of dropout
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(
+            idx=idx,
+            shapes=shapes,
+            filters=filters,
+            factor=factor,
+            net_out=net_out,
+            batch_norm=batch_norm,
+            activation=activation,
+            stride=scale,
+            dropout=dropout,
+            kernel=scale,
+            padding=0,
+            **kwargs,
+        )
+
+
+class ConvTranspose(BaseLayer):
+    """
+    Constructs a transpose convolutional layer with fractional stride for input upscaling
+
+    Supports 1D and 2D transposed convolution
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            idx: int,
+            shapes: list[list[int]],
+            filters: int = None,
+            factor: float = None,
+            net_out: list[int] = None,
+            batch_norm: bool = False,
+            activation: bool = True,
+            scale: int = 2,
+            out_padding: int = 0,
+            dropout: float = 0.1,
+            **kwargs):
+        """
+        Parameters
+        ----------
+        idx : integer
+            Layer number
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
+        net_out : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
+        batch_norm : boolean, default = False
+            If batch normalisation should be used
+        activation : boolean, default = True
+            If ELU activation should be used
+        scale : integer, default = 2
+            Stride and size of the kernel, which acts as the upscaling factor
+        out_padding : integer, default = 0
+            Padding applied to the output
+        dropout : float, default =  0.1
+            Probability of dropout
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(idx=idx, **kwargs)
+        shape = shapes[-1].copy()
+        self._activation = activation
+        self._batch_norm = batch_norm
+        self._dropout = dropout
+
+        if out_padding > scale:
+            raise ValueError(f'Output padding of {out_padding} in layer {idx} must be smaller than '
+                             f'the scale factor {scale}')
+
+        if factor:
+            shape[0] = max(1, int(net_out[0] * factor))
+        elif filters:
+            shape[0] = filters
+        else:
+            raise ValueError(f'Either factor or filters is required as input in layer {idx}')
+
+        if len(shape) > 2:
+            transpose = nn.ConvTranspose2d
+            dropout = nn.Dropout2d
+            batch_norm = nn.BatchNorm2d
+        else:
+            transpose = nn.ConvTranspose1d
+            dropout = nn.Dropout1d
+            batch_norm = nn.BatchNorm1d
+
+        self.layers.append(transpose(
+            in_channels=shapes[-1][0],
+            out_channels=shape[0],
+            kernel_size=scale,
+            stride=scale,
+            output_padding=out_padding,
+        ))
+
+        # Optional layers
+        if self._activation:
+            self.layers.append(nn.ELU())
+
+        if self._batch_norm:
+            self.layers.append(batch_norm(shape[0]))
+
+        if self._dropout:
+            self.layers.append(dropout(self._dropout))
+
+        # Data size doubles
+        shape[1:] = [length * scale + out_padding for length in shape[1:]]
+        shapes.append(shape)
+
+
+class ConvUpscale(Conv):
+    """
+    Constructs an upscaler using a convolutional layer and pixel shuffling.
+
+    Supports 1D and 2D convolutional upscaling.
+
+    See `Real-Time Single Image and Video Super-Resolution Using an Efficient Sub-Pixel
+    Convolutional Neural Network <https://arxiv.org/abs/1609.05158>`_ by Shi et al. (2016) for
+    details.
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            idx: int,
+            shapes: list[list[int]],
+            filters: int = None,
+            factor: float = None,
+            net_out: list[int] = None,
+            batch_norm: bool = False,
+            activation: bool = True,
+            scale: int = 2,
+            kernel: int | list[int] = 3,
+            dropout: float = 0,
+            **kwargs):
+        """
+        Parameters
+        ----------
+        idx : integer
+            Layer number
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        filters : integer, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
+        net_out : list[integer], optional
+            Shape of the network's output, required only if layer contains factor
+        batch_norm : boolean, default = False
+            If batch normalisation should be used
+        activation : boolean, default = True
+            If ELU activation should be used
+        scale : integer, default = 2
+            Factor to upscale the input by
+        kernel : integer | list[integer], default = 3
+            Size of the kernel
+        dropout : float, default =  0
+            Probability of dropout
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        filters_scale = scale ** (len(shapes[-1]) - 1)
+
+        if factor:
+            filters = int(max(1, shapes[-1][0] * factor) * filters_scale)
+        elif filters:
+            filters = int(filters * filters_scale)
+        else:
+            raise ValueError(f'Either factor or filters is required as input in layer {idx}')
+
+        # Convolutional layer
+        super().__init__(
+            idx=idx,
+            shapes=shapes,
+            filters=filters,
+            net_out=net_out,
+            batch_norm=batch_norm,
+            activation=activation,
+            stride=1,
+            dropout=dropout,
+            kernel=kernel,
+            padding='same',
+            **kwargs,
+        )
+
+        # Upscaling done using pixel shuffling
+        self.layers.append(PixelShuffle(scale))
+        shapes[-1][0] = shapes[-1][0] // filters_scale
+        shapes[-1][1:] = [length * scale for length in shapes[-1][1:]]
+
+
+class PixelShuffle(BaseLayer):
+    r"""
+    Used for upscaling by scale factor :math:`r` for an input :math:`(N,C\times r^n,D_1,...,D_n)` to
+    an output :math:`(N,C,D_1\times r,...,D_n\times r)`
+
+    Equivalent to :class:`torch.nn.PixelShuffle`, but for nD
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+
+    Methods
+    -------
+    forward(x) -> Tensor
+        Forward pass of pixel shuffle
+    extra_repr() -> str
+        Displays layer parameters when printing the network
+    """
+    def __init__(self, scale: int, idx: int = 0, shapes: list[list[int]] = None, **kwargs):
+        """
+        Parameters
+        ----------
+        scale : integer
+            Upscaling factor
+        idx : integer, default = 0
+            Layer number
+        shapes : list[list[integer]], default = None
+            Shape of the outputs from each layer
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(idx=idx, **kwargs)
+        self._scale = scale
+
+        if not shapes:
+            return
+
+        filters_scale = self._scale ** (len(shapes[-1]) - 1)
+
+        if shapes[-1][0] % filters_scale != 0:
+            raise ValueError(f'Number of filters {shapes[-1]} in layer {idx} must be an integer '
+                             f'multiple of {filters_scale}')
+
+        shapes.append(shapes[-1].copy())
+        shapes[-1][0] = shapes[-1][0] // filters_scale
+        shapes[-1][1:] = [length * self._scale for length in shapes[-1][1:]]
+
+    def forward(self, x: Tensor, **_) -> Tensor:
+        r"""
         Forward pass of pixel shuffle
 
         Parameters
         ----------
-        x : Tensor, shape (*, C x r, L)
+        x : :math:`(N,C\times r^n,D_1,...,D_n)` Tensor
             Input tensor
 
         Returns
         -------
-        Tensor, (*, C, L x r)
+        :math:`(N,C,D_1\times r,...,D_n\times r)` Tensor
             Output tensor
         """
-        output_channels = x.size(1) // self.upscale_factor
-        output_size = self.upscale_factor * x.size(2)
+        filters_scale = self._scale ** (len(x.shape[2:]))
+        output_channels = x.size(1) // filters_scale
+        output_shape = self._scale * torch.tensor(x.shape[2:])
+        dims = len(output_shape)
+        idxs = torch.arange(dims * 2) + 2
 
-        x = x.view([x.size(0), self.upscale_factor, output_channels, x.size(2)])
-        x = x.permute(0, 2, 3, 1)
-        x = x.reshape(x.size(0), output_channels, output_size)
+        x = x.view([x.size(0), output_channels, *[self._scale] * len(x.shape[2:]), *x.shape[2:]])
+        x = x.permute(0, 1, *torch.ravel(torch.column_stack((idxs[dims:], idxs[:dims]))))
+        x = x.reshape(x.size(0), output_channels, *output_shape)
         return x
 
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network
 
-def _kernel_shape(stride: int, kernel: int | list[int], padding: int | list[int], shape: list[int]):
+        Returns
+        -------
+        string
+            Layer parameters
+        """
+        return f'upscale_factor={self._scale}'
+
+
+class Pool(BaseLayer):
+    """
+    Constructs a max or average pooling layer
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            shapes: list[list[int]],
+            kernel: int | list[int] = 2,
+            stride: int | list[int] = 2,
+            padding: int | str | list[int] = 0,
+            mode: str = 'max',
+            **kwargs):
+        """
+        Parameters
+        ----------
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        kernel : integer | list[integer], default = 2
+            Size of the kernel
+        stride : integer | list[integer], default = 2
+            Stride of the kernel
+        padding : integer | string | list[integer], default = 0
+            Input padding, can an integer or 'same' where 'same' preserves the input shape
+        mode : {'max', 'average'}
+            Whether to use 'max' or 'average' pooling
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**kwargs)
+        self._mode = mode
+        pool = [
+            [nn.MaxPool1d, nn.AvgPool1d],
+            [nn.MaxPool2d, nn.AvgPool2d],
+            [nn.MaxPool3d, nn.AvgPool3d],
+        ][len(shapes[-1]) - 2]
+        avg_kwargs = {}
+
+        if padding == 'same':
+            padding = _padding(kernel, stride, shapes[-1], shapes[-1])
+
+        if self._mode == 'average':
+            pool = pool[1]
+            avg_kwargs = {'count_include_pad': False}
+        else:
+            pool = pool[0]
+
+        self.layers.append(pool(kernel_size=kernel, stride=stride, padding=padding, **avg_kwargs))
+        shapes.append(_kernel_shape(stride, kernel, padding, shapes[-1].copy()))
+
+
+class PoolDownscale(Pool):
+    """
+    Downscales the input using pooling
+    
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(self, scale: int, shapes: list[list[int]], mode: str = 'max', **kwargs):
+        """        
+        Parameters
+        ----------
+        scale : integer
+            Stride and size of the kernel, which acts as the downscaling factor
+        idx : integer
+            Layer number
+        shapes : list[list[integer]]
+            Shape of the outputs from each layer
+        mode : {'max', 'average'}
+            Whether to use 'max' or 'average' pooling
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(shapes=shapes, kernel=scale, stride=scale, padding=0, mode=mode, **kwargs)
+
+
+def _kernel_shape(
+        strides: int | list[int],
+        kernel: int | list[int],
+        padding: int | list[int],
+        shape: list[int]):
     """
     Calculates the output shape after a kernel operation
 
     Parameters
     ----------
-    kernel : integer
-        Size of the kernel
-    stride : integer
+    strides : integer | list[integer]
         Stride of the kernel
+    kernel : integer | list[integer]
+        Size of the kernel
     padding : integer | list[integer]
         Input padding
     shape : list[integer]
         Input shape into the layer
     """
+    if isinstance(strides, int):
+        strides = [strides] * len(shape[1:])
+
     if isinstance(kernel, int):
         kernel = [kernel] * len(shape[1:])
 
     if isinstance(padding, int):
         padding = [padding] * len(shape[1:])
 
-    for i, (kernel_length, pad, length) in enumerate(zip(kernel, padding, shape[1:])):
-        shape[i + 1] = int((length + 2 * pad - kernel_length) / stride + 1)
+    for i, (
+            stride,
+            kernel_length,
+            pad,
+            length,
+    ) in enumerate(zip(strides, kernel, padding, shape[1:])):
+        shape[i + 1] = max(1, (length + 2 * pad - kernel_length) // stride + 1)
 
     return shape
 
 
-def _same_padding(
-        kernel: int,
-        stride: int,
+def _padding(
+        kernel: int | list[int],
+        strides: int | list[int],
         in_shape: list[int],
         out_shape: list[int]) -> list[int]:
     """
@@ -93,9 +743,9 @@ def _same_padding(
 
     Parameters
     ----------
-    kernel : integer
+    kernel : integer | list[integer]
         Size of the kernel
-    stride : integer
+    strides : integer | list[integer]
         Stride of the kernel
     in_shape : list[integer]
         Input shape into the layer
@@ -109,446 +759,18 @@ def _same_padding(
     """
     padding = []
 
-    for in_length, out_length in zip(in_shape[1:], out_shape[1:]):
-        padding.append(int((stride * (out_length - 1) + kernel - in_length) / 2))
+    if isinstance(strides, int):
+        strides = [strides] * len(in_shape[1:])
+
+    if isinstance(kernel, int):
+        kernel = [kernel] * len(in_shape[1:])
+
+    for stride, kernel_length, in_length, out_length in zip(
+            strides,
+            kernel,
+            in_shape[1:],
+            out_shape[1:],
+    ):
+        padding.append((stride * (out_length - 1) + kernel_length - in_length) // 2)
 
     return padding
-
-
-def adaptive_pool(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Uses average pooling to downscale the input to the desired shape
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-    layer : dictionary
-        output : list[integer]
-            Output shape of the layer
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = ['output', '2d']
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        adapt_pool = nn.AdaptiveAvgPool2d
-    else:
-        adapt_pool = nn.AdaptiveAvgPool1d
-
-    kwargs['module'].add_module(f"adaptive_pool_{kwargs['i']}", adapt_pool(layer['output']))
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-    kwargs['shape'][-1][1:] = layer['output']
-
-
-def convolutional(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Convolutional layer constructor
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-        out_shape : list[integer], optional
-            Shape of the network's output, required only if layer contains factor
-    layer : dictionary
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used, if not provided,
-            2d from net is used
-        filters : integer, optional
-            Number of convolutional filters, will be used if provided, else factor will be used
-        factor : float, optional
-            Number of convolutional filters equal to the output channels multiplied by factor,
-            won't be used if filters is provided
-        dropout : float, default = 0.1
-            Probability of dropout
-        batch_norm : boolean, default = False
-            If batch normalisation should be used
-        activation : boolean, default = True
-            If ELU activation should be used
-        kernel : integer | list[integer], default = 3
-            Size of the kernel
-        stride : integer, default = 1
-            Stride of the kernel
-        padding : integer | string | list[integer], default = 'same'
-            Input padding, can an integer, list of integers or
-            'same' where 'same' preserves the input shape
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = [
-        '2d',
-        'filters',
-        'factor',
-        'dropout',
-        'batch_norm',
-        'activation',
-        'kernel',
-        'stride',
-        'padding',
-    ]
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    shape = kwargs['shape'][-1].copy()
-    kernel = layer['kernel']
-    stride = layer['stride']
-    padding = layer['padding']
-
-    if 'factor' not in layer:
-        shape[0] = layer['filters']
-    else:
-        shape[0] = max(1, int(kwargs['out_shape'][0] * layer['factor']))
-
-    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        conv = nn.Conv2d
-        dropout = nn.Dropout2d
-        batch_norm = nn.BatchNorm2d
-    else:
-        conv = nn.Conv1d
-        dropout = nn.Dropout1d
-        batch_norm = nn.BatchNorm1d
-
-    conv = conv(
-        in_channels=kwargs['shape'][-1][0],
-        out_channels=shape[0],
-        kernel_size=kernel,
-        stride=stride,
-        padding=padding,
-        padding_mode='replicate',
-    )
-
-    kwargs['module'].add_module(f"conv_{kwargs['i']}", conv)
-
-    # Optional layers
-    optional_layer('dropout', kwargs, layer, dropout(layer['dropout']))
-    optional_layer('batch_norm', kwargs, layer, batch_norm(shape[0]))
-    optional_layer('activation', kwargs, layer, nn.ELU())
-
-    if padding != 'same':
-        kwargs['shape'].append(_kernel_shape(stride, kernel, padding, shape))
-    else:
-        kwargs['shape'].append(shape)
-
-
-def conv_depth_downscale(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Constructs depth downscaler using convolution with kernel size of 1
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-    layer : dictionary
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used
-        batch_norm : boolean, default = False
-            If batch normalisation should be used
-        activation : boolean, default = True
-            If ELU activation should be used
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = ['2d', 'batch_norm', 'activation']
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    layer['filters'] = 1
-    layer['kernel'] = 1
-    layer['stride'] = 1
-    layer['dropout'] = 0
-    layer['padding'] = 'same'
-    convolutional(kwargs, layer, check_params=False)
-
-
-def conv_downscale(kwargs: dict, layer: dict, check_params=True):
-    """
-    Constructs a convolutional layer with stride 2 for 2x downscaling
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-        out_shape : list[integer], optional
-            Shape of the network's output, required only if layer contains factor
-    layer : dictionary
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used
-        filters : integer, optional
-            Number of convolutional filters, will be used if provided, else factor will be used
-        factor : float, optional
-            Number of convolutional filters equal to the output channels multiplied by factor,
-            won't be used if filters is provided
-        dropout : float, default = 0.1
-            Probability of dropout
-        batch_norm : boolean, default = False
-            If batch normalisation should be used
-        activation : boolean, default = True
-            If ELU activation should be used
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = ['2d', 'filters', 'factor', 'dropout', 'batch_norm', 'activation']
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    layer['kernel'] = 3
-    layer['stride'] = 2
-    layer['padding'] = 1
-    convolutional(kwargs, layer, check_params=False)
-
-
-def conv_transpose(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Constructs a 2x upscaler using a transpose convolutional layer with fractional stride
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-        out_shape : list[integer], optional
-            Shape of the network's output, required only if layer contains factor
-    layer : dictionary
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used
-        filters : integer, optional
-            Number of convolutional filters, will be used if provided, else factor will be used
-        factor : float, optional
-            Number of convolutional filters equal to the output channels multiplied by factor,
-            won't be used if filters is provided
-        dropout : float, default =  0.1
-            Probability of dropout
-        batch_norm : boolean, default = False
-            If batch normalisation should be used
-        activation : boolean, default = True
-            If ELU activation should be used
-        out_padding : integer, default = 0
-            Padding applied to the output
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = [
-        '2d',
-        'filters',
-        'factor',
-        'dropout',
-        'batch_norm',
-        'activation',
-        'out_padding',
-    ]
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-    kwargs['shape'].append(kwargs['shape'][-1].copy())
-    out_padding = layer['out_padding']
-
-    if 'factor' not in layer:
-        kwargs['shape'][-1][0] = layer['filters']
-    else:
-        kwargs['shape'][-1][0] = max(1, int(kwargs['out_shape'][0] * layer['factor']))
-
-    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        transpose = nn.ConvTranspose2d
-        dropout = nn.Dropout2d
-        batch_norm = nn.BatchNorm2d
-    else:
-        transpose = nn.ConvTranspose1d
-        dropout = nn.Dropout1d
-        batch_norm = nn.BatchNorm1d
-
-    conv = transpose(
-        in_channels=kwargs['shape'][-2][0],
-        out_channels=kwargs['shape'][-1][0],
-        kernel_size=2,
-        stride=2,
-        output_padding=out_padding,
-    )
-
-    kwargs['module'].add_module(f"conv_transpose_{kwargs['i']}", conv)
-
-    # Optional layers
-    optional_layer('dropout', kwargs, layer, dropout(layer['dropout']))
-    optional_layer('batch_norm', kwargs, layer, batch_norm(kwargs['shape'][-1][0]))
-    optional_layer('activation', kwargs, layer, nn.ELU())
-
-    # Data size doubles
-    kwargs['shape'][-1][1:] = [length * 2 + out_padding for length in kwargs['shape'][-1][1:]]
-
-
-def conv_upscale(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Constructs a 2x upscaler using a convolutional layer and pixel shuffling
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        out_shape : list[integer], optional
-            Shape of the network's output, required only if layer contains factor
-        module : Sequential
-            Sequential module to contain the layer
-    layer : dictionary
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used
-        filters : integer, optional
-            Number of convolutional filters, will be used if provided, else factor will be used
-        factor : float, optional
-            Number of convolutional filters equal to the output channels multiplied by factor,
-            won't be used if filters is provided
-        batch_norm : boolean, default = False
-            If batch normalisation should be used
-        activation : boolean, default = True
-            If ELU activation should be used
-        kernel : integer | list[integer], default = 3
-            Size of the kernel
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = ['2d', 'filters', 'factor', 'batch_norm', 'activation', 'kernel']
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    layer['stride'] = 1
-    layer['dropout'] = 0
-    layer['padding'] = 'same'
-
-    if layer['2d']:
-        filter_factor = 4
-    else:
-        filter_factor = 2
-
-    if 'factor' in layer:
-        layer['factor'] *= filter_factor
-    else:
-        layer['filters'] *= filter_factor
-
-    convolutional(kwargs, layer, check_params=False)
-
-    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        pixel_shuffle = nn.PixelShuffle
-    else:
-        pixel_shuffle = PixelShuffle1d
-
-    # Upscaling done using pixel shuffling
-    kwargs['module'].add_module(f"pixel_shuffle_{kwargs['i']}", pixel_shuffle(2))
-    kwargs['shape'][-1][0] = int(kwargs['shape'][-1][0] / filter_factor)
-
-    # Data size doubles
-    kwargs['shape'][-1][1:] = [length * 2 for length in kwargs['shape'][-1][1:]]
-
-
-def pool(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Constructs a max pooling layer
-
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-    layer : dictionary
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used
-        kernel : integer, default = 2
-            Size of the kernel
-        stride : integer, default = 2
-            Stride of the kernel
-        padding : integer | string, default = 0
-            Input padding, can an integer or 'same' where 'same' preserves the input shape
-        mode : string, default = 'max'
-            Whether to use max pooling (max) or average pooling (average)
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = ['2d', 'kernel', 'stride', 'padding', 'mode']
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    kernel = layer['kernel']
-    stride = layer['stride']
-    padding = layer['padding']
-    avg_kwargs = {}
-    mode = np.array([[nn.MaxPool1d, nn.MaxPool2d], [nn.AvgPool1d, nn.AvgPool2d]])
-
-    if padding == 'same':
-        padding = _same_padding(kernel, stride, kwargs['shape'][-1], kwargs['shape'][-1])
-
-    if ('2d' in layer and layer['2d']) or ('2d' not in layer and kwargs['2d']):
-        mode = mode[:, 1]
-    else:
-        mode = mode[:, 0]
-
-    if layer['mode'] == 'average':
-        mode = mode[1]
-        avg_kwargs = {'count_include_pad': False}
-    else:
-        mode = mode[0]
-
-    kwargs['module'].add_module(
-        f"pool_{kwargs['i']}",
-        mode(kernel_size=kernel, stride=stride, padding=padding, **avg_kwargs),
-    )
-
-    if padding != 'same':
-        kwargs['shape'].append(_kernel_shape(stride, kernel, padding, kwargs['shape'][-1].copy()))
-    else:
-        kwargs['shape'].append(kwargs['shape'][-1].copy())
-
-
-def pool_downscale(kwargs: dict, layer: dict, check_params: bool = True):
-    """
-    Downscales the input using max pooling
-    
-    Parameters
-    ----------
-    kwargs : dictionary
-        i : integer
-            Layer number
-        shape : list[integer]
-            Shape of the outputs from each layer
-        module : Sequential
-            Sequential module to contain the layer
-    layer : dictionary
-        factor : integer
-            Factor of downscaling
-        2d : boolean, optional
-            If input data is 2D, if not provided, 2d from net is used
-        mode : string, default = 'max'
-            Whether to use max pooling (max) or average pooling (average)
-    check_params : boolean, default = True
-        If layer arguments should be checked if they are valid
-    """
-    supported_params = ['factor', '2d', 'mode']
-    layer = check_layer(supported_params, kwargs, layer, check_params=check_params)
-
-    layer['kernel'] = layer['stride'] = layer['factor']
-    layer['padding'] = 0
-    pool(kwargs, layer, check_params=False)

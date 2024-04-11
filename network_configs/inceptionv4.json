@@ -1,90 +1,92 @@
 {
   "net": {
     "dropout_prob": 0.1,
-    "2d": 1,
     "Paper": "arXiv:1602.07261",
-    "GitHub_Reference": "https://github.com/zhulf0804/Inceptionv4_and_Inception-ResNetv2.PyTorch"
+    "GitHub_Reference": "https://github.com/zhulf0804/Inceptionv4_and_Inception-ResNetv2.PyTorch",
+    "Composite": {
+      "config_dir": "../network_configs/composite_layers/"
+    }
   },
   "layers": [
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_stem.json"
+      "type": "Composite",
+      "name": "inception_stem"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_a.json"
+      "type": "Composite",
+      "name": "inception_a"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_a.json"
+      "type": "Composite",
+      "name": "inception_a"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_a.json"
+      "type": "Composite",
+      "name": "inception_a"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_a.json"
+      "type": "Composite",
+      "name": "inception_a"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_reduction_a.json"
+      "type": "Composite",
+      "name": "inception_reduction_a"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_b.json"
+      "type": "Composite",
+      "name": "inception_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_b.json"
+      "type": "Composite",
+      "name": "inception_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_b.json"
+      "type": "Composite",
+      "name": "inception_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_b.json"
+      "type": "Composite",
+      "name": "inception_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_b.json"
+      "type": "Composite",
+      "name": "inception_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_b.json"
+      "type": "Composite",
+      "name": "inception_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_b.json"
+      "type": "Composite",
+      "name": "inception_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_reduction_b.json"
+      "type": "Composite",
+      "name": "inception_reduction_b"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_c.json"
+      "type": "Composite",
+      "name": "inception_c"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_c.json"
+      "type": "Composite",
+      "name": "inception_c"
     },
     {
-      "type": "composite",
-      "config_path": "../network_configs/composite_layers/inception_c.json"
+      "type": "Composite",
+      "name": "inception_c"
     },
     {
-      "type": "adaptive_pool",
-      "output": [1, 1]
+      "type": "AdaptivePool",
+      "shape": [1, 1]
     },
     {
-      "type": "reshape",
-      "output": [-1]
+      "type": "Reshape",
+      "shape": [-1]
     },
     {
-      "type": "linear",
-      "factor": 3
+      "type": "Linear",
+      "factor": 1
     }
   ]
 }
