@@ -3,10 +3,9 @@ Layer utility functions
 """
 import logging as log
 
+import torch
 import numpy as np
 from torch import nn, Tensor
-
-from netloader.utils.utils import get_device
 
 
 class BaseLayer(nn.Module):
@@ -37,7 +36,7 @@ class BaseLayer(nn.Module):
             Leftover parameters for checking if they are valid
         """
         super().__init__()
-        self._device = get_device()[1]
+        self._device = 'cpu'
         self.layers = []
         supported_params = ['net_check', 'net_out', 'shapes', 'check_shapes', 'type', 'group']
 
@@ -73,6 +72,11 @@ class BaseLayer(nn.Module):
             Output tensor with batch size N
         """
         return self.layers(x)
+
+    def to(self, *args, **kwargs):
+        super().to(*args, **kwargs)
+        self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)
+        return self
 
 
 class BaseMultiLayer(BaseLayer):

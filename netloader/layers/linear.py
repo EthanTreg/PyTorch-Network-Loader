@@ -182,7 +182,7 @@ class Sample(BaseLayer):
     ----------
     layers : list[Module] | Sequential
         Layers to loop through in the forward pass
-    sample_layer : Module
+    sample_layer : Normal
         Layer to sample values from a Gaussian distribution
 
     Methods
@@ -205,7 +205,7 @@ class Sample(BaseLayer):
         self.sample_layer = torch.distributions.Normal(
             torch.tensor(0.).to(self._device),
             torch.tensor(1.).to(self._device),
-        ).sample
+        )
 
         if shapes[-1][0] % 2 == 1:
             log.warning(f'Sample layer in layer {idx} expects an even length along the first '
@@ -234,12 +234,18 @@ class Sample(BaseLayer):
         split = x.size(1) // 2
         mean = x[:, :split]
         std = torch.exp(x[:, split:2 * split])
-        x = mean + std * self.sample_layer(mean.shape)
+        x = mean + std * self.sample_layer.sample(mean.shape)
 
         net.kl_loss += net.kl_loss_weight * 0.5 * torch.mean(
             mean ** 2 + std ** 2 - 2 * torch.log(std) - 1
         )
         return x
+
+    def to(self, *args, **kwargs):
+        super().to(*args, **kwargs)
+        self.sample_layer.loc = self.sample_layer.loc.to(*args, **kwargs)
+        self.sample_layer.scale = self.sample_layer.scale.to(*args, **kwargs)
+        return self
 
 
 class Upsample(BaseLayer):

@@ -20,8 +20,9 @@ output shapes knowledge of the input into each layer is not needed.
 - Install dependencies:
   `pip install -r requirements.txt`
 - PyTorch's dependencies[^1]:  
-  NVIDIA GPU with [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit-archive) ~= v11.6
-  [^1]: Only required for use with NVIDIA GPU
+  NVIDIA GPU with [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit-archive) ~= v12.1
+  [^1]: Only required for use with NVIDIA GPU, v11.8 is also supported, but requirements.txt will
+  try to install the v12.1 version
 
 ## How to Use
 

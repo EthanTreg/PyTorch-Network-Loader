@@ -25,7 +25,7 @@ class Network(nn.Module):
         Layers with layer parameters
     checkpoints : list[Tensor]
         Outputs from each checkpoint
-    network : ModuleList
+    net : ModuleList
         Network construction
     optimiser : Optimizer
         Network optimizer
@@ -77,18 +77,14 @@ class Network(nn.Module):
         self.kl_loss = torch.tensor(0.)
 
         # Construct layers in network
-        self._checkpoints, self.shapes, _, self.layers, self.network = _create_network(
+        self._checkpoints, self.shapes, _, self.layers, self.net = _create_network(
             in_shape,
             out_shape,
             f'{config_dir}{name}.json',
         )
 
         self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimiser,
-            factor=0.5,
-            verbose=True,
-        )
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -115,7 +111,7 @@ class Network(nn.Module):
                 continue
 
             try:
-                x = self.network[i](x, outputs=outputs, checkpoints=self.checkpoints, net=self)
+                x = self.net[i](x, outputs=outputs, checkpoints=self.checkpoints, net=self)
             except RuntimeError:
                 log.error(f"Error in {layer['type']} (layer {i})")
                 raise
@@ -127,6 +123,10 @@ class Network(nn.Module):
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)
         self.kl_loss = self.kl_loss.to(*args, **kwargs)
+
+        for layer in self.net:
+            layer.to(*args, **kwargs)
+
         return self
 
 
