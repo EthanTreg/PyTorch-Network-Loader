@@ -21,6 +21,8 @@ class Network(nn.Module):
         Name of the network, used for saving
     shapes : list[list[integer]]
         Layer output shapes
+    check_shapes : list[list[integer]]
+        Checkpoint output shapes
     layers : list[dictionary]
         Layers with layer parameters
     checkpoints : list[Tensor]
@@ -77,7 +79,7 @@ class Network(nn.Module):
         self.kl_loss = torch.tensor(0.)
 
         # Construct layers in network
-        self._checkpoints, self.shapes, _, self.layers, self.net = _create_network(
+        self._checkpoints, self.shapes, self.check_shapes, self.layers, self.net = _create_network(
             in_shape,
             out_shape,
             f'{config_dir}{name}.json',
