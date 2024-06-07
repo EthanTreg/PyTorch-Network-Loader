@@ -5,3 +5,5 @@ __pycache__/
 /build/
 **/*[Tt][Ee][Ss][Tt]*
 **/*[Tt][Ee][Mm][Pp]*
+!/netloader/netloader_test.py
+!/network_configs/training_test.json

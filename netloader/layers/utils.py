@@ -36,6 +36,12 @@ class BaseLayer(nn.Module):
             Leftover parameters for checking if they are valid
         """
         super().__init__()
+        self._device: str
+        self.layers: list[nn.Module] | nn.Sequential
+        supported_params: list[str]
+        keys: np.ndarray
+        bad_params: list[str]
+
         self._device = 'cpu'
         self.layers = []
         supported_params = ['net_check', 'net_out', 'shapes', 'check_shapes', 'type', 'group']
@@ -119,6 +125,9 @@ class BaseMultiLayer(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
+        self._checkpoint: bool
+        self._layer: int
+        self._target: list[int]
         self._checkpoint = checkpoint or net_check
         self._layer = layer
 

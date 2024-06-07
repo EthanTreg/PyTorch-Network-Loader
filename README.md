@@ -67,12 +67,14 @@ layers.
 
 The following steps import the architecture into PyTorch:
 
-1. Create a network object by calling `Network` with the arguments: _in\_shape_, _out\_shape_,
-   _learning\_rate_, _name_, & _config\_dir_.
+1. Create a network object by calling `Network` with the arguments: _name_, & _config\_dir_, 
+  _in\_shape_, _out\_shape_, and keyword: _learning\_rate_.
 2. To use the network object, such as for training or evaluation, call the network with the argument
    _x_, and the network will return the forward pass.
 
-**All shapes given to the network or layers should exclude the batch dimension $N$.**
+**All shapes given to the network or layers should exclude the batch dimension $N$.**  
+The network input, and therefore _in\_shape_, can be list\[list\[integer\]\] if the first layer in
+the network is an Unpack layer if multiple inputs are used at different points in the network.
 
 The network object has attributes:
 - `name`: string, name of the network configuration file (without extension)
@@ -122,7 +124,7 @@ import torch
 
 from netloader.network import Network
 
-decoder = Network([5], [240], 1e-5, 'decoder', '../network_configs/')
+decoder = Network('decoder', '../network_configs/', [5], [240], learning_rate=1e-5)
 
 x = torch.rand((10, 5))
 output = decoder(x)
@@ -139,7 +141,6 @@ This is most useful if the head gets changed during training.
 See `layer_examples.json` under `network_configs` to see how to use groups and other layers.
 
 **Linear layers**
-  in an autoencoder to encode the most important information in the first values of the latent space
 - `Linear`: Linear/fully connected
   - `features`: optional integer, output size, won't be used if `factor` is provided
   - `factor`: optional float, _features_ = `factor`$\times$_network output size_,
@@ -148,6 +149,7 @@ See `layer_examples.json` under `network_configs` to see how to use groups and o
   - `activation`: boolean = True, if a SELU activation should be used
   - `dropout`: float = 0.01, probability of dropout
 - `OrderedBottleneck`: Information-ordered bottleneck to randomly change the size of the bottleneck
+  in an autoencoder to encode the most important information in the first values of the latent space
   - `min_size`: integer = 0, minimum gate size
 - `Sample`: Gets the mean and standard deviation of a Gaussian distribution from $C$ in the previous
   layer, halving $C$, and randomly samples from it, mainly for a variational autoencoder
@@ -255,6 +257,9 @@ See `layer_examples.json` under `network_configs` to see how to use groups and o
   - `layer`: integer, layer index to get the output from
   - `checkpoint`: boolean = False, if `layer` should be relative to checkpoints or network layers,
     if `checkpoints` in `net` is True, `layer` will always be relative to checkpoints
+- `Unpack`: Enables a list of Tensors as input into the network, then selects which Tensor in the
+  list to output
+  - `index`: integer, index of input Tensor list
 
 **Composite layers**  
 Custom blocks can be made from the layers above and inserted into the network.

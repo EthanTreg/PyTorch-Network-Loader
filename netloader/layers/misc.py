@@ -27,15 +27,16 @@ class Checkpoint(BaseLayer):
         """
         Parameters
         ----------
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        check_shapes : list[list[integer]]
+        check_shapes : list[list[int]]
             Shape of the outputs from each checkpoint
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
+        self._check_num: int
         self._check_num = len(check_shapes)
         shapes.append(shapes[-1].copy())
         check_shapes.append(shapes[-1].copy())
@@ -65,7 +66,7 @@ class Checkpoint(BaseLayer):
 
         Returns
         -------
-        string
+        str
             Layer parameters
         """
         return f'checkpoint_num={self._check_num}'
@@ -84,7 +85,7 @@ class Concatenate(BaseMultiLayer):
     -------
     forward(x, outputs, net_check) -> Tensor
         Forward pass of the concatenation layer
-    extra_repr() -> string
+    extra_repr() -> str
         Displays layer parameters when printing the network
     """
     def __init__(
@@ -100,19 +101,19 @@ class Concatenate(BaseMultiLayer):
         """
         Parameters
         ----------
-        net_check : boolean
+        net_check : bool
             If layer index should be relative to checkpoint layers
-        idx : integer
+        idx : int
             Layer number
-        layer : integer
+        layer : int
             Layer index to concatenate the previous layer output with
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        check_shapes : list[list[integer]]
+        check_shapes : list[list[int]]
             Shape of the outputs from each checkpoint
-        checkpoint : boolean, default = False
+        checkpoint : bool, default = False
             If layer index should be relative to checkpoint layers
-        dim : integer, default = 0
+        dim : int, default = 0
             Dimension to concatenate to
 
         **kwargs
@@ -127,6 +128,9 @@ class Concatenate(BaseMultiLayer):
             idx=idx,
             **kwargs,
         )
+        self._dim: int
+        shape: list[int]
+
         self._dim = dim
         shape = shapes[-1].copy()
 
@@ -159,6 +163,8 @@ class Concatenate(BaseMultiLayer):
         (N,...) Tensor
             Output tensor
         """
+        dim: int
+
         if self._dim >= 0:
             dim = self._dim + 1
         else:
@@ -175,7 +181,7 @@ class Concatenate(BaseMultiLayer):
 
         Returns
         -------
-        string
+        str
             Layer parameters
         """
         return f'{super().extra_repr()}, dim={self._dim}'
@@ -194,27 +200,34 @@ class Index(BaseLayer):
     -------
     forward(x) -> Tensor
         Forward pass of the indexing layer
-    extra_repr() -> string
+    extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, number: int, shapes: list[list[int]] = None, greater: bool = True, **kwargs):
+    def __init__(
+            self,
+            number: int,
+            shapes: list[list[int]] | None = None,
+            greater: bool = True,
+            **kwargs):
         """
         Parameters
         ----------
-        number : integer
+        number : int
             Number of values to slice, can be negative
-        shapes : list[list[integer]], optional
+        shapes : list[list[int]], optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
-        greater : boolean, default = True
+        greater : bool, default = True
             If slicing should include all values greater or less than number index
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
-        self._number = number
+        self._greater: bool
+        self._number: int
         self._greater = greater
+        self._number = number
 
         # If not used as a layer in a network
         if not shapes:
@@ -253,7 +266,7 @@ class Index(BaseLayer):
 
         Returns
         -------
-        string
+        str
             Layer parameters
         """
         return f'greater={bool(self._greater)}, number={self._number}'
@@ -272,16 +285,16 @@ class Reshape(BaseLayer):
     -------
     forward(x)
         Forward pass of Reshape
-    extra_repr() -> string
+    extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, shape: list[int], shapes: list[list[int]] = None, **kwargs):
+    def __init__(self, shape: list[int], shapes: list[list[int]] | None = None, **kwargs):
         """
         Parameters
         ----------
-        shape : list[integer]
+        shape : list[int]
             Desired shape of the output tensor, ignoring first dimension
-        shapes : list[list[integer]], optional
+        shapes : list[list[int]], optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
 
@@ -289,6 +302,9 @@ class Reshape(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
+        self._shape: list[int]
+        fixed_shape: np.ndarray
+
         self._shape = shape
 
         # If not used as a layer in a network
@@ -334,7 +350,7 @@ class Reshape(BaseLayer):
 
         Returns
         -------
-        string
+        str
             Layer parameters
         """
         return f'output={self._shape}'
@@ -366,17 +382,17 @@ class Shortcut(BaseMultiLayer):
         """
         Parameters
         ----------
-        net_check : boolean
+        net_check : bool
             If layer index should be relative to checkpoint layers
-        idx : integer
+        idx : int
             Layer number
-        layer : integer
+        layer : int
             Layer index to concatenate the previous layer output with
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        check_shapes : list[list[integer]]
+        check_shapes : list[list[int]]
             Shape of the outputs from each checkpoint
-        checkpoint : boolean, default = False
+        checkpoint : bool, default = False
             If layer index should be relative to checkpoint layers
 
         **kwargs
@@ -391,8 +407,11 @@ class Shortcut(BaseMultiLayer):
             idx=idx,
             **kwargs,
         )
-        shape = np.array(shapes[-1].copy())
+        shape: np.ndarray
+        mask: np.ndarray
+        idxs: np.ndarray
 
+        shape = np.array(shapes[-1].copy())
         mask = (shape != 1) & (self._target != 1)
 
         if not np.array_equal(shape[mask], np.array(self._target)[mask]):
@@ -460,15 +479,15 @@ class Skip(BaseMultiLayer):
         """
         Parameters
         ----------
-        net_check : boolean
+        net_check : bool
             If layer index should be relative to checkpoint layers
-        layer : integer
+        layer : int
             Layer index to concatenate the previous layer output with
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        check_shapes : list[list[integer]]
+        check_shapes : list[list[int]]
             Shape of the outputs from each checkpoint
-        checkpoint : boolean, default = False
+        checkpoint : bool, default = False
             If layer index should be relative to checkpoint layers
 
         **kwargs
@@ -506,3 +525,67 @@ class Skip(BaseMultiLayer):
             return checkpoints[self._layer]
 
         return outputs[self._layer]
+
+
+class Unpack(BaseLayer):
+    """
+    Enables a list of Tensors as input into the network, then selects which Tensor in the list to
+    output.
+
+    Methods
+    -------
+    forward(x)
+        Forward pass of Unpack
+    extra_repr() -> str
+        Displays layer parameters when printing the network
+    """
+    def __init__(self, idx: int, index: int, shapes: list[list[int | list[int]]], **kwargs):
+        """
+        Parameters
+        ----------
+        idx : int
+            Layer number
+        index : int
+            Index of input Tensor list
+        shapes : list[list[int | list[int]]
+            Shape of the outputs from each layer
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(idx=idx, **kwargs)
+        self._idx: int
+        self._idx = index
+
+        if isinstance(shapes[0][0], int):
+            raise ValueError(f'Network input shape must be a list of input shapes for Unpack '
+                             f'layer, input shape is {shapes[0]}.')
+
+        shapes.append(shapes[0][self._idx])
+
+    def forward(self, _, outputs: list[list[Tensor] | Tensor], **__) -> Tensor:
+        """
+        Forward pass of the skip layer
+
+        Parameters
+        ----------
+        outputs : list[list[Tensor] | Tensor]
+            Output from each layer
+
+        Returns
+        -------
+        (N,...) Tensor
+            Output tensor
+        """
+        return outputs[0][self._idx]
+
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network
+
+        Returns
+        -------
+        str
+            Layer parameters
+        """
+        return f'index={self._idx}'

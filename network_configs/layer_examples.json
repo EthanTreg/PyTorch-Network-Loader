@@ -14,6 +14,10 @@
   },
   "layers": [
     {
+      "type": "Unpack",
+      "index": 0
+    },
+    {
       "type": "Composite",
       "name": "inception",
       "channels": 128,
@@ -187,6 +191,18 @@
     {
       "type": "Reshape",
       "shape": [-1]
+    },
+    {
+      "type": "Unpack",
+      "index": 1
+    },
+    {
+      "type": "Reshape",
+      "shape": [-1]
+    },
+    {
+      "type": "Concatenate",
+      "layer": -3
     },
     {
       "type": "Linear",

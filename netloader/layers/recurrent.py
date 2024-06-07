@@ -1,6 +1,8 @@
 """
 Recurrent network layers
 """
+from typing import Any
+
 import torch
 import numpy as np
 from torch import nn, Tensor
@@ -35,7 +37,7 @@ class Recurrent(BaseLayer):
             filters: int = 1,
             dropout: float = 0.1,
             method: str = 'gru',
-            bidirectional: str = None,
+            bidirectional: str | None = None,
             **kwargs):
         """
         Parameters
@@ -64,6 +66,16 @@ class Recurrent(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
+        self._activation: bool
+        self._batch_norm: bool
+        self._dropout: float
+        self._method: str
+        self._bidirectional: str | None
+        self._options: list[str | None]
+        shape: list[int]
+        recurrent_kwargs: dict[str, Any]
+        recurrent: nn.Module
+
         self._activation = activation
         self._batch_norm = batch_norm
         self._dropout = dropout

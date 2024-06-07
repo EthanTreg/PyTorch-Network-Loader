@@ -34,13 +34,13 @@ class AdaptivePool(BaseLayer):
         """
         Parameters
         ----------
-        idx : integer
+        idx : int
             Layer number
-        shape : integer | list[integer]
+        shape : int | list[int]
             Output shape of the layer
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        channels : boolean, default = True
+        channels : bool, default = True
             If the input includes a channels dimension
         mode : {'average', 'max'}
             Whether to use 'max' or 'average' pooling
@@ -49,26 +49,26 @@ class AdaptivePool(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
+        self._channels: bool
+        self._mode: str
+        self._out_shape: int | list[int]
+        adapt_pool: nn.Module
+
         self._channels = channels
         self._mode = mode
         self._out_shape = shape
+
+        if len(shapes[-1]) - self._channels > 3 or len(shapes[-1]) - self._channels < 1:
+            raise ValueError(f'Adaptive pool in layer {idx} does not support tensors with more '
+                             f'than 3 dimensions + channels or less than 1 + channels, input shape '
+                             f'is {shapes[-1]} and channels is {bool(self._channels)}.')
+
         adapt_pool = [
-            [nn.AdaptiveAvgPool1d, nn.AdaptiveAvgPool2d, nn.AdaptiveAvgPool3d],
-            [nn.AdaptiveMaxPool1d, nn.AdaptiveMaxPool2d, nn.AdaptiveMaxPool3d],
-        ]
-
-        if self._mode == 'average':
-            adapt_pool = adapt_pool[0]
-        else:
-            adapt_pool = adapt_pool[1]
-
-        if len(shapes[-1]) - self._channels - 1 > len(adapt_pool):
-            raise ValueError(
-                f'Input shape {shapes[-1]} in layer {idx} has too many dimensions if channels is '
-                f'{bool(self._channels)}, maximum supported dimensions is 4 if channels is True'
-            )
-
-        self.layers.append(adapt_pool[len(shapes[-1]) - self._channels - 1](self._out_shape))
+            [nn.AdaptiveMaxPool1d, nn.AdaptiveAvgPool1d],
+            [nn.AdaptiveMaxPool2d, nn.AdaptiveAvgPool2d],
+            [nn.AdaptiveMaxPool3d, nn.AdaptiveAvgPool3d],
+        ][len(shapes[-1]) - self._channels - 1][self._mode == 'average']
+        self.layers.append(adapt_pool(self._out_shape))
 
         if isinstance(self._out_shape, int):
             self._out_shape = [self._out_shape] * (len(shapes[-1]) - self._channels)
@@ -90,7 +90,7 @@ class AdaptivePool(BaseLayer):
 
         Returns
         -------
-        string
+        str
             Layer parameters
         """
         return f'channels={bool(self._channels)}, mode={self._mode}'
@@ -111,9 +111,9 @@ class Conv(BaseLayer):
             self,
             idx: int,
             shapes: list[list[int]],
-            filters: int = None,
-            factor: float = None,
-            net_out: list[int] = None,
+            filters: int | None = None,
+            factor: float | None = None,
+            net_out: list[int] | None = None,
             batch_norm: bool = False,
             activation: bool = True,
             stride: int | list[int] = 1,
@@ -124,27 +124,27 @@ class Conv(BaseLayer):
         """
         Parameters
         ----------
-        idx : integer
+        idx : int
             Layer number
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        filters : integer, optional
+        filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[integer], optional
+        net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : boolean, default = False
+        batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : boolean, default = True
+        activation : bool, default = True
             If ELU activation should be used
-        stride : integer | list[integer], default = 1
+        stride : int | list[int], default = 1
             Stride of the kernel
-        kernel : integer | list[integer], default = 3
+        kernel : int | list[int], default = 3
             Size of the kernel
-        padding : integer | string | list[integer], default = 'same'
-            Input padding, can an integer, list of integers or
+        padding : int | str | list[int], default = 'same'
+            Input padding, can an int, list of ints or
             'same' where 'same' preserves the input shape
         dropout : float, default = 0.1
             Probability of dropout
@@ -154,6 +154,14 @@ class Conv(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
+        self._activation: bool
+        self._batch_norm: bool
+        self._dropout: float
+        shape: list[int]
+        conv: nn.Module
+        dropout_: nn.Module
+        batch_norm_: nn.Module
+
         self._activation = activation
         self._batch_norm = batch_norm
         self._dropout = dropout
@@ -161,7 +169,7 @@ class Conv(BaseLayer):
 
         if isinstance(padding, str) and padding != 'same':
             raise ValueError(f'Unknown padding: {padding} in layer {idx}, padding must be either '
-                             f"'same' or an integer")
+                             f"'same' or an int")
 
         if padding != 'same' and (
                 torch.tensor(shape[1:]) + torch.tensor(padding) < torch.tensor(kernel)
@@ -173,6 +181,10 @@ class Conv(BaseLayer):
             raise ValueError(f'Same padding in layer {idx} is not supported for strided '
                              f'convolution')
 
+        if len(shape) > 4 or len(shape) < 2:
+            raise ValueError(f'Convolution in layer {idx} does not support tensors with more than '
+                             f'4 dimensions or less than 2, input shape is {shape}')
+
         if factor:
             shape[0] = max(1, int(net_out[0] * factor))
         elif filters:
@@ -180,21 +192,11 @@ class Conv(BaseLayer):
         else:
             raise ValueError(f'Either factor or filters is required as input in layer {idx}')
 
-        if len(shape) == 2:
-            conv = nn.Conv1d
-            dropout = nn.Dropout1d
-            batch_norm = nn.BatchNorm1d
-        elif len(shape) == 3:
-            conv = nn.Conv2d
-            dropout = nn.Dropout2d
-            batch_norm = nn.BatchNorm2d
-        elif len(shape) == 4:
-            conv = nn.Conv3d
-            dropout = nn.Dropout3d
-            batch_norm = nn.BatchNorm3d
-        else:
-            raise ValueError(f'Convolution in layer {idx} does not support tensors with more than '
-                             f'4 dimensions or less than 2, input shape is {shape}')
+        conv, dropout_, batch_norm_ = [
+            [nn.Conv1d, nn.Dropout1d, nn.BatchNorm1d],
+            [nn.Conv2d, nn.Dropout2d, nn.BatchNorm2d],
+            [nn.Conv3d, nn.Dropout3d, nn.BatchNorm3d],
+        ][len(shape) - 2]
 
         self.layers.append(conv(
             in_channels=shapes[-1][0],
@@ -210,13 +212,16 @@ class Conv(BaseLayer):
             self.layers.append(nn.ELU())
 
         if self._batch_norm:
-            self.layers.append(batch_norm(shape[0]))
+            self.layers.append(batch_norm_(shape[0]))
 
         if self._dropout:
-            self.layers.append(dropout(self._dropout))
+            self.layers.append(dropout_(self._dropout))
 
         if padding == 'same':
             shapes.append(shape)
+        elif isinstance(padding, str):
+            raise ValueError(f"Unknown padding type in layer {idx}, padding must be either 'same' "
+                             f"| int | list[int].")
         else:
             shapes.append(_kernel_shape(stride, kernel, padding, shape))
 
@@ -242,15 +247,15 @@ class ConvDepthDownscale(Conv):
         """
         Parameters
         ----------
-        idx : integer
+        idx : int
             Layer number
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        net_out : list[integer], optional
+        net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : boolean, default = False
+        batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : boolean, default = True
+        activation : bool, default = True
             If ELU activation should be used
         dropout : float, default = 0
             Probability of dropout
@@ -287,9 +292,9 @@ class ConvDownscale(Conv):
     def __init__(self,
                  idx: int,
                  shapes: list[list[int]],
-                 filters: int = None,
-                 factor: float = None,
-                 net_out: list[int] = None,
+                 filters: int | None = None,
+                 factor: float | None = None,
+                 net_out: list[int] | None = None,
                  batch_norm: bool = False,
                  activation: bool = True,
                  scale: int = 2,
@@ -298,22 +303,22 @@ class ConvDownscale(Conv):
         """
         Parameters
         ----------
-        idx : integer
+        idx : int
             Layer number
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        filters : integer, optional
+        filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[integer], optional
+        net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : boolean, default = False
+        batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : boolean, default = True
+        activation : bool, default = True
             If ELU activation should be used
-        scale : integer, default = 2
+        scale : int, default = 2
             Stride and size of the kernel, which acts as the downscaling factor
         dropout : float, default = 0.1
             Probability of dropout
@@ -352,9 +357,9 @@ class ConvTranspose(BaseLayer):
             self,
             idx: int,
             shapes: list[list[int]],
-            filters: int = None,
-            factor: float = None,
-            net_out: list[int] = None,
+            filters: int | None = None,
+            factor: float | None = None,
+            net_out: list[int] | None = None,
             batch_norm: bool = False,
             activation: bool = True,
             scale: int = 2,
@@ -364,24 +369,24 @@ class ConvTranspose(BaseLayer):
         """
         Parameters
         ----------
-        idx : integer
+        idx : int
             Layer number
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        filters : integer, optional
+        filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[integer], optional
+        net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : boolean, default = False
+        batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : boolean, default = True
+        activation : bool, default = True
             If ELU activation should be used
-        scale : integer, default = 2
+        scale : int, default = 2
             Stride and size of the kernel, which acts as the upscaling factor
-        out_padding : integer, default = 0
+        out_padding : int, default = 0
             Padding applied to the output
         dropout : float, default =  0.1
             Probability of dropout
@@ -390,14 +395,26 @@ class ConvTranspose(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        shape = shapes[-1].copy()
+        self._activation: bool
+        self._batch_norm: bool
+        self._dropout: float
+        shape: list[int]
+        transpose: nn.Module
+        dropout_: nn.Module
+        batch_norm_: nn.Module
+
         self._activation = activation
         self._batch_norm = batch_norm
         self._dropout = dropout
+        shape = shapes[-1].copy()
 
         if out_padding > scale:
             raise ValueError(f'Output padding of {out_padding} in layer {idx} must be smaller than '
                              f'the scale factor {scale}')
+
+        if len(shape) > 4 or len(shape) < 2:
+            raise ValueError(f'Transposed convolution in layer {idx} does not support tensors with '
+                             f'more than 4 dimensions or less than 2, input shape is {shape}')
 
         if factor:
             shape[0] = max(1, int(net_out[0] * factor))
@@ -406,14 +423,11 @@ class ConvTranspose(BaseLayer):
         else:
             raise ValueError(f'Either factor or filters is required as input in layer {idx}')
 
-        if len(shape) > 2:
-            transpose = nn.ConvTranspose2d
-            dropout = nn.Dropout2d
-            batch_norm = nn.BatchNorm2d
-        else:
-            transpose = nn.ConvTranspose1d
-            dropout = nn.Dropout1d
-            batch_norm = nn.BatchNorm1d
+        transpose, dropout_, batch_norm_ = [
+            [nn.ConvTranspose1d, nn.Dropout1d, nn.BatchNorm1d],
+            [nn.ConvTranspose2d, nn.Dropout2d, nn.BatchNorm2d],
+            [nn.ConvTranspose3d, nn.Dropout3d, nn.BatchNorm3d],
+        ][len(shape) - 2]
 
         self.layers.append(transpose(
             in_channels=shapes[-1][0],
@@ -428,10 +442,10 @@ class ConvTranspose(BaseLayer):
             self.layers.append(nn.ELU())
 
         if self._batch_norm:
-            self.layers.append(batch_norm(shape[0]))
+            self.layers.append(batch_norm_(shape[0]))
 
         if self._dropout:
-            self.layers.append(dropout(self._dropout))
+            self.layers.append(dropout_(self._dropout))
 
         # Data size doubles
         shape[1:] = [length * scale + out_padding for length in shape[1:]]
@@ -457,9 +471,9 @@ class ConvUpscale(Conv):
             self,
             idx: int,
             shapes: list[list[int]],
-            filters: int = None,
-            factor: float = None,
-            net_out: list[int] = None,
+            filters: int | None = None,
+            factor: float | None = None,
+            net_out: list[int] | None = None,
             batch_norm: bool = False,
             activation: bool = True,
             scale: int = 2,
@@ -469,24 +483,24 @@ class ConvUpscale(Conv):
         """
         Parameters
         ----------
-        idx : integer
+        idx : int
             Layer number
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        filters : integer, optional
+        filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[integer], optional
+        net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : boolean, default = False
+        batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : boolean, default = True
+        activation : bool, default = True
             If ELU activation should be used
-        scale : integer, default = 2
+        scale : int, default = 2
             Factor to upscale the input by
-        kernel : integer | list[integer], default = 3
+        kernel : int | list[int], default = 3
             Size of the kernel
         dropout : float, default =  0
             Probability of dropout
@@ -494,6 +508,7 @@ class ConvUpscale(Conv):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
+        filters_scale: int
         filters_scale = scale ** (len(shapes[-1]) - 1)
 
         if factor:
@@ -543,21 +558,24 @@ class PixelShuffle(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, scale: int, idx: int = 0, shapes: list[list[int]] = None, **kwargs):
+    def __init__(self, scale: int, idx: int = 0, shapes: list[list[int]] | None = None, **kwargs):
         """
         Parameters
         ----------
-        scale : integer
+        scale : int
             Upscaling factor
-        idx : integer, default = 0
+        idx : int, default = 0
             Layer number
-        shapes : list[list[integer]], default = None
+        shapes : list[list[int]], default = None
             Shape of the outputs from each layer
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
+        self._scale: int
+        filters_scale: int
+
         self._scale = scale
 
         if not shapes:
@@ -566,7 +584,7 @@ class PixelShuffle(BaseLayer):
         filters_scale = self._scale ** (len(shapes[-1]) - 1)
 
         if shapes[-1][0] % filters_scale != 0:
-            raise ValueError(f'Number of filters {shapes[-1]} in layer {idx} must be an integer '
+            raise ValueError(f'Number of filters {shapes[-1]} in layer {idx} must be an int '
                              f'multiple of {filters_scale}')
 
         shapes.append(shapes[-1].copy())
@@ -587,6 +605,12 @@ class PixelShuffle(BaseLayer):
         :math:`(N,C,D_1\times r,...,D_n\times r)` Tensor
             Output tensor
         """
+        dims: int
+        filters_scale: int
+        output_channels: int
+        output_shape: Tensor
+        idxs: Tensor
+
         filters_scale = self._scale ** (len(x.shape[2:]))
         output_channels = x.size(1) // filters_scale
         output_shape = self._scale * torch.tensor(x.shape[2:])
@@ -604,7 +628,7 @@ class PixelShuffle(BaseLayer):
 
         Returns
         -------
-        string
+        str
             Layer parameters
         """
         return f'upscale_factor={self._scale}'
@@ -621,6 +645,7 @@ class Pool(BaseLayer):
     """
     def __init__(
             self,
+            idx: int,
             shapes: list[list[int]],
             kernel: int | list[int] = 2,
             stride: int | list[int] = 2,
@@ -630,37 +655,44 @@ class Pool(BaseLayer):
         """
         Parameters
         ----------
-        shapes : list[list[integer]]
+        idx : int
+            Layer number
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        kernel : integer | list[integer], default = 2
+        kernel : int | list[int], default = 2
             Size of the kernel
-        stride : integer | list[integer], default = 2
+        stride : int | list[int], default = 2
             Stride of the kernel
-        padding : integer | string | list[integer], default = 0
-            Input padding, can an integer or 'same' where 'same' preserves the input shape
+        padding : int | str | list[int], default = 0
+            Input padding, can an int or 'same' where 'same' preserves the input shape
         mode : {'max', 'average'}
             Whether to use 'max' or 'average' pooling
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(**kwargs)
+        super().__init__(idx=idx, **kwargs)
+        self._mode: str
+        avg_kwargs: dict[str, bool]
+        pool: nn.Module
+
+        if len(shapes[-1]) > 4 or len(shapes[-1]) < 2:
+            raise ValueError(f'Pooling in layer {idx} does not support tensors with more than 4 '
+                             f'dimensions or less than 2, input shape is {shapes[-1]}')
+
         self._mode = mode
+        avg_kwargs = {}
         pool = [
             [nn.MaxPool1d, nn.AvgPool1d],
             [nn.MaxPool2d, nn.AvgPool2d],
             [nn.MaxPool3d, nn.AvgPool3d],
-        ][len(shapes[-1]) - 2]
-        avg_kwargs = {}
+        ][len(shapes[-1]) - 2][self._mode == 'average']
 
         if padding == 'same':
             padding = _padding(kernel, stride, shapes[-1], shapes[-1])
 
         if self._mode == 'average':
-            pool = pool[1]
             avg_kwargs = {'count_include_pad': False}
-        else:
-            pool = pool[0]
 
         self.layers.append(pool(kernel_size=kernel, stride=stride, padding=padding, **avg_kwargs))
         shapes.append(_kernel_shape(stride, kernel, padding, shapes[-1].copy()))
@@ -679,11 +711,11 @@ class PoolDownscale(Pool):
         """        
         Parameters
         ----------
-        scale : integer
+        scale : int
             Stride and size of the kernel, which acts as the downscaling factor
-        idx : integer
+        idx : int
             Layer number
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
         mode : {'max', 'average'}
             Whether to use 'max' or 'average' pooling
@@ -704,13 +736,13 @@ def _kernel_shape(
 
     Parameters
     ----------
-    strides : integer | list[integer]
+    strides : int | list[int]
         Stride of the kernel
-    kernel : integer | list[integer]
+    kernel : int | list[int]
         Size of the kernel
-    padding : integer | list[integer]
+    padding : int | list[int]
         Input padding
-    shape : list[integer]
+    shape : list[int]
         Input shape into the layer
     """
     if isinstance(strides, int):
@@ -722,12 +754,12 @@ def _kernel_shape(
     if isinstance(padding, int):
         padding = [padding] * len(shape[1:])
 
-    for i, (
-            stride,
-            kernel_length,
-            pad,
-            length,
-    ) in enumerate(zip(strides, kernel, padding, shape[1:])):
+    for i, (stride, kernel_length, pad, length) in enumerate(zip(
+            strides,
+            kernel,
+            padding,
+            shape[1:])
+    ):
         shape[i + 1] = max(1, (length + 2 * pad - kernel_length) // stride + 1)
 
     return shape
@@ -743,20 +775,21 @@ def _padding(
 
     Parameters
     ----------
-    kernel : integer | list[integer]
+    kernel : int | list[int]
         Size of the kernel
-    strides : integer | list[integer]
+    strides : int | list[int]
         Stride of the kernel
-    in_shape : list[integer]
+    in_shape : list[int]
         Input shape into the layer
-    out_shape : list[integer]
+    out_shape : list[int]
         Output shape from the layer
 
     Returns
     -------
-    list[integer]
+    list[int]
         Required padding for specific output shape
     """
+    padding: list[int]
     padding = []
 
     if isinstance(strides, int):

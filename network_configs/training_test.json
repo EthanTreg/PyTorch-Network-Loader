@@ -1,0 +1,29 @@
+{
+  "net": {
+    "checkpoints": 1
+  },
+  "layers": [
+    {
+      "type": "Conv",
+      "filters": 16
+    },
+    {
+      "type": "ConvDownscale",
+      "scale": 4,
+      "filters": 16
+    },
+    {
+      "type": "ConvDownscale",
+      "scale": 4,
+      "filters": 16
+    },
+    {
+      "type": "Reshape",
+      "shape": [-1]
+    },
+    {
+      "type": "Linear",
+      "factor": 1
+    }
+  ]
+}

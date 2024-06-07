@@ -3,12 +3,13 @@ Constructs a network from layers and can load weights to resume network training
 """
 import json
 import logging as log
+from typing import Any, TextIO
 
 import torch
 from torch import nn, optim, Tensor
 
 from netloader import layers
-from netloader.layers.utils import BaseMultiLayer
+from netloader.layers.utils import BaseLayer
 
 
 class Network(nn.Module):
@@ -17,25 +18,25 @@ class Network(nn.Module):
 
     Attributes
     ----------
-    name : string
+    name : str
         Name of the network, used for saving
-    shapes : list[list[integer]]
+    shapes : list[list[int | list[int]]
         Layer output shapes
-    check_shapes : list[list[integer]]
+    check_shapes : list[list[int]]
         Checkpoint output shapes
-    layers : list[dictionary]
+    layers : list[dict[str, Any]]
         Layers with layer parameters
     checkpoints : list[Tensor]
         Outputs from each checkpoint
     net : ModuleList
         Network construction
-    optimiser : Optimizer
-        Network optimizer
-    scheduler : ReduceLROnPlateau
-        Optimizer scheduler
-    layer_num : integer, default = None
+    optimiser : Optimiser
+        Network optimiser, uses Adam optimiser
+    scheduler : LRScheduler
+        Optimiser scheduler, uses reduce learning rate on plateau
+    layer_num : int, default = None
         Number of layers to use, if None use all layers
-    group : integer, default = 0
+    group : int, default = 0
         Which group is the active group if a layer has the group attribute
     kl_loss_weight : float, default = 1e-1
         Relative weight if performing a KL divergence loss on the latent space
@@ -51,61 +52,89 @@ class Network(nn.Module):
     """
     def __init__(
             self,
-            in_shape: list[int],
-            out_shape: list[int],
-            learning_rate: float,
             name: str,
-            config_dir: str):
+            config_dir: str,
+            in_shape: list[int | list[int]],
+            out_shape: list[int],
+            suppress_warning: bool = False,
+            learning_rate: float = 1e-2,
+            defaults: dict[str, Any] | None = None):
         """
         Parameters
         ----------
-        in_shape : list[integer]
-            Shape of the input tensor, excluding batch size
-        out_shape : list[integer]
-            shape of the output tensor, excluding batch size
-        learning_rate : float
-            Optimizer initial learning rate
-        name : string
+        name : str
             Name of the network configuration file (without extension)
-        config_dir : string
+        config_dir : str
             Path to the network config directory
+        in_shape : list[int | list[int]],
+            Shape of the input tensor(s), excluding batch size
+        out_shape : list[int]
+            shape of the output tensor, excluding batch size
+        suppress_warning : bool, default = False
+            If output shape mismatch warning should be suppressed
+        learning_rate : float, default = 1e-2
+            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
+        defaults : dict[str, Any], default = None
+            Default values for the parameters for each type of layer
         """
         super().__init__()
-        self.layer_num = None
+        self._checkpoints: bool
+        self.group: int
+        self.layer_num: int | None
+        self.kl_loss_weight: float
+        self.name: str
+        self.check_shapes: list[list[int]]
+        self.shapes: list[list[int | list[int]]]
+        self.layers: list[dict[str, Any]]
+        self.checkpoints: list[Tensor]
+        self.kl_loss: Tensor
+        self.net: nn.ModuleList
+        self.optimiser: optim.Optimizer
+        self.scheduler: optim.lr_scheduler.LRScheduler
+
         self.group = 0
+        self.layer_num = None
         self.kl_loss_weight = 1e-1
         self.name = name
         self.checkpoints = []
         self.kl_loss = torch.tensor(0.)
 
+        if '.json' not in self.name:
+            self.name += '.json'
+
         # Construct layers in network
         self._checkpoints, self.shapes, self.check_shapes, self.layers, self.net = _create_network(
+            f'{config_dir}{name}.json',
             in_shape,
             out_shape,
-            f'{config_dir}{name}.json',
+            suppress_warning=suppress_warning,
+            defaults=defaults,
         )
 
-        self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
+        if learning_rate:
+            self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
+            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: list[Tensor] | Tensor) -> Tensor:
         """
         Forward pass of the network
 
         Parameters
         ----------
-        x : (N,...) Tensor
-            Input tensor with batch size N
+        x : (N,...) list[Tensor] | Tensor
+            Input tensor(s) with batch size N
 
         Returns
         -------
         (N,...) Tensor
             Output tensor from the network
         """
-        outputs = None
-        self.checkpoints = []
+        outputs: list[list[Tensor] | Tensor]
 
-        if not self._checkpoints:
+        self.checkpoints = []
+        outputs = []
+
+        if not self._checkpoints or any(isinstance(layer, layers.Unpack) for layer in self.net):
             outputs = [x]
 
         for i, layer in enumerate(self.layers[:self.layer_num]):
@@ -132,76 +161,70 @@ class Network(nn.Module):
         return self
 
 
-class Composite(BaseMultiLayer):
+class Composite(BaseLayer):
     """
     Creates a subnetwork from a configuration file
 
     Attributes
     ----------
-    layers : ModuleList
-        Layers to loop through in the forward pass
-    shapes : list[list[integer]]
-        Layer output shapes
+    layers : list[Module] | Sequential
+        Layers part of the parent layer to loop through in the forward pass
+    net : Network
+        Subnetwork for the Composite layer
 
     Methods
     -------
     forward(x) -> Tensor
         Forward pass of the subnetwork
-    extra_repr() -> string
+    to(*args, **kwargs) -> Composite
+        Moves and/or casts the parameters and buffers
+    extra_repr() -> str
         Displays layer parameters when printing the network
     """
     def __init__(
             self,
             net_check: bool,
-            idx: int,
             name: str,
             config_dir: str,
-            shapes: list[list[int]],
-            check_shapes: list[list[int]],
-            checkpoint: bool = False,
-            channels: int = None,
-            shape: list[int] = None,
-            defaults: dict = None,
+            shapes: list[list[int | list[int]]],
+            checkpoint: bool = True,
+            channels: int | None = None,
+            shape: list[int] | None = None,
+            defaults: dict[str, Any] | None = None,
             **kwargs):
         """
         Parameters
         ----------
-        net_check : boolean
+        net_check : bool
             If layer index should be relative to checkpoint layers
-        idx : integer
-            Layer number
-        name : string
+        name : str
             Name of the subnetwork
-        config_dir : string
+        config_dir : str
             Path to the directory with the network configuration file
-        shapes : list[integer]
+        shapes : list[list[int | list[int]]]
             Shape of the outputs from each layer
-        check_shapes : list[list[integer]]
-            Shape of the outputs from each checkpoint
-        checkpoint : boolean, default = False
+        checkpoint : bool, default = True
             If layer index should be relative to checkpoint layers
-        channels : integer, optional
+        channels : int, optional
             Number of output channels, won't be used if out_shape is provided, if channels and
             out_shape aren't provided, the input dimensions will be preserved
-        shape : list[integer], optional
+        shape : list[int], optional
             Output shape of the block, will be used if provided; otherwise, channels will be used
-        defaults : dictionary, default = None
+        defaults : dict[str, Any], default = None
             Default values for the parameters for each type of layer
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(
-            net_check,
-            0,
-            shapes,
-            check_shapes,
-            checkpoint=checkpoint,
-            idx=idx,
-            **kwargs,
-        )
-        self._name = name
+        super().__init__(**kwargs)
+        self._checkpoint: bool
+        self.net: Network
+
+        self._checkpoint = checkpoint or net_check
         shapes.append(shapes[-1].copy())
+
+        if defaults is None:
+            defaults = {}
 
         # Subnetwork output if provided
         if shape:
@@ -209,56 +232,36 @@ class Composite(BaseMultiLayer):
         elif channels:
             shapes[-1][0] = channels
 
-        if '.json' not in self._name:
-            self._name += '.json'
-
         # Create subnetwork
-        _, self.shapes, *_, self.layers = _create_network(
+        self.net = Network(
+            name,
+            config_dir,
             shapes[-2],
             shapes[-1],
-            f'{config_dir}{self._name}',
             suppress_warning=True,
-            defaults=defaults,
+            defaults=defaults | {'checkpoints': self._checkpoint},
         )
-        shapes[-1] = self.shapes[-1]
+        shapes[-1] = self.net.shapes[-1]
 
-    def forward(
-            self,
-            x: Tensor,
-            outputs: list[Tensor],
-            checkpoints: list[Tensor],
-            net: Network,
-            *_) -> Tensor:
+    def forward(self, x: list[Tensor] | Tensor, **_) -> Tensor:
         """
-        Forward pass of the composite layer
+        Forward pass for the Composite layer
 
         Parameters
         ----------
-        x : (N,...) Tensor
-            Input tensor with batch size N
+        x : (N,...) list[Tensor] | Tensor
+            Input tensor(s) with batch size N
 
         Returns
         -------
         (N,...) Tensor
-            Output tensor from the composite layer
+            Output tensor from the subnetwork
         """
-        outputs = None
-        checkpoints = []
+        return self.net(x)
 
-        if not self._checkpoint:
-            outputs = [x]
-
-        for i, layer in enumerate(self.layers):
-            try:
-                x = layer(x, outputs=outputs, checkpoints=checkpoints, net=net)
-            except RuntimeError:
-                log.error(f'Error in {type(layer).__name__} (layer {i})')
-                raise
-
-            if not self._checkpoint:
-                outputs.append(x)
-
-        return x
+    def to(self, *args, **kwargs):
+        self.net.to(*args, **kwargs)
+        return self
 
     def extra_repr(self) -> str:
         """
@@ -266,41 +269,49 @@ class Composite(BaseMultiLayer):
 
         Returns
         -------
-        string
+        str
             Layer parameters
         """
-        return f'name={self._name}, checkpoint={self._checkpoint}, out_shape={self.shapes[-1]}'
+        return (f'name={self.net.name}, checkpoint={self._checkpoint}, '
+                f'out_shape={self.net.shapes[-1]}')
 
 
 def _create_network(
-        in_shape: list[int],
-        out_shape: list[int],
         config_path: str,
+        in_shape: list[int | list[int]],
+        out_shape: list[int],
         suppress_warning: bool = False,
-        defaults: dict = None,
-) -> tuple[bool, list[list[int]], list[list[int]], list[dict], nn.ModuleList]:
+        defaults: dict[str, Any] | None = None,
+) -> tuple[bool, list[list[int | list[int]]], list[list[int]], list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
     Parameters
     ----------
-    in_shape : integer
-        Shape of the input tensor, excluding batch size
-    out_shape : integer
-        Shape of the output tensor, excluding batch size
-    config_path : string
+    config_path : str
         Path to the config file
-    suppress_warning : boolean, default = False
+    in_shape : list[int | list[int]]
+        Shape of the input tensor(s), excluding batch size
+    out_shape : list[int]
+        Shape of the output tensor, excluding batch size
+    suppress_warning : bool, default = False
         If output shape mismatch warning should be suppressed
-    defaults : dictionary, default = None
+    defaults : dict[str, Any], default = None
         Default values for the parameters for each type of layer
 
     Returns
     -------
-    tuple[bool, list[list[integer]], list[dictionary], ModuleList]
+    tuple[bool, list[list[int | list[int]]], list[dict], ModuleList]
         If layer outputs should not be saved, layer output shapes, checkpoint shapes,
         layers in the network with parameters and network construction
     """
+    net_check: bool
+    shapes: list[list[int | list[int]]]
+    check_shapes: list[list[int]]
+    config: dict[str, Any]
+    file: TextIO
+    module_list: nn.ModuleList
+
     shapes = [in_shape]
     check_shapes = []
     net_check = False
@@ -310,8 +321,8 @@ def _create_network(
         defaults = {}
 
     # Load network configuration file
-    with open(config_path, 'r', encoding='utf-8') as config:
-        config = json.load(config)
+    with open(config_path, 'r', encoding='utf-8') as file:
+        config = json.load(file)
 
     if 'checkpoints' in config['net']:
         net_check = config['net']['checkpoints']
