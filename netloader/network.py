@@ -3,7 +3,7 @@ Constructs a network from layers and can load weights to resume network training
 """
 import json
 import logging as log
-from typing import Any, TextIO
+from typing import Any, TextIO, Self
 
 import torch
 from torch import nn, optim, Tensor
@@ -20,7 +20,7 @@ class Network(nn.Module):
     ----------
     name : str
         Name of the network, used for saving
-    shapes : list[list[int | list[int]]
+    shapes : list[list[int] | list[list[int]]
         Layer output shapes
     check_shapes : list[list[int]]
         Checkpoint output shapes
@@ -54,7 +54,7 @@ class Network(nn.Module):
             self,
             name: str,
             config_dir: str,
-            in_shape: list[int | list[int]],
+            in_shape: list[int] | list[list[int]],
             out_shape: list[int],
             suppress_warning: bool = False,
             learning_rate: float = 1e-2,
@@ -66,7 +66,7 @@ class Network(nn.Module):
             Name of the network configuration file (without extension)
         config_dir : str
             Path to the network config directory
-        in_shape : list[int | list[int]],
+        in_shape : list[int] | list[list[int]],
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
             shape of the output tensor, excluding batch size
@@ -79,25 +79,18 @@ class Network(nn.Module):
         """
         super().__init__()
         self._checkpoints: bool
-        self.group: int
-        self.layer_num: int | None
-        self.kl_loss_weight: float
-        self.name: str
+        self.group: int = 0
+        self.layer_num: int | None = None
+        self.kl_loss_weight: float = 1e-1
+        self.name: str = name
         self.check_shapes: list[list[int]]
-        self.shapes: list[list[int | list[int]]]
+        self.shapes: list[list[int] | list[list[int]]]
         self.layers: list[dict[str, Any]]
-        self.checkpoints: list[Tensor]
-        self.kl_loss: Tensor
+        self.checkpoints: list[Tensor] = []
+        self.kl_loss: Tensor = torch.tensor(0.)
         self.net: nn.ModuleList
         self.optimiser: optim.Optimizer
         self.scheduler: optim.lr_scheduler.LRScheduler
-
-        self.group = 0
-        self.layer_num = None
-        self.kl_loss_weight = 1e-1
-        self.name = name
-        self.checkpoints = []
-        self.kl_loss = torch.tensor(0.)
 
         if '.json' not in self.name:
             self.name += '.json'
@@ -115,7 +108,7 @@ class Network(nn.Module):
             self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
             self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
 
-    def forward(self, x: list[Tensor] | Tensor) -> Tensor:
+    def forward(self, x: list[Tensor] | Tensor) -> list[Tensor] | Tensor:
         """
         Forward pass of the network
 
@@ -126,13 +119,11 @@ class Network(nn.Module):
 
         Returns
         -------
-        (N,...) Tensor
+        (N,...) list[Tensor] | Tensor
             Output tensor from the network
         """
-        outputs: list[list[Tensor] | Tensor]
-
         self.checkpoints = []
-        outputs = []
+        outputs: list[list[Tensor] | Tensor] = []
 
         if not self._checkpoints or any(isinstance(layer, layers.Unpack) for layer in self.net):
             outputs = [x]
@@ -151,7 +142,7 @@ class Network(nn.Module):
                 outputs.append(x)
         return x
 
-    def to(self, *args, **kwargs):
+    def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
         self.kl_loss = self.kl_loss.to(*args, **kwargs)
 
@@ -186,12 +177,12 @@ class Composite(BaseLayer):
             net_check: bool,
             name: str,
             config_dir: str,
-            shapes: list[list[int | list[int]]],
+            shapes: list[list[int] | list[list[int]]],
             checkpoint: bool = True,
             channels: int | None = None,
             shape: list[int] | None = None,
             defaults: dict[str, Any] | None = None,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -201,7 +192,7 @@ class Composite(BaseLayer):
             Name of the subnetwork
         config_dir : str
             Path to the directory with the network configuration file
-        shapes : list[list[int | list[int]]]
+        shapes : list[list[int] | list[list[int]]]
             Shape of the outputs from each layer
         checkpoint : bool, default = True
             If layer index should be relative to checkpoint layers
@@ -230,6 +221,7 @@ class Composite(BaseLayer):
         if shape:
             shapes[-1] = shape
         elif channels:
+            assert isinstance(shapes[-1][0], int)
             shapes[-1][0] = channels
 
         # Create subnetwork
@@ -243,7 +235,7 @@ class Composite(BaseLayer):
         )
         shapes[-1] = self.net.shapes[-1]
 
-    def forward(self, x: list[Tensor] | Tensor, **_) -> Tensor:
+    def forward(self, x: list[Tensor] | Tensor, **_: Any) -> Tensor:
         """
         Forward pass for the Composite layer
 
@@ -259,7 +251,7 @@ class Composite(BaseLayer):
         """
         return self.net(x)
 
-    def to(self, *args, **kwargs):
+    def to(self, *args: Any, **kwargs: Any) -> Self:
         self.net.to(*args, **kwargs)
         return self
 
@@ -278,11 +270,11 @@ class Composite(BaseLayer):
 
 def _create_network(
         config_path: str,
-        in_shape: list[int | list[int]],
+        in_shape: list[int] | list[list[int]],
         out_shape: list[int],
         suppress_warning: bool = False,
         defaults: dict[str, Any] | None = None,
-) -> tuple[bool, list[list[int | list[int]]], list[list[int]], list[dict], nn.ModuleList]:
+) -> tuple[bool, list[list[int] | list[list[int]]], list[list[int]], list[dict], nn.ModuleList]:
     """
     Creates a network from a config file
 
@@ -290,7 +282,7 @@ def _create_network(
     ----------
     config_path : str
         Path to the config file
-    in_shape : list[int | list[int]]
+    in_shape : list[int] | list[list[int]]
         Shape of the input tensor(s), excluding batch size
     out_shape : list[int]
         Shape of the output tensor, excluding batch size
@@ -301,12 +293,12 @@ def _create_network(
 
     Returns
     -------
-    tuple[bool, list[list[int | list[int]]], list[dict], ModuleList]
+    tuple[bool, list[list[int] | list[list[int]]], list[dict], ModuleList]
         If layer outputs should not be saved, layer output shapes, checkpoint shapes,
         layers in the network with parameters and network construction
     """
     net_check: bool
-    shapes: list[list[int | list[int]]]
+    shapes: list[list[int] | list[list[int]]]
     check_shapes: list[list[int]]
     config: dict[str, Any]
     file: TextIO

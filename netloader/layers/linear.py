@@ -3,7 +3,7 @@ Linear network layers
 """
 from __future__ import annotations
 import logging as log
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Self
 
 import torch
 import numpy as np
@@ -39,7 +39,7 @@ class Linear(BaseLayer):
             batch_norm: bool = False,
             activation: bool = True,
             dropout: float = 0.01,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -63,16 +63,11 @@ class Linear(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self._batch_norm: bool
-        self._activation: bool
-        self._dropout: float
-        self._in_shape: list[int]
+        self._activation: bool = activation
+        self._batch_norm: bool = batch_norm
+        self._dropout: float = dropout
+        self._in_shape: list[int] = shapes[-1].copy()
         self._out_shape: list[int]
-
-        self._batch_norm = batch_norm
-        self._activation = activation
-        self._dropout = dropout
-        self._in_shape = shapes[-1].copy()
 
         # Remove channels dimension
         if len(self._in_shape) > 1:
@@ -82,7 +77,11 @@ class Linear(BaseLayer):
         if factor:
             features = max(1, int(np.prod(net_out) * factor))
 
-        self.layers.append(nn.Linear(in_features=np.prod(self._in_shape), out_features=features))
+        assert isinstance(features, int)
+        self.layers.append(nn.Linear(
+            in_features=int(np.prod(self._in_shape)),
+            out_features=features,
+        ))
 
         # Optional layers
         if self._activation:
@@ -129,7 +128,7 @@ class OrderedBottleneck(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, shapes: list[list[int]], min_size: int = 0, **kwargs):
+    def __init__(self, shapes: list[list[int]], min_size: int = 0, **kwargs: Any):
         """
         Parameters
         ----------
@@ -141,11 +140,10 @@ class OrderedBottleneck(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self.min_size: int
-        self.min_size = min_size
+        self.min_size: int = min_size
         shapes.append(shapes[-1].copy())
 
-    def forward(self, x: Tensor, **_) -> Tensor:
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
         """
         Forward pass of the information-ordered bottleneck layer
 
@@ -159,14 +157,11 @@ class OrderedBottleneck(BaseLayer):
         (N,...,Z) Tensor
             Input zeroed from a random index to the last value along the dimension Z
         """
-        idx: int
-        gate: Tensor
-
         if not self.training:
             return x
 
-        idx = np.random.randint(self.min_size, x.size(-1))
-        gate = torch.zeros(x.size(-1)).to(self._device)
+        idx: int = np.random.randint(self.min_size, x.size(-1))
+        gate: Tensor = torch.zeros(x.size(-1)).to(self._device)
         gate[:idx + 1] = 1
         return x * gate
 
@@ -200,7 +195,7 @@ class Sample(BaseLayer):
     forward(x, net) -> Tensor
         Forward pass of the sampling layer
     """
-    def __init__(self, idx: int, shapes: list[list[int]], **kwargs):
+    def __init__(self, idx: int, shapes: list[list[int]], **kwargs: Any):
         """
         Parameters
         ----------
@@ -212,8 +207,7 @@ class Sample(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self.sample_layer: torch.distributions.Distribution
-        self.sample_layer = torch.distributions.Normal(
+        self.sample_layer: torch.distributions.Distribution = torch.distributions.Normal(
             torch.tensor(0.).to(self._device),
             torch.tensor(1.).to(self._device),
         )
@@ -225,7 +219,7 @@ class Sample(BaseLayer):
         shapes.append(shapes[-1].copy())
         shapes[-1][0] = shapes[-1][0] // 2
 
-    def forward(self, x: Tensor, net: Network, **_) -> Tensor:
+    def forward(self, x: Tensor, net: Network, **_: Any) -> Tensor:
         """
         Forward pass of the sampling layer for a variational autoencoder
 
@@ -242,13 +236,9 @@ class Sample(BaseLayer):
         (N,C/2,...) | (N,Z/2) Tensor
             Output tensor sampled from the input tensor split into mean and standard deviation
         """
-        split: int
-        mean: Tensor
-        std: Tensor
-
-        split = x.size(1) // 2
-        mean = x[:, :split]
-        std = torch.exp(x[:, split:2 * split])
+        split: int = x.size(1) // 2
+        mean: Tensor = x[:, :split]
+        std: Tensor = torch.exp(x[:, split:2 * split])
         x = mean + std * self.sample_layer.sample(mean.shape)
 
         net.kl_loss += net.kl_loss_weight * 0.5 * torch.mean(
@@ -256,7 +246,7 @@ class Sample(BaseLayer):
         )
         return x
 
-    def to(self, *args, **kwargs):
+    def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
         self.sample_layer.loc = self.sample_layer.loc.to(*args, **kwargs)
         self.sample_layer.scale = self.sample_layer.scale.to(*args, **kwargs)
@@ -281,10 +271,10 @@ class Upsample(BaseLayer):
             self,
             idx: int,
             shapes: list[list[int]],
-            scale: float | tuple[float] = 2,
+            scale: float | tuple[float, ...] = 2,
             shape: list[int] | None = None,
             mode: str = 'linear',
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -292,7 +282,7 @@ class Upsample(BaseLayer):
             Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
-        scale : float | list[float], default = 2
+        scale : float | tuple[float], default = 2
             Factor to upscale all or individual dimensions, first dimension is ignored, won't be
             used if shape is provided
         shape : list[int], optional
@@ -303,12 +293,9 @@ class Upsample(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._mode: str
+        self._mode: str = mode
         self._scale: dict[str, list[int] | tuple[float, ...]]
-        modes: list[str]
-
-        self._mode = mode
-        modes = ['nearest', 'linear', 'bilinear', 'bicubic', 'trilinear']
+        modes: list[str] = ['nearest', 'linear', 'bilinear', 'bicubic', 'trilinear']
 
         if len(shapes[-1]) < 2:
             raise NotImplementedError(f'Upsampling in layer {idx} does not support tensors with '

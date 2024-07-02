@@ -1,4 +1,6 @@
-numpy~=1.26.3
+zuko~=1.2.0
+numpy~=1.26.4
+pandas~=2.2.2
 
 --find-links https://download.pytorch.org/whl/cu121; sys_platform == "Windows"
-torch~=2.2.0
+torch~=2.3.1

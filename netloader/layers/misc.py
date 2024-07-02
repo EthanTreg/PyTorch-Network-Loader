@@ -1,6 +1,8 @@
 """
 Miscellaneous network layers
 """
+from typing import Any
+
 import torch
 import numpy as np
 from torch import Tensor
@@ -23,7 +25,7 @@ class Checkpoint(BaseLayer):
     forward(x, net_check) -> Tensor
         Forward pass of the checkpoint layer
     """
-    def __init__(self, shapes: list[list[int]], check_shapes: list[list[int]], **kwargs):
+    def __init__(self, shapes: list[list[int]], check_shapes: list[list[int]], **kwargs: Any):
         """
         Parameters
         ----------
@@ -36,12 +38,11 @@ class Checkpoint(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self._check_num: int
-        self._check_num = len(check_shapes)
+        self._check_num: int = len(check_shapes)
         shapes.append(shapes[-1].copy())
         check_shapes.append(shapes[-1].copy())
 
-    def forward(self, x: Tensor, checkpoints: list[Tensor], **_) -> Tensor:
+    def forward(self, x: Tensor, checkpoints: list[Tensor], **_: Any) -> Tensor:
         """
         Forward pass of the checkpoint layer
 
@@ -97,7 +98,7 @@ class Concatenate(BaseMultiLayer):
             check_shapes: list[list[int]],
             checkpoint: bool = False,
             dim: int = 0,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -128,11 +129,8 @@ class Concatenate(BaseMultiLayer):
             idx=idx,
             **kwargs,
         )
-        self._dim: int
-        shape: list[int]
-
-        self._dim = dim
-        shape = shapes[-1].copy()
+        self._dim: int = dim
+        shape: list[int] = shapes[-1].copy()
 
         # If tensors cannot be concatenated along the specified dimension
         if ((self._target[:self._dim] + self._target[self._dim + 1:] !=
@@ -145,7 +143,12 @@ class Concatenate(BaseMultiLayer):
         shape[self._dim] = shape[self._dim] + self._target[self._dim]
         shapes.append(shape)
 
-    def forward(self, x: Tensor, outputs: list[Tensor], checkpoints: list[Tensor], **_) -> Tensor:
+    def forward(
+            self,
+            x: Tensor,
+            outputs: list[Tensor],
+            checkpoints: list[Tensor],
+            **_: Any) -> Tensor:
         """
         Forward pass of the concatenation layer
 
@@ -208,7 +211,7 @@ class Index(BaseLayer):
             number: int,
             shapes: list[list[int]] | None = None,
             greater: bool = True,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -224,10 +227,8 @@ class Index(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
-        self._greater: bool
-        self._number: int
-        self._greater = greater
-        self._number = number
+        self._greater: bool = greater
+        self._number: int = number
 
         # If not used as a layer in a network
         if not shapes:
@@ -241,7 +242,7 @@ class Index(BaseLayer):
         else:
             shapes[-1][-1] = shapes[-1][-1] - abs(number)
 
-    def forward(self, x: Tensor, **_) -> Tensor:
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
         """
         Forward pass of the indexing layer
 
@@ -288,7 +289,7 @@ class Reshape(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, shape: list[int], shapes: list[list[int]] | None = None, **kwargs):
+    def __init__(self, shape: list[int], shapes: list[list[int]] | None = None, **kwargs: Any):
         """
         Parameters
         ----------
@@ -302,10 +303,8 @@ class Reshape(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
-        self._shape: list[int]
+        self._shape: list[int] = shape
         fixed_shape: np.ndarray
-
-        self._shape = shape
 
         # If not used as a layer in a network
         if not shapes:
@@ -328,7 +327,7 @@ class Reshape(BaseLayer):
             raise ValueError(f'Output size does not match input size for input shape {shapes[-2]} '
                              f'and output shape {shapes[-1]}')
 
-    def forward(self, x: Tensor, **_) -> Tensor:
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
         """
         Forward pass of reshaping tensors
 
@@ -378,7 +377,7 @@ class Shortcut(BaseMultiLayer):
             shapes: list[list[int]],
             check_shapes: list[list[int]],
             checkpoint: bool = False,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -407,12 +406,9 @@ class Shortcut(BaseMultiLayer):
             idx=idx,
             **kwargs,
         )
-        shape: np.ndarray
-        mask: np.ndarray
         idxs: np.ndarray
-
-        shape = np.array(shapes[-1].copy())
-        mask = (shape != 1) & (self._target != 1)
+        shape: np.ndarray = np.array(shapes[-1].copy())
+        mask: np.ndarray = (shape != 1) & (self._target != 1)
 
         if not np.array_equal(shape[mask], np.array(self._target)[mask]):
             raise ValueError(f'Tensor shapes {shape} in layer {idx} and {self._target} in layer '
@@ -430,7 +426,12 @@ class Shortcut(BaseMultiLayer):
 
         shapes.append(shape.tolist())
 
-    def forward(self, x: Tensor, outputs: list[Tensor], checkpoints: list[Tensor], **_) -> Tensor:
+    def forward(
+            self,
+            x: Tensor,
+            outputs: list[Tensor],
+            checkpoints: list[Tensor],
+            **_: Any) -> Tensor:
         """
         Forward pass of the shortcut layer
 
@@ -475,7 +476,7 @@ class Skip(BaseMultiLayer):
             shapes: list[list[int]],
             check_shapes: list[list[int]],
             checkpoint: bool = False,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -503,7 +504,12 @@ class Skip(BaseMultiLayer):
         )
         shapes.append(self._target)
 
-    def forward(self, x: Tensor, outputs: list[Tensor], checkpoints: list[Tensor], **_) -> Tensor:
+    def forward(
+            self,
+            x: Tensor,
+            outputs: list[Tensor],
+            checkpoints: list[Tensor],
+            **_: Any) -> Tensor:
         """
         Forward pass of the skip layer
 
@@ -539,7 +545,12 @@ class Unpack(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, idx: int, index: int, shapes: list[list[int | list[int]]], **kwargs):
+    def __init__(
+            self,
+            idx: int,
+            index: int,
+            shapes: list[list[int] | list[list[int]]],
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -547,15 +558,14 @@ class Unpack(BaseLayer):
             Layer number
         index : int
             Index of input Tensor list
-        shapes : list[list[int | list[int]]
+        shapes : list[list[int] | list[list[int]]]
             Shape of the outputs from each layer
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._idx: int
-        self._idx = index
+        self._idx: int = index
 
         if isinstance(shapes[0][0], int):
             raise ValueError(f'Network input shape must be a list of input shapes for Unpack '
@@ -563,7 +573,7 @@ class Unpack(BaseLayer):
 
         shapes.append(shapes[0][self._idx])
 
-    def forward(self, _, outputs: list[list[Tensor] | Tensor], **__) -> Tensor:
+    def forward(self, _: Any, outputs: list[list[Tensor] | Tensor], **__: Any) -> Tensor:
         """
         Forward pass of the skip layer
 

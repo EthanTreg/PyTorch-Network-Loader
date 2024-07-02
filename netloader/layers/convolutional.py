@@ -1,6 +1,8 @@
 """
 Convolutional network layers
 """
+from typing import Any
+
 import torch
 from torch import nn, Tensor
 
@@ -30,7 +32,7 @@ class AdaptivePool(BaseLayer):
             shapes: list[list[int]],
             channels: bool = True,
             mode: str = 'average',
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -49,14 +51,10 @@ class AdaptivePool(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._channels: bool
-        self._mode: str
-        self._out_shape: int | list[int]
+        self._channels: bool = channels
+        self._out_shape: int | list[int] = shape
+        self._mode: str = mode
         adapt_pool: nn.Module
-
-        self._channels = channels
-        self._mode = mode
-        self._out_shape = shape
 
         if len(shapes[-1]) - self._channels > 3 or len(shapes[-1]) - self._channels < 1:
             raise ValueError(f'Adaptive pool in layer {idx} does not support tensors with more '
@@ -120,7 +118,7 @@ class Conv(BaseLayer):
             kernel: int | list[int] = 3,
             padding: int | str | list[int] = 'same',
             dropout: float = 0.1,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -154,18 +152,13 @@ class Conv(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._activation: bool
-        self._batch_norm: bool
-        self._dropout: float
-        shape: list[int]
+        self._activation: bool = activation
+        self._batch_norm: bool = batch_norm
+        self._dropout: float = dropout
+        shape: list[int] = shapes[-1].copy()
         conv: nn.Module
         dropout_: nn.Module
         batch_norm_: nn.Module
-
-        self._activation = activation
-        self._batch_norm = batch_norm
-        self._dropout = dropout
-        shape = shapes[-1].copy()
 
         if isinstance(padding, str) and padding != 'same':
             raise ValueError(f'Unknown padding: {padding} in layer {idx}, padding must be either '
@@ -185,7 +178,7 @@ class Conv(BaseLayer):
             raise ValueError(f'Convolution in layer {idx} does not support tensors with more than '
                              f'4 dimensions or less than 2, input shape is {shape}')
 
-        if factor:
+        if factor is not None and net_out is not None:
             shape[0] = max(1, int(net_out[0] * factor))
         elif filters:
             shape[0] = filters
@@ -243,7 +236,7 @@ class ConvDepthDownscale(Conv):
             batch_norm: bool = False,
             activation: bool = True,
             dropout: float = 0,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -299,7 +292,7 @@ class ConvDownscale(Conv):
                  activation: bool = True,
                  scale: int = 2,
                  dropout: float = 0.1,
-                 **kwargs):
+                 **kwargs: Any):
         """
         Parameters
         ----------
@@ -365,7 +358,7 @@ class ConvTranspose(BaseLayer):
             scale: int = 2,
             out_padding: int = 0,
             dropout: float = 0.1,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -395,18 +388,13 @@ class ConvTranspose(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._activation: bool
-        self._batch_norm: bool
-        self._dropout: float
-        shape: list[int]
+        self._activation: bool = activation
+        self._batch_norm: bool = batch_norm
+        self._dropout: float = dropout
+        shape: list[int] = shapes[-1].copy()
         transpose: nn.Module
         dropout_: nn.Module
         batch_norm_: nn.Module
-
-        self._activation = activation
-        self._batch_norm = batch_norm
-        self._dropout = dropout
-        shape = shapes[-1].copy()
 
         if out_padding > scale:
             raise ValueError(f'Output padding of {out_padding} in layer {idx} must be smaller than '
@@ -416,7 +404,7 @@ class ConvTranspose(BaseLayer):
             raise ValueError(f'Transposed convolution in layer {idx} does not support tensors with '
                              f'more than 4 dimensions or less than 2, input shape is {shape}')
 
-        if factor:
+        if factor is not None and net_out is not None:
             shape[0] = max(1, int(net_out[0] * factor))
         elif filters:
             shape[0] = filters
@@ -479,7 +467,7 @@ class ConvUpscale(Conv):
             scale: int = 2,
             kernel: int | list[int] = 3,
             dropout: float = 0,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -558,7 +546,12 @@ class PixelShuffle(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, scale: int, idx: int = 0, shapes: list[list[int]] | None = None, **kwargs):
+    def __init__(
+            self,
+            scale: int,
+            idx: int = 0,
+            shapes: list[list[int]] | None = None,
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -573,10 +566,8 @@ class PixelShuffle(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._scale: int
+        self._scale: int = scale
         filters_scale: int
-
-        self._scale = scale
 
         if not shapes:
             return
@@ -591,7 +582,7 @@ class PixelShuffle(BaseLayer):
         shapes[-1][0] = shapes[-1][0] // filters_scale
         shapes[-1][1:] = [length * self._scale for length in shapes[-1][1:]]
 
-    def forward(self, x: Tensor, **_) -> Tensor:
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
         r"""
         Forward pass of pixel shuffle
 
@@ -606,14 +597,11 @@ class PixelShuffle(BaseLayer):
             Output tensor
         """
         dims: int
-        filters_scale: int
-        output_channels: int
-        output_shape: Tensor
+        filters_scale: int = self._scale ** (len(x.shape[2:]))
+        output_channels: int = x.size(1) // filters_scale
+        output_shape: Tensor = self._scale * torch.tensor(x.shape[2:])
         idxs: Tensor
 
-        filters_scale = self._scale ** (len(x.shape[2:]))
-        output_channels = x.size(1) // filters_scale
-        output_shape = self._scale * torch.tensor(x.shape[2:])
         dims = len(output_shape)
         idxs = torch.arange(dims * 2) + 2
 
@@ -651,7 +639,7 @@ class Pool(BaseLayer):
             stride: int | list[int] = 2,
             padding: int | str | list[int] = 0,
             mode: str = 'max',
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -694,6 +682,7 @@ class Pool(BaseLayer):
         if self._mode == 'average':
             avg_kwargs = {'count_include_pad': False}
 
+        assert not isinstance(padding, str)
         self.layers.append(pool(kernel_size=kernel, stride=stride, padding=padding, **avg_kwargs))
         shapes.append(_kernel_shape(stride, kernel, padding, shapes[-1].copy()))
 
@@ -707,7 +696,7 @@ class PoolDownscale(Pool):
     layers : list[Module] | Sequential
         Layers to loop through in the forward pass
     """
-    def __init__(self, scale: int, shapes: list[list[int]], mode: str = 'max', **kwargs):
+    def __init__(self, scale: int, shapes: list[list[int]], mode: str = 'max', **kwargs: Any):
         """        
         Parameters
         ----------
@@ -730,7 +719,7 @@ def _kernel_shape(
         strides: int | list[int],
         kernel: int | list[int],
         padding: int | list[int],
-        shape: list[int]):
+        shape: list[int]) -> list[int]:
     """
     Calculates the output shape after a kernel operation
 
@@ -744,6 +733,11 @@ def _kernel_shape(
         Input padding
     shape : list[int]
         Input shape into the layer
+
+    Returns
+    -------
+    list[int]
+        Output shape of the layer
     """
     if isinstance(strides, int):
         strides = [strides] * len(shape[1:])
@@ -789,8 +783,7 @@ def _padding(
     list[int]
         Required padding for specific output shape
     """
-    padding: list[int]
-    padding = []
+    padding: list[int] = []
 
     if isinstance(strides, int):
         strides = [strides] * len(in_shape[1:])

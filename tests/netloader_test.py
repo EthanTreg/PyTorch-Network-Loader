@@ -4,9 +4,29 @@ Test to check that NetLoader is working properly
 import torch
 import numpy as np
 from torch import nn
+from torch.utils.data import Dataset, DataLoader
 
 from netloader.network import Network
+from netloader.networks import Encoder
 from netloader.utils.utils import get_device
+
+
+class TestDataset(Dataset):
+    """
+    Fake dataset to test netloader.networks
+    """
+    def __init__(self, in_shape):
+        self._in_shape = in_shape
+        self._device = get_device()[1]
+
+    def __len__(self):
+        return 60
+
+    def __getitem__(self, item):
+        target = torch.randint(0, 10, size=(1, 1)).to(self._device).float()
+        in_tensor = (torch.ones(size=(1, *self._in_shape[1:])).to(self._device) *
+                     target[..., None, None])
+        return 0, target[0], in_tensor[0]
 
 
 def main():
@@ -19,6 +39,7 @@ def main():
     target = torch.zeros([in_shape[0], 10]).to(device)
 
     # Test all layers
+    print('Testing layers...')
     network = Network(
         'layer_examples',
         '../network_configs/',
@@ -36,6 +57,7 @@ def main():
     print(f'Checkpoints: {len(network.checkpoints)}')
 
     # Test InceptionV4
+    print('Testing InceptionV4...')
     network = Network(
         'inceptionv4',
         '../network_configs/',
@@ -48,7 +70,14 @@ def main():
     loss = torch.nn.MSELoss()(out_tensor, target)
     loss.backward()
 
+    # Test Networks
+    print('Testing Networks...')
+    net = Encoder(0, '', network, verbose='progress', classes=torch.arange(10))
+    loader = DataLoader(TestDataset(in_shape), batch_size=60, shuffle=False)
+    net.training(20, (loader, loader))
+
     # Test training
+    print('Testing Network training...')
     network = Network(
         'training_test',
         '../network_configs/',

@@ -38,7 +38,7 @@ class Recurrent(BaseLayer):
             dropout: float = 0.1,
             method: str = 'gru',
             bidirectional: str | None = None,
-            **kwargs):
+            **kwargs: Any):
         """
         Parameters
         ----------
@@ -66,23 +66,15 @@ class Recurrent(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._activation: bool
-        self._batch_norm: bool
-        self._dropout: float
-        self._method: str
-        self._bidirectional: str | None
-        self._options: list[str | None]
-        shape: list[int]
+        self._activation: bool = activation
+        self._batch_norm: bool = batch_norm
+        self._dropout: float = dropout
+        self._method: str = method
+        self._bidirectional: str | None = bidirectional
+        self._options: list[str | None] = [None, 'sum', 'mean', 'concatenate']
+        shape: list[int] = [filters, int(np.prod(shapes[-1][1:]))]
         recurrent_kwargs: dict[str, Any]
         recurrent: nn.Module
-
-        self._activation = activation
-        self._batch_norm = batch_norm
-        self._dropout = dropout
-        self._method = method
-        self._bidirectional = bidirectional
-        self._options = [None, 'sum', 'mean', 'concatenate']
-        shape = [filters, np.prod(shapes[-1][1:])]
 
         if self._bidirectional not in self._options:
             raise ValueError(f'{self._bidirectional} in layer {idx} is not a valid bidirectional '
@@ -123,7 +115,7 @@ class Recurrent(BaseLayer):
 
         shapes.append(shape)
 
-    def forward(self, x: Tensor, **_) -> Tensor:
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
         r"""
         Forward pass of the recurrent layer
 
