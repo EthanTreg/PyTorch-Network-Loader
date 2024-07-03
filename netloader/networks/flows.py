@@ -158,9 +158,10 @@ class NormFlowEncoder(Encoder):
             states_dir: str,
             net: Network,
             encoder: Network,
+            mix_precision: bool = False,
             flow_checkpoint: int | None = None,
             description: str = '',
-            verbose: str = 'full',
+            verbose: str = 'epoch',
             train_epochs: tuple[int, int] | None = None,
             classes: Tensor | None = None):
         """
@@ -174,6 +175,8 @@ class NormFlowEncoder(Encoder):
             normalizing flow to predict low-dimensional data distribution
         encoder : Network
             Network to condition the normalizing flow from high-dimensional data
+        mix_precision: bool, default = False
+            If mixed precision should be used
         flow_checkpoint : int, default = None
             Network checkpoint to pass into the flow, if none, will use output from the network
         description : str, default = ''
@@ -188,6 +191,7 @@ class NormFlowEncoder(Encoder):
             save_num,
             states_dir,
             net,
+            mix_precision=mix_precision,
             description=description,
             verbose=verbose,
             classes=classes,

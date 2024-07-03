@@ -43,8 +43,9 @@ class Autoencoder(BaseNetwork):
             save_num: int,
             states_dir: str,
             net: Network,
+            mix_precision: bool = False,
             description: str = '',
-            verbose: str = 'full'):
+            verbose: str = 'epoch'):
         """
         Parameters
         ----------
@@ -54,13 +55,22 @@ class Autoencoder(BaseNetwork):
             Directory to save the network
         net : Network
             Network to predict low-dimensional data
+        mix_precision: bool, default = False
+            If mixed precision should be used
         description : str, default = ''
             Description of the network training
         verbose : {'full', 'progress', None}
             If details about epoch should be printed ('full'), just a progress bar ('progress'),
             or nothing (None)
         """
-        super().__init__(save_num, states_dir, net, description=description, verbose=verbose)
+        super().__init__(
+            save_num,
+            states_dir,
+            net,
+            mix_precision=mix_precision,
+            description=description,
+            verbose=verbose,
+        )
         self.reconstruct_loss: float = 1
         self.latent_loss: float = 1e-2
         self.bound_loss: float = 1e-3
@@ -200,8 +210,9 @@ class Encoder(BaseNetwork):
             save_num: int,
             states_dir: str,
             net: Network,
+            mix_precision: bool = False,
             description: str = '',
-            verbose: str = 'full',
+            verbose: str = 'epoch',
             classes: Tensor | None = None):
         """
         Parameters
@@ -212,6 +223,8 @@ class Encoder(BaseNetwork):
             Directory to save the network
         net : Network
             Network to predict low-dimensional data
+        mix_precision: bool, default = False
+            If mixed precision should be used
         description : str, default = ''
             Description of the network training
         verbose : {'full', 'progress', None}
@@ -220,7 +233,14 @@ class Encoder(BaseNetwork):
         classes : (C) Tensor, default = None
             Unique classes of size C if using class classification
         """
-        super().__init__(save_num, states_dir, net, description=description, verbose=verbose)
+        super().__init__(
+            save_num,
+            states_dir,
+            net,
+            mix_precision=mix_precision,
+            description=description,
+            verbose=verbose,
+        )
         self._loss_function: nn.MSELoss | nn.CrossEntropyLoss
         self.classes: Tensor | None
 

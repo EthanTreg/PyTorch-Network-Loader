@@ -56,8 +56,9 @@ class BaseNetwork:
             save_num: int,
             states_dir: str,
             net: Network,
+            mix_precision: bool = False,
             description: str = '',
-            verbose: str = 'full'):
+            verbose: str = 'epoch'):
         """
         Parameters
         ----------
@@ -67,13 +68,16 @@ class BaseNetwork:
             Directory to save the network
         net : Network
             Network to predict low-dimensional data
+        mix_precision: bool, default = False
+            If mixed precision should be used
         description : str, default = ''
             Description of the network
-        verbose : {'full', 'progress', None}
-            If details about epoch should be printed ('full'), just a progress bar ('progress'),
-            or nothing (None)
+        verbose : {'epoch', 'full', 'progress', None}
+            If details about each epoch should be printed ('epoch'), details about epoch and epoch
+            progress (full), just total progress ('progress'), or nothing (None)
         """
         self._train_state: bool = True
+        self._half: bool = mix_precision
         self._epoch: int = 0
         self._verbose: str = verbose
         self._device: torch.device = get_device()[1]
@@ -114,7 +118,7 @@ class BaseNetwork:
 
     def _train_val(self, loader: DataLoader) -> float:
         """
-        s
+        Trains the network for one epoch
 
         Parameters
         ----------
@@ -130,11 +134,17 @@ class BaseNetwork:
         low_dim: Tensor
         high_dim: Tensor
 
-        with torch.set_grad_enabled(self._train_state):
-            for _, low_dim, high_dim, *_ in loader:
+        with torch.set_grad_enabled(self._train_state), torch.autocast(
+                enabled=self._half,
+                device_type=self._device.type,
+                dtype=torch.bfloat16):
+            for i, (_, low_dim, high_dim, *_) in enumerate(loader):
                 low_dim = low_dim.to(self._device)
                 high_dim = high_dim.to(self._device)
                 epoch_loss += self._loss(*self._data_loader_translation(low_dim, high_dim))
+
+                if self._verbose == 'full':
+                    progress_bar(i, len(loader))
 
         return epoch_loss / len(loader)
 
@@ -169,6 +179,9 @@ class BaseNetwork:
             loss.backward()
             self.net.optimiser.step()
 
+            # Prevents memory leaks
+            self.net.kl_loss = self.net.kl_loss.detach()
+
     def _update_scheduler(self, scheduler: torch.optim.lr_scheduler.LRScheduler) -> None:
         """
         Updates the scheduler for the network
@@ -181,12 +194,15 @@ class BaseNetwork:
         learning_rate: list[float]
         new_learning_rate: list[float]
 
-        learning_rate = scheduler.get_last_lr()
-        scheduler.step(self.losses[1][-1])
-        new_learning_rate = scheduler.get_last_lr()
+        try:
+            learning_rate = scheduler.get_last_lr()
+            scheduler.step(self.losses[1][-1])
+            new_learning_rate = scheduler.get_last_lr()
 
-        if learning_rate[-1] != new_learning_rate[-1]:
-            print(f'Learning rate update: {new_learning_rate[-1]:.3e}')
+            if learning_rate[-1] != new_learning_rate[-1]:
+                print(f'Learning rate update: {new_learning_rate[-1]:.3e}')
+        except AttributeError:
+            scheduler.step(self.losses[1][-1])
 
     def _scheduler(self) -> None:
         """
@@ -301,7 +317,7 @@ class BaseNetwork:
             self._update_epoch()
             self.save()
 
-            if self._verbose == 'full':
+            if self._verbose in ('full', 'epoch'):
                 print(f'Epoch [{self._epoch}/{epochs}]\t'
                       f'Training loss: {self.losses[0][-1]:.3e}\t'
                       f'Validation loss: {self.losses[1][-1]:.3e}\t'
