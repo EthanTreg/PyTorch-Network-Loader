@@ -97,12 +97,14 @@ class Network(nn.Module):
 
         # Construct layers in network
         self._checkpoints, self.shapes, self.check_shapes, self.layers, self.net = _create_network(
-            f'{config_dir}{name}.json',
+            f'{config_dir}{self.name}',
             in_shape,
             out_shape,
             suppress_warning=suppress_warning,
             defaults=defaults,
         )
+
+        self.name = self.name.replace('.json', '')
 
         if learning_rate:
             self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
