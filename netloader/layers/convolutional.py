@@ -174,7 +174,7 @@ class Conv(BaseLayer):
             raise ValueError(f'Same padding in layer {idx} is not supported for strided '
                              f'convolution')
 
-        if len(shape) > 4 or len(shape) < 2:
+        if not 1 < len(shape) < 5:
             raise ValueError(f'Convolution in layer {idx} does not support tensors with more than '
                              f'4 dimensions or less than 2, input shape is {shape}')
 
@@ -400,7 +400,7 @@ class ConvTranspose(BaseLayer):
             raise ValueError(f'Output padding of {out_padding} in layer {idx} must be smaller than '
                              f'the scale factor {scale}')
 
-        if len(shape) > 4 or len(shape) < 2:
+        if not 1 < len(shape) < 5:
             raise ValueError(f'Transposed convolution in layer {idx} does not support tensors with '
                              f'more than 4 dimensions or less than 2, input shape is {shape}')
 
@@ -664,7 +664,7 @@ class Pool(BaseLayer):
         avg_kwargs: dict[str, bool]
         pool: nn.Module
 
-        if len(shapes[-1]) > 4 or len(shapes[-1]) < 2:
+        if not 1 < len(shapes[-1]) < 5:
             raise ValueError(f'Pooling in layer {idx} does not support tensors with more than 4 '
                              f'dimensions or less than 2, input shape is {shapes[-1]}')
 

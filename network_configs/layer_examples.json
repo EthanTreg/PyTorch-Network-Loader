@@ -92,6 +92,10 @@
       "type": "Sample"
     },
     {
+      "type": "Upsample",
+      "mode": "bilinear"
+    },
+    {
       "type": "Reshape",
       "shape": [4, -1]
     },
@@ -102,7 +106,7 @@
       "activation": 0,
       "layers": 2,
       "filters": 4,
-      "method": "rnn",
+      "mode": "rnn",
       "bidirectional": "concatenate"
     },
     {

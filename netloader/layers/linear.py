@@ -273,7 +273,7 @@ class Upsample(BaseLayer):
             shapes: list[list[int]],
             scale: float | tuple[float, ...] = 2,
             shape: list[int] | None = None,
-            mode: str = 'linear',
+            mode: str = 'nearest',
             **kwargs: Any):
         """
         Parameters
@@ -287,7 +287,7 @@ class Upsample(BaseLayer):
             used if shape is provided
         shape : list[int], optional
             Shape of the output, will be used if provided, else factor will be used
-        mode : {'linear', 'nearest', 'bilinear', 'bicubic', 'trilinear'}
+        mode : {'nearest', 'linear', 'bilinear', 'bicubic', 'trilinear'}
             What interpolation method to use for upsampling
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -295,11 +295,32 @@ class Upsample(BaseLayer):
         super().__init__(idx=idx, **kwargs)
         self._mode: str = mode
         self._scale: dict[str, list[int] | tuple[float, ...]]
-        modes: list[str] = ['nearest', 'linear', 'bilinear', 'bicubic', 'trilinear']
+        modes: dict[str, list[int]] = {
+            'nearest': [2, 3, 4],
+            'linear': [2],
+            'bilinear': [3],
+            'bicubic': [3],
+            'trilinear': [4],
+        }
 
-        if len(shapes[-1]) < 2:
-            raise NotImplementedError(f'Upsampling in layer {idx} does not support tensors with '
-                                      f'less than 2 dimensions, input shape is {shapes}')
+        if not 1 < len(shapes[-1]) < 5:
+            raise ValueError(f'Upsample in layer {idx} does not support tensors with more than '
+                             f'4 dimensions or less than 2, input shape is {shapes[-1]}')
+
+        if shape is not None and len(shape) != 1 and len(shape) + 1 != len(shapes[-1]):
+            raise ValueError(f'Upsampling target shape {shape} is not compatible with input shape: '
+                             f'{shapes[-1]}, check that channels dimension is not in target shape')
+
+        if self._mode not in modes:
+            log.warning(
+                f'Upsampling method {self._mode} in layer {idx} is not supported, nearest '
+                f'method will be used'
+            )
+            self._mode = 'nearest'
+
+        if len(shapes[-1]) not in modes[self._mode]:
+            raise ValueError(f'Upsampling method {self._mode} in layer {idx} only supports input '
+                             f'dimensions of {modes[self._mode]}, input shape is {shapes[-1]}')
 
         if isinstance(scale, list):
             scale = tuple(scale)
@@ -315,12 +336,5 @@ class Upsample(BaseLayer):
             shapes[-1][1:] = [
                 int(length * factor) for length, factor in zip(shapes[-1][1:], scale)
             ]
-
-        if self._mode not in modes:
-            log.warning(
-                f'Upsampling method {self._mode} in layer {idx} is not supported, linear '
-                f'method will be used'
-            )
-            self._mode = 'linear'
 
         self.layers.append(nn.Upsample(**self._scale, mode=self._mode))
