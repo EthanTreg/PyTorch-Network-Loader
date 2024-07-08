@@ -57,9 +57,10 @@
     {
       "type": "ConvTranspose",
       "factor": 0.5,
-      "dropout": 1,
+      "dropout": 0.2,
       "batch_norm": 0,
       "activation": 1,
+      "dilation": 2,
       "out_padding": 1
     },
     {

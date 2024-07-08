@@ -94,16 +94,19 @@ class Autoencoder(BaseNetwork):
             Loss from the autoencoder's predictions'
         """
         loss: Tensor
+        latent: Tensor | None = None
         bounds: Tensor = torch.tensor([0., 1.]).to(self._device)
         output: Tensor = self.net(in_data)
-        latent: Tensor = self.net.checkpoints[-1]
+
+        if self.net.checkpoints:
+            latent = self.net.checkpoints[-1]
 
         loss = self.reconstruct_loss * nn.MSELoss()(output, in_data) + self.net.kl_loss
 
-        if self.latent_loss:
+        if self.latent_loss and latent is not None:
             loss += self.latent_loss * nn.MSELoss()(latent, target)
 
-        if self.bound_loss:
+        if self.bound_loss and latent is not None:
             loss += self.bound_loss * torch.mean(torch.cat((
                 (bounds[0] - latent) ** 2 * (latent < bounds[0]),
                 (latent - bounds[1]) ** 2 * (latent > bounds[1]),
