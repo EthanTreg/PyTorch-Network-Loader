@@ -242,7 +242,10 @@ class BaseNetwork:
         self.train(False)
 
         # Generate predictions
-        with torch.no_grad():
+        with torch.no_grad(), torch.autocast(
+                enabled=self._half,
+                device_type=self._device.type,
+                dtype=torch.bfloat16):
             for ids, low_dim, high_dim, *_ in loader:
                 in_data, target = self._data_loader_translation(low_dim, high_dim)
                 data.append(pd.DataFrame([
