@@ -301,8 +301,12 @@ class ConvTranspose(BaseLayer):
             Size of the kernel
         stride : int | list[int], default = 1
             Stride of the kernel
-        out_padding : int, default = 0
+        out_padding : int | list[int], default = 0
             Padding applied to the output
+        dilation : int | list[int], default = 1
+            Spacing between kernel points
+        padding : int | str | list[int], default = 'same'
+            Inverse of convolutional padding which removes rows from each dimension in the output
         dropout : float, default =  0.1
             Probability of dropout
 
@@ -350,7 +354,7 @@ class ConvTranspose(BaseLayer):
             padding = _padding_transpose(kernel, stride, dilation, shapes[-1], shape)
 
         assert not isinstance(padding, str)
-        shape = _kernel_transpose_shape(kernel, stride, padding, dilation, shapes[-1])
+        shape[1:] = _kernel_transpose_shape(kernel, stride, padding, dilation, shapes[-1])[1:]
 
         if padding == 'same' and shape != shapes[-1]:
             self._slice[np.array(shape[1:]) - np.array(shapes[-1][1:]) == 1] = slice(-1, None)
@@ -395,6 +399,7 @@ class ConvTranspose(BaseLayer):
         x = super().forward(x)
         return x[..., *self._slice]
 
+
 class ConvTransposeUpscale(ConvTranspose):
     """
     Constructs an upscaler using a transposed convolutional layer.
@@ -415,8 +420,8 @@ class ConvTransposeUpscale(ConvTranspose):
             net_out: list[int] | None = None,
             batch_norm: bool = False,
             activation: bool = True,
-            scale: int = 2,
-            out_padding: int = 0,
+            scale: int | list[int] = 2,
+            out_padding: int | list[int] = 0,
             dropout: float = 0.1,
             **kwargs: Any):
         """
@@ -437,9 +442,9 @@ class ConvTransposeUpscale(ConvTranspose):
             If batch normalisation should be used
         activation : bool, default = True
             If ELU activation should be used
-        scale : int, default = 2
+        scale : int | list[int], default = 2
             Stride and size of the kernel, which acts as the upscaling factor
-        out_padding : int, default = 0
+        out_padding : int | list[int], default = 0
             Padding applied to the output
         dropout : float, default =  0.1
             Probability of dropout
