@@ -69,31 +69,26 @@ class Recurrent(BaseLayer):
         self._activation: bool = activation
         self._batch_norm: bool = batch_norm
         self._dropout: float = dropout
-        self._mode: str = mode
         self._bidirectional: str | None = bidirectional
         self._options: list[str | None] = [None, 'sum', 'mean', 'concatenate']
         shape: list[int] = [filters, int(np.prod(shapes[-1][1:]))]
         modes: dict[str, nn.RNNBase] = {'rnn': nn.RNN, 'lstm': nn.LSTM, 'gru': nn.GRU}
         recurrent: nn.Module
 
-        if self._bidirectional not in self._options:
-            raise ValueError(f'{self._bidirectional} in layer {idx} is not a valid bidirectional '
-                             f'method, valid options are: {self._options}')
-
-        if self._mode.lower() not in modes:
-            raise ValueError(f'Recurrent method {self._mode} in layer {idx} is not supported')
+        self._check_options('bidirectional', self._bidirectional, set(self._options))
+        self._check_options('mode', mode, set(modes))
 
         if layers == 1:
             self._dropout = 0
 
-        recurrent = modes[self._mode.lower()](
+        recurrent = modes[mode.lower()](
             input_size=shapes[-1][0],
             hidden_size=shape[0],
             num_layers=layers,
             batch_first=True,
             dropout=self._dropout,
             bidirectional=self._bidirectional is not None,
-            **({'nonlinearity': 'relu'} if self._mode.lower() == 'rnn' else {}),
+            **({'nonlinearity': 'relu'} if mode.lower() == 'rnn' else {}),
         )
 
         if bidirectional == 'concatenate':
@@ -104,7 +99,7 @@ class Recurrent(BaseLayer):
         self.layers.append(recurrent)
 
         # Optional layers
-        if self._activation and self._mode.lower() != 'rnn':
+        if self._activation and mode.lower() != 'rnn':
             self.layers.append(nn.ELU())
 
         if self._batch_norm:

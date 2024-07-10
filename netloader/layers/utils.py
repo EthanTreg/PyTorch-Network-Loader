@@ -59,6 +59,104 @@ class BaseLayer(nn.Module):
                     f'Unknown parameters for {self.__class__.__name__} in layer {idx}: {bad_params}'
                 )
 
+    @staticmethod
+    def _check_options(name: str, value: str | None, options: set[str | None]) -> None:
+        """
+        Checks if a provided option is supported
+
+        Parameters
+        ----------
+        name : str
+            Name of the option
+        value : str
+            Value provided
+        options : set[str]
+            List of supported options
+        """
+        if value not in options:
+            raise ValueError(f'{name.title()} ({value}) is unknown, {name} must be one of '
+                             f'{options}')
+
+    @staticmethod
+    def _check_kernel(kernel: int | list[int], padding: int | list[int], shape: list[int]) -> None:
+        """
+        Checks if the kernel size is too large for input shape
+
+        Parameters
+        ----------
+        kernel : int | list[int]
+            Size of the kernel
+        padding : int | list[int]
+            Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
+        shape : list[int]
+            Input shape
+        """
+        if (np.array(shape[1:]) + np.array(padding) < np.array(kernel)).any():
+            raise ValueError(f'Kernel ({kernel}) is too large for input shape {shape} and padding '
+                             f'({padding})')
+
+    @staticmethod
+    def _check_stride(stride: int | list[int]) -> None:
+        """
+        Checks if the stride is greater than 1 if 'same' padding is being used
+
+        Parameters
+        ----------
+        stride : int | list[int]
+            Stride of the kernel
+        """
+        if (np.array(stride) > 1).any():
+            raise ValueError(f"'same' padding is not supported for strides > 1 ({stride})")
+
+    @staticmethod
+    def _check_shape(shape: list[int]) -> None:
+        """
+        Checks if the input shape has more than 4 dimensions or fewer than 2
+
+        Parameters
+        ----------
+        shape : list[int]
+            Input shape
+        """
+        if not 1 < len(shape) < 5:
+            raise ValueError(f'Tensors with more than 4 dimensions or less than 2 is not '
+                             f'supported, input shape is {shape}')
+
+    @staticmethod
+    def _check_factor_filters(
+            shape: list[int],
+            filters: int | None = None,
+            factor: float | None = None,
+            net_out: list[int] | None = None) -> list[int]:
+        """
+        Checks if factor or filters is provided and calculates the number of filters
+
+        Parameters
+        ----------
+        shape : list[int]
+            Input shape
+        filters : int, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
+
+        Returns
+        -------
+        list[int]
+            Input shape with the adjusted number of filters
+        """
+        if factor is not None and net_out is not None:
+            shape[0] = max(1, int(net_out[0] * factor))
+        elif filters is not None:
+            shape[0] = filters
+        else:
+            raise ValueError('Either factor or filters is required')
+
+        return shape
+
     def initialise_layers(self) -> None:
         """
         Checks if self.layers contains layers and exposes them to the optimiser so that weights can

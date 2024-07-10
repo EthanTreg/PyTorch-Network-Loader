@@ -6,6 +6,7 @@ from typing import Any
 import torch
 import numpy as np
 from torch import Tensor
+from numpy import ndarray
 
 from netloader.layers.utils import BaseLayer, BaseMultiLayer
 
@@ -92,7 +93,6 @@ class Concatenate(BaseMultiLayer):
     def __init__(
             self,
             net_check: bool,
-            idx: int,
             layer: int,
             shapes: list[list[int]],
             check_shapes: list[list[int]],
@@ -104,8 +104,6 @@ class Concatenate(BaseMultiLayer):
         ----------
         net_check : bool
             If layer index should be relative to checkpoint layers
-        idx : int
-            Layer number
         layer : int
             Layer index to concatenate the previous layer output with
         shapes : list[list[int]]
@@ -126,22 +124,32 @@ class Concatenate(BaseMultiLayer):
             shapes,
             check_shapes,
             checkpoint=checkpoint,
-            idx=idx,
             **kwargs,
         )
         self._dim: int = dim
         shape: list[int] = shapes[-1].copy()
 
         # If tensors cannot be concatenated along the specified dimension
-        if ((self._target[:self._dim] + self._target[self._dim + 1:] !=
-             shape[:self._dim] + shape[self._dim + 1:]) or
-                (len(self._target) != len(shape))):
-            raise ValueError(f'Shape mismatch, input shape {shape} in layer {idx} does not match '
-                             f'the target shape {self._target} in layer/checkpoint '
-                             f'{self._layer} for concatenation over dimension {self._dim}')
+        self._check_concatenation(shape)
 
         shape[self._dim] = shape[self._dim] + self._target[self._dim]
         shapes.append(shape)
+
+    def _check_concatenation(self, shape: list[int]) -> None:
+        """
+        Checks if input shape and target shape are compatible for concatenation
+
+        Parameters
+        ----------
+        shape : list[int]
+            Input shape
+        """
+        if ((self._target[:self._dim] + self._target[self._dim + 1:] !=
+             shape[:self._dim] + shape[self._dim + 1:]) or
+                (len(self._target) != len(shape))):
+            raise ValueError(f'Input shape {shape} does not match the target shape {self._target} '
+                             f"in {'checkpoint' if self._checkpoint else 'layer'} {self._layer} "
+                             f'for concatenation over dimension {self._dim}')
 
     def forward(
             self,
@@ -289,43 +297,64 @@ class Reshape(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, shape: list[int], shapes: list[list[int]] | None = None, **kwargs: Any):
+    def __init__(
+            self,
+            shape: list[int],
+            net_out: list[int] | None = None,
+            shapes: list[list[int]] | None = None,
+            factor: bool = False,
+            **kwargs: Any):
         """
         Parameters
         ----------
         shape : list[int]
             Desired shape of the output tensor, ignoring first dimension
+        net_out : list[int], optional
+            Shape of the network's output, required only if factor is True
         shapes : list[list[int]], optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
+        factor : bool, default = False
+            If reshape should be relative to the network output shape, requires tracking layer
+            outputs
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
         self._shape: list[int] = shape
-        fixed_shape: np.ndarray
+        prod: int
+        elm: int
 
         # If not used as a layer in a network
         if not shapes:
             return
 
+        if factor:
+            self._shape = [
+                int(elm * target) if elm != -1 else -1 for elm, target in zip(self._shape, net_out)
+            ]
+
         # If -1 in output shape, calculate the dimension length from the input dimensions
         if -1 not in self._shape:
             shapes.append(self._shape)
-        elif shape.count(-1) == 1:
+        elif self._shape.count(-1) == 1:
             shape = self._shape.copy()
-            fixed_shape = np.delete(shape, np.array(shape) == -1)
-            shape[shape.index(-1)] = np.prod(shapes[-1]) // np.prod(fixed_shape)
+            prod = np.prod(np.array(shape)[np.array(shape) != -1])
+            shape[shape.index(-1)] = np.prod(shapes[-1]) // prod
             shapes.append(shape)
         else:
             raise ValueError(f'Cannot infer output shape as -1 occurs more than once in '
                              f'{self._shape}')
 
         # If input tensor cannot be reshaped into output shape
-        if np.prod(shapes[-1]) != np.prod(shapes[-2]):
-            raise ValueError(f'Output size does not match input size for input shape {shapes[-2]} '
-                             f'and output shape {shapes[-1]}')
+        self._check_reshape(shapes[-2], shapes[-1])
+
+    @staticmethod
+    def _check_reshape(in_shape: list[int], out_shape: list[int]) -> None:
+        if np.prod(out_shape) != np.prod(in_shape):
+            raise ValueError(f'Input size does not match output size for input shape {in_shape} '
+                             f'& output shape {out_shape}')
 
     def forward(self, x: Tensor, **_: Any) -> Tensor:
         """
@@ -372,7 +401,6 @@ class Shortcut(BaseMultiLayer):
     def __init__(
             self,
             net_check: bool,
-            idx: int,
             layer: int,
             shapes: list[list[int]],
             check_shapes: list[list[int]],
@@ -383,8 +411,6 @@ class Shortcut(BaseMultiLayer):
         ----------
         net_check : bool
             If layer index should be relative to checkpoint layers
-        idx : int
-            Layer number
         layer : int
             Layer index to concatenate the previous layer output with
         shapes : list[list[int]]
@@ -403,16 +429,12 @@ class Shortcut(BaseMultiLayer):
             shapes,
             check_shapes,
             checkpoint=checkpoint,
-            idx=idx,
             **kwargs,
         )
-        idxs: np.ndarray
-        shape: np.ndarray = np.array(shapes[-1].copy())
-        mask: np.ndarray = (shape != 1) & (self._target != 1)
-
-        if not np.array_equal(shape[mask], np.array(self._target)[mask]):
-            raise ValueError(f'Tensor shapes {shape} in layer {idx} and {self._target} in layer '
-                             f'{layer} not compatible for addition.')
+        idxs: ndarray
+        shape: ndarray = np.array(shapes[-1].copy())
+        mask: ndarray = (shape != 1) & (self._target != 1)
+        self._check_addition(shape, mask)
 
         # If input has any dimensions of length one, output will take the target dimension
         if 1 in shape:
@@ -425,6 +447,22 @@ class Shortcut(BaseMultiLayer):
             shape[idxs] = shape[idxs]
 
         shapes.append(shape.tolist())
+        
+    def _check_addition(self, shape: ndarray, mask: ndarray) -> None:
+        """
+        Checks if input shape and target shape are compatible for addition
+
+        Parameters
+        ----------
+        shape : ndarray
+            Input shape
+        mask : ndarray
+            Mask for dimensions with size of one in both input and target
+        """
+        if not np.array_equal(shape[mask], np.array(self._target)[mask]):
+            raise ValueError(f'Input shape {shape} is not compatible with target shape '
+                             f"{self._target} in {'checkpoint' if self._checkpoint else 'layer'} "
+                             f'{self._layer} for addition')
 
     def forward(
             self,
@@ -547,15 +585,12 @@ class Unpack(BaseLayer):
     """
     def __init__(
             self,
-            idx: int,
             index: int,
             shapes: list[list[int] | list[list[int]]],
             **kwargs: Any):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         index : int
             Index of input Tensor list
         shapes : list[list[int] | list[list[int]]]
@@ -564,12 +599,12 @@ class Unpack(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(idx=idx, **kwargs)
+        super().__init__(**kwargs)
         self._idx: int = index
 
         if isinstance(shapes[0][0], int):
-            raise ValueError(f'Network input shape must be a list of input shapes for Unpack '
-                             f'layer, input shape is {shapes[0]}.')
+            raise ValueError(f'Network input shape must be a list of input shapes, input shape is '
+                             f'{shapes[0]}')
 
         shapes.append(shapes[0][self._idx])
 

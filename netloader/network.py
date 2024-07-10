@@ -132,6 +132,11 @@ class Network(nn.Module):
 
         for i, layer in enumerate(self.layers[:self.layer_num]):
             if 'group' in layer and layer['group'] != self.group:
+                outputs.append(torch.tensor([]))
+
+                if layer['type'] == 'Checkpoint':
+                    self.checkpoints.append(torch.tensor([]))
+
                 continue
 
             try:
@@ -333,14 +338,19 @@ def _create_network(
         else:
             layer_class = getattr(layers, layer['type'])
 
-        module_list.append(layer_class(
-            net_check=net_check,
-            idx=i,
-            net_out=out_shape,
-            shapes=shapes,
-            check_shapes=check_shapes,
-            **layer,
-        ))
+        try:
+            module_list.append(layer_class(
+                net_check=net_check,
+                idx=i,
+                net_out=out_shape,
+                shapes=shapes,
+                check_shapes=check_shapes,
+                **layer,
+            ))
+        except ValueError:
+            log.error(f"Error in {layer['type']} (layer {i})")
+            raise
+
         module_list[-1].initialise_layers()
 
     # Check network output dimensions

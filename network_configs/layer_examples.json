@@ -20,17 +20,12 @@
     {
       "type": "Composite",
       "name": "inception",
-      "channels": 128,
+      "channels": 64,
       "defaults": {
         "Conv": {
           "dropout": 0.2
         }
       }
-    },
-    {
-      "type": "Composite",
-      "name": "inception",
-      "channels": 128
     },
     {
       "type": "Conv",
@@ -64,6 +59,10 @@
       "out_padding": 1
     },
     {
+      "type": "ConvTransposeUpscale",
+      "factor": 0.5
+    },
+    {
       "type": "ConvUpscale",
       "filters": 2,
       "batch_norm": 0,
@@ -76,6 +75,13 @@
       "stride": 2,
       "padding": 0,
       "mode": "max"
+    },
+    {
+      "type": "Pool",
+      "kernel": 2,
+      "stride": 2,
+      "padding": 0,
+      "mode": "average"
     },
     {
       "type": "PoolDownscale",
@@ -214,6 +220,17 @@
       "factor": 1,
       "dropout": 0,
       "group": 1
+    },
+    {
+      "type": "Reshape",
+      "factor": 1,
+      "shape": [1]
+    },
+    {
+      "type": "Reshape",
+      "factor": 1,
+      "shape": [-1],
+      "bad_param_2": 1
     }
   ]
 }

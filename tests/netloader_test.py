@@ -74,7 +74,7 @@ def main():
     print('Testing Networks...')
     net = Encoder(0, '', network, verbose='progress', classes=torch.arange(10))
     loader = DataLoader(TestDataset(in_shape), batch_size=60, shuffle=False)
-    net.training(20, (loader, loader))
+    net.training(5, (loader, loader))
 
     # Test training
     print('Testing Network training...')

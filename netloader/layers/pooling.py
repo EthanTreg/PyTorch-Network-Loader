@@ -4,7 +4,7 @@ Pooling network layers
 from typing import Any
 
 import numpy as np
-from torch import nn
+from torch import nn, Tensor
 
 from netloader.layers.utils import BaseLayer, _kernel_shape, _padding
 
@@ -27,7 +27,6 @@ class AdaptivePool(BaseLayer):
     """
     def __init__(
             self,
-            idx: int,
             shape: int | list[int],
             shapes: list[list[int]],
             channels: bool = True,
@@ -36,8 +35,6 @@ class AdaptivePool(BaseLayer):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shape : int | list[int]
             Output shape of the layer
         shapes : list[list[int]]
@@ -50,36 +47,66 @@ class AdaptivePool(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(idx=idx, **kwargs)
+        super().__init__(**kwargs)
         self._channels: bool = channels
-        self._out_shape: int | list[int] = shape
         self._mode: str = mode
         adapt_pool: nn.Module
 
-        if len(shapes[-1]) - self._channels > 3 or len(shapes[-1]) - self._channels < 1:
-            raise ValueError(f'Adaptive pool in layer {idx} does not support tensors with more '
-                             f'than 3 dimensions + channels or less than 1 + channels, input shape '
-                             f'is {shapes[-1]} and channels is {bool(self._channels)}.')
-
-        if isinstance(self._out_shape, int):
-            self._out_shape = [self._out_shape] * (len(shapes[-1]) - self._channels)
-        elif len(self._out_shape) == 1:
-            self._out_shape = self._out_shape * (len(shapes[-1]) - self._channels)
-        elif len(self._out_shape) != len(shapes[-1]) - self._channels:
-            raise ValueError(f'Adaptive pool target shape {self._out_shape} in layer {idx} does '
-                             f'not match the input shape {shapes[-1]} if channels is '
-                             f'{bool(self._channels)}, output dimensions must be either 1, or '
-                             f'{len(shapes[-1]) - self._channels}')
+        self._check_shape(shapes[-1])
+        self._check_adapt_pool(shapes[-1], shape)
 
         adapt_pool = [
             [nn.AdaptiveMaxPool1d, nn.AdaptiveAvgPool1d],
             [nn.AdaptiveMaxPool2d, nn.AdaptiveAvgPool2d],
             [nn.AdaptiveMaxPool3d, nn.AdaptiveAvgPool3d],
         ][len(shapes[-1]) - self._channels - 1][self._mode == 'average']
-        self.layers.append(adapt_pool(self._out_shape))
+        self.layers.append(adapt_pool(shape))
 
+        assert isinstance(shape, list)
         shapes.append(shapes[-1].copy())
-        shapes[-1][self._channels:] = self._out_shape
+        shapes[-1][self._channels:] = shape
+
+    def _check_shape(self, shape: list[int]) -> None:
+        """
+        Checks if the input shape has more than 3 dimensions + channels or fewer than 1 + channels
+
+        Parameters
+        ----------
+        shape : list[int]
+            Input shape
+        """
+        if len(shape) - self._channels > 3 or len(shape) - self._channels < 1:
+            raise ValueError(f'Tensors with more than 3 dimensions + channels or less than 1 + '
+                             f'channels is not supported, input shape is {shape} and channels is '
+                             f'{bool(self._channels)}.')
+
+    def _check_adapt_pool(self, in_shape: list[int], shape: int | list[int]) -> list[int]:
+        """
+        Checks if the target shape is compatible with the input shape and calculates the output
+        shape
+
+        Parameters
+        ----------
+        in_shape : list[int]
+            Input shape
+        shape : int | list[int]
+            Target shape
+
+        Returns
+        -------
+        list[int]
+            Output shape
+        """
+        if isinstance(shape, int):
+            shape = [shape] * (len(in_shape) - self._channels)
+        elif len(shape) == 1:
+            shape = shape * (len(in_shape) - self._channels)
+        elif len(shape) != len(in_shape) - self._channels:
+            raise ValueError(f'Target shape {shape} does not match the input shape {in_shape} if '
+                             f'channels is {bool(self._channels)}, output dimensions must be '
+                             f'either 1, or {len(in_shape) - self._channels}')
+
+        return shape
 
     def extra_repr(self) -> str:
         """
@@ -106,7 +133,6 @@ class Pool(BaseLayer):
     """
     def __init__(
             self,
-            idx: int,
             shapes: list[list[int]],
             kernel: int | list[int] = 2,
             stride: int | list[int] = 2,
@@ -116,8 +142,6 @@ class Pool(BaseLayer):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         kernel : int | list[int], default = 2
@@ -132,40 +156,72 @@ class Pool(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(idx=idx, **kwargs)
-        self._mode: str
-        avg_kwargs: dict[str, bool]
+        super().__init__(**kwargs)
+        self._pad: np.ndarray = np.zeros(2 * len(shapes[-1][1:]), dtype=int)
+        padding_: int | str | list[int] = padding
+        shape: list[int]
+        modes: tuple[str, str] = ('max', 'average')
+        avg_kwargs: dict[str, bool] = {}
         pool: nn.Module
 
-        if isinstance(padding, str) and padding != 'same':
-            raise ValueError(f'Pooling padding of {padding} in layer {idx} is unknown, padding '
-                             f"must be either 'same', int, or list[int]")
+        # Check for errors and calculate same padding
+        if isinstance(padding, str):
+            self._check_options('padding', padding, {'same'})
+            self._check_stride(stride)
+            padding = _padding(kernel, stride, shapes[-1], shapes[-1])
 
-        if (np.array(stride) > 1).any() and padding == 'same':
-            raise ValueError(f"Pooling 'same' padding in layer {idx} is not supported for "
-                             f'strides > 1, stride is {stride}')
+        # Check for errors
+        self._check_shape(shapes[-1])
+        self._check_kernel(kernel, padding, shapes[-1])
+        self._check_options('mode', mode, set(modes))
 
-        if not 1 < len(shapes[-1]) < 5:
-            raise ValueError(f'Pooling in layer {idx} does not support tensors with more than 4 '
-                             f'dimensions or less than 2, input shape is {shapes[-1]}')
-
-        self._mode = mode
-        avg_kwargs = {}
         pool = [
             [nn.MaxPool1d, nn.AvgPool1d],
             [nn.MaxPool2d, nn.AvgPool2d],
             [nn.MaxPool3d, nn.AvgPool3d],
-        ][len(shapes[-1]) - 2][self._mode == 'average']
+        ][len(shapes[-1]) - 2][mode == modes[1]]
 
-        if padding == 'same':
-            padding = _padding(kernel, stride, shapes[-1], shapes[-1])
+        assert not isinstance(padding, str)
+        shape = _kernel_shape(
+            kernel,
+            stride,
+            padding,
+            shapes[-1],
+        )
 
-        if self._mode == 'average':
+        if mode == modes[1]:
             avg_kwargs = {'count_include_pad': False}
+
+        # Correct same padding for one-sided padding
+        if padding_ == 'same' and shape != shapes[-1]:
+            self._pad[np.argwhere(
+                np.array(shape[1:]) != np.array(shapes[-1][1:])
+            ).flatten() * 2 + 1] = 1
+            shape = shapes[-1].copy()
 
         assert not isinstance(padding, str)
         self.layers.append(pool(kernel_size=kernel, stride=stride, padding=padding, **avg_kwargs))
-        shapes.append(_kernel_shape(kernel, stride, padding, shapes[-1].copy()))
+        shapes.append(shape)
+
+    def forward(self, x: Tensor, **kwargs: Any) -> Tensor:
+        """
+        Forward pass of the pool layer
+
+        Parameters
+        ----------
+        x : (N,...) Tensor
+            Input tensor with batch size N
+
+        **kwargs
+            Arguments to be passed to parent forward method
+
+        Returns
+        -------
+        (N,...) Tensor
+            Output tensor with batch size N
+        """
+        x = nn.functional.pad(x, tuple(self._pad))
+        return super().forward(x, **kwargs)
 
 
 class PoolDownscale(Pool):
@@ -185,8 +241,6 @@ class PoolDownscale(Pool):
         ----------
         scale : int
             Stride and size of the kernel, which acts as the downscaling factor
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         mode : {'max', 'average'}

@@ -213,8 +213,8 @@ class Sample(BaseLayer):
         )
 
         if shapes[-1][0] % 2 == 1:
-            log.warning(f'Sample layer in layer {idx} expects an even length along the first '
-                        f'dimension, but input shape is {shapes[-1]}, last element will be ignored')
+            log.warning(f'Sample in layer {idx} expects an even length along the first dimension, '
+                        f'but input shape is {shapes[-1]}, last element will be ignored')
 
         shapes.append(shapes[-1].copy())
         shapes[-1][0] = shapes[-1][0] // 2
@@ -293,8 +293,7 @@ class Upsample(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._mode: str = mode
-        self._scale: dict[str, list[int] | tuple[float, ...]]
+        scale_arg: dict[str, list[int] | tuple[float, ...]]
         modes: dict[str, list[int]] = {
             'nearest': [2, 3, 4],
             'linear': [2],
@@ -303,24 +302,11 @@ class Upsample(BaseLayer):
             'trilinear': [4],
         }
 
-        if not 1 < len(shapes[-1]) < 5:
-            raise ValueError(f'Upsample in layer {idx} does not support tensors with more than '
-                             f'4 dimensions or less than 2, input shape is {shapes[-1]}')
-
-        if shape is not None and len(shape) != 1 and len(shape) + 1 != len(shapes[-1]):
-            raise ValueError(f'Upsampling target shape {shape} is not compatible with input shape: '
-                             f'{shapes[-1]}, check that channels dimension is not in target shape')
-
-        if self._mode not in modes:
-            log.warning(
-                f'Upsampling method {self._mode} in layer {idx} is not supported, nearest '
-                f'method will be used'
-            )
-            self._mode = 'nearest'
-
-        if len(shapes[-1]) not in modes[self._mode]:
-            raise ValueError(f'Upsampling method {self._mode} in layer {idx} only supports input '
-                             f'dimensions of {modes[self._mode]}, input shape is {shapes[-1]}')
+        # Check for errors
+        self._check_shape(shapes[-1])
+        self._check_upsample(shapes[-1], shape)
+        self._check_options('mode', mode, set(modes))
+        self._check_mode_dimension(mode, shapes[-1], modes)
 
         if isinstance(scale, list):
             scale = tuple(scale)
@@ -328,13 +314,25 @@ class Upsample(BaseLayer):
             scale = (scale,) * len(shapes[-1][1:])
 
         if shape:
-            self._scale = {'size': shape}
+            scale_arg = {'size': shape}
             shapes.append(shape)
         else:
-            self._scale = {'scale_factor': scale}
+            scale_arg = {'scale_factor': scale}
             shapes.append(shapes[-1].copy())
             shapes[-1][1:] = [
                 int(length * factor) for length, factor in zip(shapes[-1][1:], scale)
             ]
 
-        self.layers.append(nn.Upsample(**self._scale, mode=self._mode))
+        self.layers.append(nn.Upsample(**scale_arg, mode=mode))
+        
+    @staticmethod
+    def _check_mode_dimension(mode: str, shape: list[int], modes: dict[str, list[int]]) -> None:
+        if len(shape) not in modes[mode]:
+            raise ValueError(f'{mode} only supports input dimensions of {modes[mode]}, '
+                             f'input shape is {shape}')
+        
+    @staticmethod
+    def _check_upsample(in_shape: list[int], out_shape: list[int] | None) -> None:
+        if out_shape is not None and len(out_shape) != 1 and len(out_shape) + 1 != len(in_shape):
+            raise ValueError(f'Target shape {out_shape} is not compatible with input shape '
+                             f'{in_shape}, check that channels dimension is not in target shape')

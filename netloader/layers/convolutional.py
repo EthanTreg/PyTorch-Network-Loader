@@ -7,7 +7,7 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.utils import BaseLayer, _int_list_conversion, _kernel_shape
+from netloader.layers.utils import BaseLayer, _int_list_conversion, _kernel_shape, _padding
 
 
 class Conv(BaseLayer):
@@ -23,7 +23,6 @@ class Conv(BaseLayer):
     """
     def __init__(
             self,
-            idx: int,
             shapes: list[list[int]],
             filters: int | None = None,
             factor: float | None = None,
@@ -38,8 +37,6 @@ class Conv(BaseLayer):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -58,8 +55,7 @@ class Conv(BaseLayer):
         stride : int | list[int], default = 1
             Stride of the kernel
         padding : int | str | list[int], default = 'same'
-            Input padding, can an int, list of ints or
-            'same' where 'same' preserves the input shape
+            Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
         dropout : float, default = 0.1
             Probability of dropout
 
@@ -67,37 +63,26 @@ class Conv(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(idx=idx, **kwargs)
+        super().__init__(**kwargs)
         self._activation: bool = activation
         self._batch_norm: bool = batch_norm
         self._dropout: float = dropout
+        padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
         conv: nn.Module
         dropout_: nn.Module
         batch_norm_: nn.Module
 
-        if isinstance(padding, str) and padding != 'same':
-            raise ValueError(f'Convolution padding of {padding} in layer {idx}, padding must be '
-                             f"either 'same', int, or list[int]")
+        # Check for errors and calculate same padding
+        if isinstance(padding, str):
+            self._check_options('padding', padding, {'same'})
+            self._check_stride(stride)
+            padding = _padding(kernel, stride, shapes[-1], shapes[-1])
 
-        if padding != 'same' and (np.array(shape[1:]) + np.array(padding) < np.array(kernel)).any():
-            raise ValueError(f'Convolution kernel of {kernel} in layer {idx} is too large for '
-                             f'input shape {shape} and padding {padding}')
-
-        if (np.array(stride) > 1).any() and padding == 'same':
-            raise ValueError(f"Convolution 'same' padding in layer {idx} is not supported for "
-                             f'strides > 1, stride is {stride}')
-
-        if not 1 < len(shape) < 5:
-            raise ValueError(f'Convolution in layer {idx} does not support tensors with more than '
-                             f'4 dimensions or less than 2, input shape is {shape}')
-
-        if factor is not None and net_out is not None:
-            shape[0] = max(1, int(net_out[0] * factor))
-        elif filters:
-            shape[0] = filters
-        else:
-            raise ValueError(f'Convolution in layer {idx} requires either factor or filters')
+        # Check for errors and calculate number of filters
+        self._check_kernel(kernel, padding, shape)
+        self._check_shape(shape)
+        self._check_factor_filters(shape, filters, factor, net_out)
 
         conv, dropout_, batch_norm_ = [
             [nn.Conv1d, nn.Dropout1d, nn.BatchNorm1d],
@@ -110,7 +95,7 @@ class Conv(BaseLayer):
             out_channels=shape[0],
             kernel_size=kernel,
             stride=stride,
-            padding=padding,
+            padding=padding_,
             padding_mode='replicate',
         ))
 
@@ -124,7 +109,7 @@ class Conv(BaseLayer):
         if self._dropout:
             self.layers.append(dropout_(self._dropout))
 
-        if padding == 'same':
+        if padding_ == 'same':
             shapes.append(shape)
         else:
             assert not isinstance(padding, str)
@@ -142,9 +127,8 @@ class ConvDepthDownscale(Conv):
     """
     def __init__(
             self,
-            idx: int,
             shapes: list[list[int]],
-            net_out: list[int],
+            net_out: list[int] | None = None,
             batch_norm: bool = False,
             activation: bool = True,
             dropout: float = 0,
@@ -152,8 +136,6 @@ class ConvDepthDownscale(Conv):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         net_out : list[int], optional
@@ -169,7 +151,6 @@ class ConvDepthDownscale(Conv):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(
-            idx=idx,
             shapes=shapes,
             filters=1,
             net_out=net_out,
@@ -195,7 +176,6 @@ class ConvDownscale(Conv):
         Layers to loop through in the forward pass
     """
     def __init__(self,
-                 idx: int,
                  shapes: list[list[int]],
                  filters: int | None = None,
                  factor: float | None = None,
@@ -208,8 +188,6 @@ class ConvDownscale(Conv):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -232,7 +210,6 @@ class ConvDownscale(Conv):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(
-            idx=idx,
             shapes=shapes,
             filters=filters,
             factor=factor,
@@ -265,7 +242,6 @@ class ConvTranspose(BaseLayer):
     """
     def __init__(
             self,
-            idx: int,
             shapes: list[list[int]],
             filters: int | None = None,
             factor: float | None = None,
@@ -282,8 +258,6 @@ class ConvTranspose(BaseLayer):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -313,36 +287,26 @@ class ConvTranspose(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(idx=idx, **kwargs)
+        super().__init__(**kwargs)
         self._activation: bool = activation
         self._batch_norm: bool = batch_norm
         self._dropout: float = dropout
         self._slice: np.ndarray = np.array([slice(None)] * len(shapes[-1][1:]))
+        padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
         transpose: nn.Module
         dropout_: nn.Module
         batch_norm_: nn.Module
 
-        if isinstance(padding, str) and padding != 'same':
-            raise ValueError(f'Transposed padding of {padding} in layer {idx} is unknown, padding '
-                             f"must be either 'same', int, or list[int]")
+        # Check for errors and calculate same padding
+        if isinstance(padding, str):
+            self._check_options('padding', padding, {'same'})
+            padding = _padding_transpose(kernel, stride, dilation, shapes[-1], shape)
 
-        if ((np.array(out_padding) >= np.array(stride)) *
-            (np.array(out_padding) >= np.array(dilation))).any():
-            raise ValueError(f'Transposed output padding of {out_padding} in layer {idx} must be '
-                             f'smaller than either the stride of {stride} or the dilation of '
-                             f'{dilation}')
-
-        if not 1 < len(shape) < 5:
-            raise ValueError(f'Transposed in layer {idx} does not support tensors with more than 4 '
-                             f'dimensions or less than 2, input shape is {shape}')
-
-        if factor is not None and net_out is not None:
-            shape[0] = max(1, int(net_out[0] * factor))
-        elif filters:
-            shape[0] = filters
-        else:
-            raise ValueError(f'Transposed in layer {idx} requires either factor or filters')
+        # Check for errors and calculate number of filters
+        self._check_shape(shape)
+        self._check_out_padding(stride, dilation, out_padding)
+        self._check_factor_filters(shape, filters, factor, net_out)
 
         transpose, dropout_, batch_norm_ = [
             [nn.ConvTranspose1d, nn.Dropout1d, nn.BatchNorm1d],
@@ -350,15 +314,20 @@ class ConvTranspose(BaseLayer):
             [nn.ConvTranspose3d, nn.Dropout3d, nn.BatchNorm3d],
         ][len(shape) - 2]
 
-        if padding == 'same':
-            padding = _padding_transpose(kernel, stride, dilation, shapes[-1], shape)
-
         assert not isinstance(padding, str)
-        shape[1:] = _kernel_transpose_shape(kernel, stride, padding, dilation, shapes[-1])[1:]
+        shape = _kernel_transpose_shape(
+            kernel,
+            stride,
+            padding,
+            dilation,
+            out_padding,
+            shape,
+        )
 
-        if padding == 'same' and shape != shapes[-1]:
-            self._slice[np.array(shape[1:]) - np.array(shapes[-1][1:]) == 1] = slice(-1, None)
-            shape = shapes[-1].copy()
+        # Correct same padding for one-sided padding
+        if padding_ == 'same' and shape != shapes[-1]:
+            self._slice[np.array(shape[1:]) - np.array(shapes[-1][1:]) == 1] = slice(-1)
+            shape[1:] = shapes[-1][1:]
 
         self.layers.append(transpose(
             in_channels=shapes[-1][0],
@@ -382,21 +351,34 @@ class ConvTranspose(BaseLayer):
 
         shapes.append(shape)
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    @staticmethod
+    def _check_out_padding(
+            stride: int | list[int],
+            dilation: int | list[int],
+            out_padding: int | list[int]) -> None:
+        if ((np.array(out_padding) >= np.array(stride)) *
+                (np.array(out_padding) >= np.array(dilation))).any():
+            raise ValueError(f'Output padding ({out_padding}) must be smaller than either stride '
+                             f'({stride}) or dilation ({dilation})')
+
+    def forward(self, x: Tensor, **kwargs: Any) -> Tensor:
         """
         Forward pass of the transposed convolutional layer
 
         Parameters
         ----------
-        x : Tensor
+        x : (N,...) Tensor
             Input tensor with batch size N
+
+        **kwargs
+            Arguments to be passed to the parent forward method
 
         Returns
         -------
-        Tensor
+        (N,...) Tensor
             Output tensor with batch size N
         """
-        x = super().forward(x)
+        x = super().forward(x, **kwargs)
         return x[..., *self._slice]
 
 
@@ -413,7 +395,6 @@ class ConvTransposeUpscale(ConvTranspose):
     """
     def __init__(
             self,
-            idx: int,
             shapes: list[list[int]],
             filters: int | None = None,
             factor: float | None = None,
@@ -427,8 +408,6 @@ class ConvTransposeUpscale(ConvTranspose):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -453,7 +432,6 @@ class ConvTransposeUpscale(ConvTranspose):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(
-            idx=idx,
             shapes=shapes,
             filters=filters,
             factor=factor,
@@ -486,7 +464,6 @@ class ConvUpscale(Conv):
     """
     def __init__(
             self,
-            idx: int,
             shapes: list[list[int]],
             filters: int | None = None,
             factor: float | None = None,
@@ -500,8 +477,6 @@ class ConvUpscale(Conv):
         """
         Parameters
         ----------
-        idx : int
-            Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -525,20 +500,16 @@ class ConvUpscale(Conv):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        filters_scale: int
-        filters_scale = scale ** (len(shapes[-1]) - 1)
-
-        if factor:
-            filters = int(max(1, shapes[-1][0] * factor) * filters_scale)
-        elif filters:
-            filters = int(filters * filters_scale)
-        else:
-            raise ValueError(f'Convolution upscale in layer {idx} requires either factor or '
-                             f'filters')
+        filters_scale: int = scale ** (len(shapes[-1]) - 1)
+        filters = self._check_factor_filters(
+            shapes[-1].copy(),
+            filters,
+            factor,
+            net_out,
+        )[0] * filters_scale
 
         # Convolutional layer
         super().__init__(
-            idx=idx,
             shapes=shapes,
             filters=filters,
             net_out=net_out,
@@ -576,26 +547,19 @@ class PixelShuffle(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(
-            self,
-            scale: int,
-            idx: int = 0,
-            shapes: list[list[int]] | None = None,
-            **kwargs: Any):
+    def __init__(self, scale: int, shapes: list[list[int]] | None = None, **kwargs: Any):
         """
         Parameters
         ----------
         scale : int
             Upscaling factor
-        idx : int, default = 0
-            Layer number
         shapes : list[list[int]], default = None
             Shape of the outputs from each layer
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(idx=idx, **kwargs)
+        super().__init__(**({'idx': 0} | kwargs))
         self._scale: int = scale
         filters_scale: int
 
@@ -604,14 +568,17 @@ class PixelShuffle(BaseLayer):
             return
 
         filters_scale = self._scale ** (len(shapes[-1][1:]))
-
-        if shapes[-1][0] % filters_scale != 0:
-            raise ValueError(f'Pixel shuffle filters of {shapes[-1]} in layer {idx} must be an '
-                             f'integer multiple of {filters_scale}')
+        self._check_filters(filters_scale, shapes[-1])
 
         shapes.append(shapes[-1].copy())
         shapes[-1][0] = shapes[-1][0] // filters_scale
         shapes[-1][1:] = [length * self._scale for length in shapes[-1][1:]]
+
+    @staticmethod
+    def _check_filters(filters_scale: int, shape: list[int]) -> None:
+        if shape[0] % filters_scale != 0:
+            raise ValueError(f'Channels ({shape}) must be an integer multiple of '
+                             f'{filters_scale}')
 
     def forward(self, x: Tensor, **_: Any) -> Tensor:
         r"""
@@ -658,6 +625,7 @@ def _kernel_transpose_shape(
         strides: int | list[int],
         padding: int | list[int],
         dilation: int | list[int],
+        out_padding: int | list[int],
         shape: list[int]) -> list[int]:
     """
     Calculates the output shape after a transposed convolutional kernel
@@ -681,21 +649,22 @@ def _kernel_transpose_shape(
         Output shape of the layer
     """
     shape = shape.copy()
-    strides, kernel, padding, dilation = _int_list_conversion(
+    strides, kernel, padding, dilation, out_padding = _int_list_conversion(
         len(shape[1:]),
-        [strides, kernel, padding, dilation]
+        [strides, kernel, padding, dilation, out_padding]
     )
 
-    for i, (stride, kernel_length, pad, dilation_length, length) in enumerate(zip(
-        strides,
-        kernel,
-        padding,
-        dilation,
-        shape[1:]
+    for i, (stride, kernel_length, pad, dilation_length, out_pad, length) in enumerate(zip(
+            strides,
+            kernel,
+            padding,
+            dilation,
+            out_padding,
+            shape[1:]
     )):
         shape[i + 1] = max(
             1,
-            stride * (length - 1) + dilation_length * (kernel_length - 1) - 2 * pad + 1
+            stride * (length - 1) + dilation_length * (kernel_length - 1) - 2 * pad + out_pad + 1
         )
 
     return shape
@@ -735,11 +704,11 @@ def _padding_transpose(
     )
 
     for stride, kernel_length, dilation_length, in_length, out_length in zip(
-        strides,
-        kernel,
-        dilation,
-        in_shape[1:],
-        out_shape[1:],
+            strides,
+            kernel,
+            dilation,
+            in_shape[1:],
+            out_shape[1:],
     ):
         padding.append(
             (stride * (in_length - 1) + dilation_length * (kernel_length - 1) - out_length + 1) // 2
