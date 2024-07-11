@@ -36,6 +36,7 @@ class Linear(BaseLayer):
             shapes: list[list[int]],
             features: int | None = None,
             factor: int | None = None,
+            layer: int | None = None,
             batch_norm: bool = False,
             activation: bool = True,
             dropout: float = 0.01,
@@ -51,8 +52,11 @@ class Linear(BaseLayer):
             Number of output features for the layer,
             if out_shape from kwargs and factor is provided, features will not be used
         factor : float, optional
-            Output features is equal to the factor of the network's output,
-            will be used if provided, else features will be used
+            Output features is equal to the factor of the network's output, or if layer is provided,
+            which layer to be relative to, will be used if provided, else features will be used
+        layer : int, optional
+            If factor is True, which layer for factor to be relative to, if None, network output
+            will be used
         batch_norm : bool, default = False
             If batch normalisation should be used
         activation : bool, default = True
@@ -66,8 +70,9 @@ class Linear(BaseLayer):
         self._activation: bool = activation
         self._batch_norm: bool = batch_norm
         self._dropout: float = dropout
-        self._in_shape: list[int] = shapes[-1].copy()
         self._out_shape: list[int]
+        self._in_shape: list[int] = shapes[-1].copy()
+        target: list[int] = shapes[layer] if layer is not None else net_out
 
         # Remove channels dimension
         if len(self._in_shape) > 1:
@@ -75,7 +80,7 @@ class Linear(BaseLayer):
 
         # Number of features can be defined by either a factor of the output size or explicitly
         if factor:
-            features = max(1, int(np.prod(net_out) * factor))
+            features = max(1, int(np.prod(target) * factor))
 
         assert isinstance(features, int)
         self.layers.append(nn.Linear(
@@ -207,7 +212,7 @@ class Sample(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self.sample_layer: torch.distributions.Distribution = torch.distributions.Normal(
+        self.sample_layer: torch.distributions.Normal = torch.distributions.Normal(
             torch.tensor(0.).to(self._device),
             torch.tensor(1.).to(self._device),
         )
@@ -241,7 +246,7 @@ class Sample(BaseLayer):
         std: Tensor = torch.exp(x[:, split:2 * split])
         x = mean + std * self.sample_layer.sample(mean.shape)
 
-        net.kl_loss += net.kl_loss_weight * 0.5 * torch.mean(
+        net.kl_loss = net.kl_loss_weight * 0.5 * torch.mean(
             mean ** 2 + std ** 2 - 2 * torch.log(std) - 1
         )
         return x
@@ -293,7 +298,7 @@ class Upsample(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        scale_arg: dict[str, list[int] | tuple[float, ...]]
+        scale_arg: dict[str, tuple[int, ...] | tuple[float, ...]]
         modes: dict[str, list[int]] = {
             'nearest': [2, 3, 4],
             'linear': [2],
@@ -314,7 +319,7 @@ class Upsample(BaseLayer):
             scale = (scale,) * len(shapes[-1][1:])
 
         if shape:
-            scale_arg = {'size': shape}
+            scale_arg = {'size': tuple(shape)}
             shapes.append(shape)
         else:
             scale_arg = {'scale_factor': scale}

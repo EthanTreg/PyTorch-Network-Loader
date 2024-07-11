@@ -1,7 +1,7 @@
 """
 Pooling network layers
 """
-from typing import Any
+from typing import Any, Type
 
 import numpy as np
 from torch import nn, Tensor
@@ -50,7 +50,7 @@ class AdaptivePool(BaseLayer):
         super().__init__(**kwargs)
         self._channels: bool = channels
         self._mode: str = mode
-        adapt_pool: nn.Module
+        adapt_pool: Type[nn.Module]
 
         self._check_shape(shapes[-1])
         self._check_adapt_pool(shapes[-1], shape)
@@ -162,7 +162,7 @@ class Pool(BaseLayer):
         shape: list[int]
         modes: tuple[str, str] = ('max', 'average')
         avg_kwargs: dict[str, bool] = {}
-        pool: nn.Module
+        pool: Type[nn.Module]
 
         # Check for errors and calculate same padding
         if isinstance(padding, str):

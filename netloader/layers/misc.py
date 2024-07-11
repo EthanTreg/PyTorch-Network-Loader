@@ -300,6 +300,7 @@ class Reshape(BaseLayer):
     def __init__(
             self,
             shape: list[int],
+            layer: int | None = None,
             net_out: list[int] | None = None,
             shapes: list[list[int]] | None = None,
             factor: bool = False,
@@ -309,14 +310,17 @@ class Reshape(BaseLayer):
         ----------
         shape : list[int]
             Desired shape of the output tensor, ignoring first dimension
+        layer : int, optional
+            If factor is True, which layer for factor to be relative to, if None, network output
+            will be used
         net_out : list[int], optional
             Shape of the network's output, required only if factor is True
         shapes : list[list[int]], optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
         factor : bool, default = False
-            If reshape should be relative to the network output shape, requires tracking layer
-            outputs
+            If reshape should be relative to the network output shape, or if layer is provided,
+            which layer to be relative to, requires tracking layer outputs
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -325,14 +329,16 @@ class Reshape(BaseLayer):
         self._shape: list[int] = shape
         prod: int
         elm: int
+        target: list[int]
 
         # If not used as a layer in a network
         if not shapes:
             return
 
-        if factor:
+        if factor and shapes is not None:
+            target = shapes[layer] if layer is not None else net_out
             self._shape = [
-                int(elm * target) if elm != -1 else -1 for elm, target in zip(self._shape, net_out)
+                int(elm * length) if elm != -1 else -1 for elm, length in zip(self._shape, target)
             ]
 
         # If -1 in output shape, calculate the dimension length from the input dimensions

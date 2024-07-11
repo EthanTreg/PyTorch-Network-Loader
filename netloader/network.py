@@ -90,7 +90,7 @@ class Network(nn.Module):
         self.kl_loss: Tensor = torch.tensor(0.)
         self.net: nn.ModuleList
         self.optimiser: optim.Optimizer
-        self.scheduler: optim.lr_scheduler.LRScheduler
+        self.scheduler: optim.lr_scheduler.ReduceLROnPlateau
 
         if '.json' not in self.name:
             self.name += '.json'

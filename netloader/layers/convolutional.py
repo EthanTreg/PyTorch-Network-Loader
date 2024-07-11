@@ -1,7 +1,7 @@
 """
 Convolutional network layers
 """
-from typing import Any
+from typing import Any, Type
 
 import torch
 import numpy as np
@@ -69,9 +69,9 @@ class Conv(BaseLayer):
         self._dropout: float = dropout
         padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
-        conv: nn.Module
-        dropout_: nn.Module
-        batch_norm_: nn.Module
+        conv: Type[nn.Module]
+        dropout_: Type[nn.Module]
+        batch_norm_: Type[nn.Module]
 
         # Check for errors and calculate same padding
         if isinstance(padding, str):
@@ -252,7 +252,7 @@ class ConvTranspose(BaseLayer):
             stride: int | list[int] = 1,
             out_padding: int | list[int] = 0,
             dilation: int | list[int] = 1,
-            padding: int | str | list[int] = 'same',
+            padding: int | str | list[int] = 0,
             dropout: float = 0.1,
             **kwargs: Any):
         """
@@ -279,7 +279,7 @@ class ConvTranspose(BaseLayer):
             Padding applied to the output
         dilation : int | list[int], default = 1
             Spacing between kernel points
-        padding : int | str | list[int], default = 'same'
+        padding : int | str | list[int], default = 0
             Inverse of convolutional padding which removes rows from each dimension in the output
         dropout : float, default =  0.1
             Probability of dropout
@@ -294,9 +294,9 @@ class ConvTranspose(BaseLayer):
         self._slice: np.ndarray = np.array([slice(None)] * len(shapes[-1][1:]))
         padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
-        transpose: nn.Module
-        dropout_: nn.Module
-        batch_norm_: nn.Module
+        transpose: Type[nn.Module]
+        dropout_: Type[nn.Module]
+        batch_norm_: Type[nn.Module]
 
         # Check for errors and calculate same padding
         if isinstance(padding, str):

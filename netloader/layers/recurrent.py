@@ -1,7 +1,7 @@
 """
 Recurrent network layers
 """
-from typing import Any
+from typing import Any, Type
 
 import torch
 import numpy as np
@@ -72,7 +72,7 @@ class Recurrent(BaseLayer):
         self._bidirectional: str | None = bidirectional
         self._options: list[str | None] = [None, 'sum', 'mean', 'concatenate']
         shape: list[int] = [filters, int(np.prod(shapes[-1][1:]))]
-        modes: dict[str, nn.RNNBase] = {'rnn': nn.RNN, 'lstm': nn.LSTM, 'gru': nn.GRU}
+        modes: dict[str, Type[nn.RNNBase]] = {'rnn': nn.RNN, 'lstm': nn.LSTM, 'gru': nn.GRU}
         recurrent: nn.Module
 
         self._check_options('bidirectional', self._bidirectional, set(self._options))

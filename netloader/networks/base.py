@@ -5,7 +5,7 @@ import os
 import pickle
 import logging as log
 from time import time
-from typing import Any
+from typing import Any, Self
 
 import torch
 import numpy as np
@@ -179,10 +179,7 @@ class BaseNetwork:
             loss.backward()
             self.net.optimiser.step()
 
-            # Prevents memory leaks
-            self.net.kl_loss = self.net.kl_loss.detach()
-
-    def _update_scheduler(self, scheduler: torch.optim.lr_scheduler.LRScheduler) -> None:
+    def _update_scheduler(self, scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau) -> None:
         """
         Updates the scheduler for the network
 
@@ -384,8 +381,8 @@ class BaseNetwork:
         if self.transform is not None:
             data.iloc[:, 1:3] = data.iloc[:, 1:3] * self.transform[1] + self.transform[0]
 
-        data.columns = header[:len(data.columns)]
-        data = {key: np.stack(array).squeeze() for key, array in data.items()}
+        data.columns = pd.Index(header[:len(data.columns)])
+        data = {str(key): np.stack(array).squeeze() for key, array in data.items()}
         self._save_predictions(path, data)
         return data
 
@@ -404,6 +401,55 @@ class BaseNetwork:
             N predictions for the given data
         """
         return (self.net(data).detach().cpu().numpy(),)
+
+    def to(self, *args: Any, **kwargs: Any) -> Self:
+        r"""Move and/or cast the parameters and buffers.
+
+        This can be called as
+
+        .. function:: to(device=None, dtype=None, non_blocking=False)
+           :noindex:
+
+        .. function:: to(dtype, non_blocking=False)
+           :noindex:
+
+        .. function:: to(tensor, non_blocking=False)
+           :noindex:
+
+        .. function:: to(memory_format=torch.channels_last)
+           :noindex:
+
+        Its signature is similar to :meth:`torch.Tensor.to`, but only accepts
+        floating point or complex :attr:`dtype`\ s. In addition, this method will
+        only cast the floating point or complex parameters and buffers to :attr:`dtype`
+        (if given). The integral parameters and buffers will be moved
+        :attr:`device`, if that is given, but with dtypes unchanged. When
+        :attr:`non_blocking` is set, it tries to convert/move asynchronously
+        with respect to the host if possible, e.g., moving CPU Tensors with
+        pinned memory to CUDA devices.
+
+        See below for examples.
+
+        .. note::
+            This method modifies the module in-place.
+
+        Args:
+            device (:class:`torch.device`): the desired device of the parameters
+                and buffers in this module
+            dtype (:class:`torch.dtype`): the desired floating point or complex dtype of
+                the parameters and buffers in this module
+            tensor (torch.Tensor): Tensor whose dtype and device are the desired
+                dtype and device for all parameters and buffers in this module
+            memory_format (:class:`torch.memory_format`): the desired memory
+                format for 4D parameters and buffers in this module (keyword
+                only argument)
+
+        Returns:
+            Module: self
+        """
+        self.net = self.net.to(*args, **kwargs)
+        self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)
+        return self
 
 
 def load_net(num: int, states_dir: str, net_name: str) -> BaseNetwork:

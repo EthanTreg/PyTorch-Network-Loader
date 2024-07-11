@@ -158,6 +158,21 @@
       "shape": [-1]
     },
     {
+      "type": "Linear",
+      "factor": 1,
+      "layer": -2
+    },
+    {
+      "type": "Reshape",
+      "shape": [1, 1],
+      "factor": 1,
+      "layer": -3
+    },
+    {
+      "type": "Reshape",
+      "shape": [-1]
+    },
+    {
       "type": "Shortcut",
       "checkpoint": 1,
       "layer": -1
