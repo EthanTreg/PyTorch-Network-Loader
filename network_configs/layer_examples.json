@@ -32,7 +32,7 @@
       "filters": 4,
       "dropout":1,
       "batch_norm": 1,
-      "activation": 1,
+      "activation": "GELU",
       "kernel": 3,
       "stride": 1,
       "padding": "same"
@@ -40,21 +40,21 @@
     {
       "type": "ConvDepthDownscale",
       "batch_norm": 1,
-      "activation": 1
+      "activation": "ELU"
     },
     {
       "type": "ConvDownscale",
       "filters": 4,
       "dropout": 1,
       "batch_norm": 1,
-      "activation": 1
+      "activation": "ELU"
     },
     {
       "type": "ConvTranspose",
       "factor": 0.5,
       "dropout": 0.2,
       "batch_norm": 0,
-      "activation": 1,
+      "activation": "ELU",
       "dilation": 2,
       "out_padding": 1
     },
@@ -66,7 +66,7 @@
       "type": "ConvUpscale",
       "filters": 2,
       "batch_norm": 0,
-      "activation": 1,
+      "activation": "ELU",
       "kernel": 5
     },
     {
@@ -110,10 +110,10 @@
       "type": "Recurrent",
       "dropout": 0.1,
       "batch_norm": 1,
-      "activation": 0,
+      "activation": "ELU",
       "layers": 2,
       "filters": 4,
-      "mode": "rnn",
+      "mode": "gru",
       "bidirectional": "concatenate"
     },
     {
@@ -121,7 +121,7 @@
       "filters": 128,
       "dropout": 0,
       "batch_norm": 1,
-      "activation": 0,
+      "activation": null,
       "kernel": 5,
       "stride": 1,
       "padding": 1
@@ -151,7 +151,7 @@
       "type": "Linear",
       "features": 128,
       "batch_norm": 1,
-      "activation": 1
+      "activation": "ELU"
     },
     {
       "type": "Reshape",

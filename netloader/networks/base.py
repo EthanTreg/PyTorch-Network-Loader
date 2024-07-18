@@ -232,8 +232,8 @@ class BaseNetwork:
             can be an array with different dimensions
         """
         initial_time: float = time()
+        ids: tuple[str, ...] | Tensor
         data: list[pd.DataFrame] = []
-        ids: Tensor
         in_data: Tensor
         target: Tensor
         self.train(False)
@@ -246,7 +246,7 @@ class BaseNetwork:
             for ids, low_dim, high_dim, *_ in loader:
                 in_data, target = self._data_loader_translation(low_dim, high_dim)
                 data.append(pd.DataFrame([
-                    ids.numpy(),
+                    ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
                     target.numpy(),
                     *self.batch_predict(in_data.to(self._device), **kwargs),
                 ]))

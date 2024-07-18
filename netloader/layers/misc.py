@@ -453,7 +453,7 @@ class Shortcut(BaseMultiLayer):
             shape[idxs] = shape[idxs]
 
         shapes.append(shape.tolist())
-        
+
     def _check_addition(self, shape: ndarray, mask: ndarray) -> None:
         """
         Checks if input shape and target shape are compatible for addition

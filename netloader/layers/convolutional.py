@@ -28,11 +28,11 @@ class Conv(BaseLayer):
             factor: float | None = None,
             net_out: list[int] | None = None,
             batch_norm: bool = False,
-            activation: bool = True,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
             padding: int | str | list[int] = 'same',
             dropout: float = 0.1,
+            activation: str | None = 'ELU',
             **kwargs: Any):
         """
         Parameters
@@ -48,8 +48,6 @@ class Conv(BaseLayer):
             Shape of the network's output, required only if layer contains factor
         batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : bool, default = True
-            If ELU activation should be used
         kernel : int | list[int], default = 3
             Size of the kernel
         stride : int | list[int], default = 1
@@ -58,15 +56,13 @@ class Conv(BaseLayer):
             Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
         dropout : float, default = 0.1
             Probability of dropout
-
+        activation : str | None, default = 'ELU'
+            Which activation function to use
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self._activation: bool = activation
-        self._batch_norm: bool = batch_norm
-        self._dropout: float = dropout
         padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
         conv: Type[nn.Module]
@@ -100,14 +96,14 @@ class Conv(BaseLayer):
         ))
 
         # Optional layers
-        if self._activation:
-            self.layers.append(nn.ELU())
+        if activation:
+            self.layers.append(getattr(nn, activation)())
 
-        if self._batch_norm:
+        if batch_norm:
             self.layers.append(batch_norm_(shape[0]))
 
-        if self._dropout:
-            self.layers.append(dropout_(self._dropout))
+        if dropout:
+            self.layers.append(dropout_(dropout))
 
         if padding_ == 'same':
             shapes.append(shape)
@@ -130,8 +126,8 @@ class ConvDepthDownscale(Conv):
             shapes: list[list[int]],
             net_out: list[int] | None = None,
             batch_norm: bool = False,
-            activation: bool = True,
             dropout: float = 0,
+            activation: str | None = 'ELU',
             **kwargs: Any):
         """
         Parameters
@@ -142,10 +138,10 @@ class ConvDepthDownscale(Conv):
             Shape of the network's output, required only if layer contains factor
         batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : bool, default = True
-            If ELU activation should be used
         dropout : float, default = 0
             Probability of dropout
+        activation : str | None, default = 'ELU'
+            Which activation function to use
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -155,11 +151,11 @@ class ConvDepthDownscale(Conv):
             filters=1,
             net_out=net_out,
             batch_norm=batch_norm,
-            activation=activation,
             stride=1,
-            dropout=dropout,
             kernel=1,
             padding='same',
+            dropout=dropout,
+            activation=activation,
             **kwargs,
         )
 
@@ -181,9 +177,9 @@ class ConvDownscale(Conv):
                  factor: float | None = None,
                  net_out: list[int] | None = None,
                  batch_norm: bool = False,
-                 activation: bool = True,
                  scale: int = 2,
                  dropout: float = 0.1,
+                 activation: str | None = 'ELU',
                  **kwargs: Any):
         """
         Parameters
@@ -199,12 +195,12 @@ class ConvDownscale(Conv):
             Shape of the network's output, required only if layer contains factor
         batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : bool, default = True
-            If ELU activation should be used
         scale : int, default = 2
             Stride and size of the kernel, which acts as the downscaling factor
         dropout : float, default = 0.1
             Probability of dropout
+        activation : str | None, default = 'ELU'
+            Which activation function to use
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -215,11 +211,11 @@ class ConvDownscale(Conv):
             factor=factor,
             net_out=net_out,
             batch_norm=batch_norm,
-            activation=activation,
-            stride=scale,
-            dropout=dropout,
             kernel=scale,
+            stride=scale,
             padding=0,
+            dropout=dropout,
+            activation=activation,
             **kwargs,
         )
 
@@ -247,13 +243,13 @@ class ConvTranspose(BaseLayer):
             factor: float | None = None,
             net_out: list[int] | None = None,
             batch_norm: bool = False,
-            activation: bool = True,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
             out_padding: int | list[int] = 0,
             dilation: int | list[int] = 1,
             padding: int | str | list[int] = 0,
             dropout: float = 0.1,
+            activation: str | None = 'ELU',
             **kwargs: Any):
         """
         Parameters
@@ -269,8 +265,6 @@ class ConvTranspose(BaseLayer):
             Shape of the network's output, required only if layer contains factor
         batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : bool, default = True
-            If ELU activation should be used
         kernel : int | list[int], default = 3
             Size of the kernel
         stride : int | list[int], default = 1
@@ -283,14 +277,13 @@ class ConvTranspose(BaseLayer):
             Inverse of convolutional padding which removes rows from each dimension in the output
         dropout : float, default =  0.1
             Probability of dropout
+        activation : str | None, default = 'ELU'
+            Which activation function to use
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self._activation: bool = activation
-        self._batch_norm: bool = batch_norm
-        self._dropout: float = dropout
         self._slice: np.ndarray = np.array([slice(None)] * len(shapes[-1][1:]))
         padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
@@ -340,14 +333,14 @@ class ConvTranspose(BaseLayer):
         ))
 
         # Optional layers
-        if self._activation:
-            self.layers.append(nn.ELU())
+        if activation:
+            self.layers.append(getattr(nn, activation)())
 
-        if self._batch_norm:
+        if batch_norm:
             self.layers.append(batch_norm_(shape[0]))
 
-        if self._dropout:
-            self.layers.append(dropout_(self._dropout))
+        if dropout:
+            self.layers.append(dropout_(dropout))
 
         shapes.append(shape)
 
@@ -356,6 +349,18 @@ class ConvTranspose(BaseLayer):
             stride: int | list[int],
             dilation: int | list[int],
             out_padding: int | list[int]) -> None:
+        """
+        Checks if the output padding is compatible with the dilation and stride
+
+        Parameters
+        ----------
+        stride : int | list[int]
+            Stride of the kernel
+        dilation : int | list[int]
+            Dilation of the kernel
+        out_padding : int | list[int]
+            Output padding
+        """
         if ((np.array(out_padding) >= np.array(stride)) *
                 (np.array(out_padding) >= np.array(dilation))).any():
             raise ValueError(f'Output padding ({out_padding}) must be smaller than either stride '
@@ -400,10 +405,10 @@ class ConvTransposeUpscale(ConvTranspose):
             factor: float | None = None,
             net_out: list[int] | None = None,
             batch_norm: bool = False,
-            activation: bool = True,
             scale: int | list[int] = 2,
             out_padding: int | list[int] = 0,
             dropout: float = 0.1,
+            activation: str | None = 'ELU',
             **kwargs: Any):
         """
         Parameters
@@ -419,14 +424,14 @@ class ConvTransposeUpscale(ConvTranspose):
             Shape of the network's output, required only if layer contains factor
         batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : bool, default = True
-            If ELU activation should be used
         scale : int | list[int], default = 2
             Stride and size of the kernel, which acts as the upscaling factor
         out_padding : int | list[int], default = 0
             Padding applied to the output
         dropout : float, default =  0.1
             Probability of dropout
+        activation : str | None, default = 'ELU'
+            Which activation function to use
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -437,12 +442,12 @@ class ConvTransposeUpscale(ConvTranspose):
             factor=factor,
             net_out=net_out,
             batch_norm=batch_norm,
-            activation=activation,
             kernel=scale,
             stride=scale,
             padding=0,
             out_padding=out_padding,
             dropout=dropout,
+            activation=activation,
             **kwargs,
         )
 
@@ -469,10 +474,10 @@ class ConvUpscale(Conv):
             factor: float | None = None,
             net_out: list[int] | None = None,
             batch_norm: bool = False,
-            activation: bool = True,
             scale: int = 2,
             kernel: int | list[int] = 3,
             dropout: float = 0,
+            activation: str | None = 'ELU',
             **kwargs: Any):
         """
         Parameters
@@ -488,14 +493,14 @@ class ConvUpscale(Conv):
             Shape of the network's output, required only if layer contains factor
         batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : bool, default = True
-            If ELU activation should be used
         scale : int, default = 2
             Factor to upscale the input by
         kernel : int | list[int], default = 3
             Size of the kernel
         dropout : float, default =  0
             Probability of dropout
+        activation : str | None, default = 'ELU'
+            Which activation function to use
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -514,11 +519,11 @@ class ConvUpscale(Conv):
             filters=filters,
             net_out=net_out,
             batch_norm=batch_norm,
-            activation=activation,
-            stride=1,
-            dropout=dropout,
             kernel=kernel,
+            stride=1,
             padding='same',
+            dropout=dropout,
+            activation=activation,
             **kwargs,
         )
 

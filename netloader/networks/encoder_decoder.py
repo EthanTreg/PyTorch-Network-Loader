@@ -45,7 +45,8 @@ class Autoencoder(BaseNetwork):
             net: Network,
             mix_precision: bool = False,
             description: str = '',
-            verbose: str = 'epoch'):
+            verbose: str = 'epoch',
+            reconstruct_loss: nn.Module = nn.MSELoss()):
         """
         Parameters
         ----------
@@ -62,6 +63,8 @@ class Autoencoder(BaseNetwork):
         verbose : {'full', 'progress', None}
             If details about epoch should be printed ('full'), just a progress bar ('progress'),
             or nothing (None)
+        reconstruct_loss : nn.Module, default = MSELoss()
+            Which loss function to use for the reconstruction loss
         """
         super().__init__(
             save_num,
@@ -71,6 +74,7 @@ class Autoencoder(BaseNetwork):
             description=description,
             verbose=verbose,
         )
+        self._loss_function: nn.Module = reconstruct_loss
         self.reconstruct_loss: float = 1
         self.latent_loss: float = 1e-2
         self.bound_loss: float = 1e-3
@@ -101,7 +105,7 @@ class Autoencoder(BaseNetwork):
         if self.net.checkpoints:
             latent = self.net.checkpoints[-1]
 
-        loss = self.reconstruct_loss * nn.MSELoss()(output, in_data) + self.net.kl_loss
+        loss = self.reconstruct_loss * self._loss_function(output, in_data) + self.net.kl_loss
 
         if self.latent_loss and latent is not None:
             loss += self.latent_loss * nn.MSELoss()(latent, target)

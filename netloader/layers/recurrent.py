@@ -32,11 +32,11 @@ class Recurrent(BaseLayer):
             idx: int,
             shapes: list[list[int]],
             batch_norm: bool = False,
-            activation: bool = True,
             layers: int = 2,
             filters: int = 1,
             dropout: float = 0.1,
             mode: str = 'gru',
+            activation: str | None = 'ELU',
             bidirectional: str | None = None,
             **kwargs: Any):
         """
@@ -48,8 +48,6 @@ class Recurrent(BaseLayer):
             Shape of the outputs from each layer
         batch_norm : boolean, default = False
             If batch normalisation should be used
-        activation : boolean, default = True
-            If ELU activation should be used
         layers : integer, default = 2
             Number of stacked recurrent layers
         filters : integer, default = 1
@@ -58,6 +56,8 @@ class Recurrent(BaseLayer):
             Probability of dropout, requires layers > 1
         mode : {'gru', 'rnn', 'lstm'}
             Type of recurrent layer
+        activation : str | None, default = 'ELU'
+            Which activation function to use
         bidirectional : {None, 'sum', 'mean', 'concatenate'}
             If a bidirectional recurrence should be used and method for combining the two
             directions
@@ -66,9 +66,6 @@ class Recurrent(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        self._activation: bool = activation
-        self._batch_norm: bool = batch_norm
-        self._dropout: float = dropout
         self._bidirectional: str | None = bidirectional
         self._options: list[str | None] = [None, 'sum', 'mean', 'concatenate']
         shape: list[int] = [filters, int(np.prod(shapes[-1][1:]))]
@@ -79,14 +76,14 @@ class Recurrent(BaseLayer):
         self._check_options('mode', mode, set(modes))
 
         if layers == 1:
-            self._dropout = 0
+            dropout = 0
 
         recurrent = modes[mode.lower()](
             input_size=shapes[-1][0],
             hidden_size=shape[0],
             num_layers=layers,
             batch_first=True,
-            dropout=self._dropout,
+            dropout=dropout,
             bidirectional=self._bidirectional is not None,
             **({'nonlinearity': 'relu'} if mode.lower() == 'rnn' else {}),
         )
@@ -99,10 +96,10 @@ class Recurrent(BaseLayer):
         self.layers.append(recurrent)
 
         # Optional layers
-        if self._activation and mode.lower() != 'rnn':
-            self.layers.append(nn.ELU())
+        if activation and mode.lower() != 'rnn':
+            self.layers.append(getattr(nn, activation)())
 
-        if self._batch_norm:
+        if batch_norm:
             self.layers.append(nn.BatchNorm1d(shape[0]))
 
         shapes.append(shape)
@@ -148,4 +145,4 @@ class Recurrent(BaseLayer):
         string
             Layer parameters
         """
-        return f'bidirectional_method={self._bidirectional}, activation={bool(self._activation)}'
+        return f'bidirectional_method={self._bidirectional}'

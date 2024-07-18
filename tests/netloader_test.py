@@ -15,6 +15,7 @@ class TestDataset(Dataset):
     """
     Fake dataset to test netloader.networks
     """
+
     def __init__(self, in_shape):
         self._in_shape = in_shape
         self._device = get_device()[1]
@@ -72,7 +73,7 @@ def main():
 
     # Test Networks
     print('Testing Networks...')
-    net = Encoder(0, '', network, verbose='progress', classes=torch.arange(10))
+    net = Encoder(0, '', network, verbose='full', classes=torch.arange(10))
     loader = DataLoader(TestDataset(in_shape), batch_size=60, shuffle=False)
     net.training(2, (loader, loader))
     net.predict(loader)
@@ -94,7 +95,7 @@ def main():
             for _ in range(10):
                 labels = torch.randint(0, 10, size=(in_shape[0], 1)).to(device).float()
                 in_tensor = torch.ones(size=in_shape).to(device) * \
-                            labels.flatten()[:, None, None, None]
+                    labels.flatten()[:, None, None, None]
                 out_tensor = network(in_tensor)
                 loss = nn.CrossEntropyLoss()(out_tensor, labels.flatten().long())
                 network.optimiser.zero_grad()

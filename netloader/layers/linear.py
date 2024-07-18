@@ -19,12 +19,12 @@ if TYPE_CHECKING:
 class Linear(BaseLayer):
     """
     Linear layer constructor
-    
+
     Attributes
     ----------
     layers : list[Module] | Sequential
         Layers to loop through in the forward pass
-        
+
     Methods
     -------
     forward(x) -> Tensor
@@ -38,8 +38,8 @@ class Linear(BaseLayer):
             factor: int | None = None,
             layer: int | None = None,
             batch_norm: bool = False,
-            activation: bool = True,
             dropout: float = 0.01,
+            activation: str | None = 'SELU',
             **kwargs: Any):
         """
         Parameters
@@ -59,23 +59,20 @@ class Linear(BaseLayer):
             will be used
         batch_norm : bool, default = False
             If batch normalisation should be used
-        activation : bool, default = True
-            If SELU activation should be used
         dropout : float, default =  0.01
             Probability of dropout
+        activation : str | None, default = 'SELU'
+            Which activation function to use
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self._activation: bool = activation
-        self._batch_norm: bool = batch_norm
-        self._dropout: float = dropout
-        self._out_shape: list[int]
-        self._in_shape: list[int] = shapes[-1].copy()
+        out_shape: list[int]
+        in_shape: list[int] = shapes[-1].copy()
         target: list[int] = shapes[layer] if layer is not None else net_out
 
         # Remove channels dimension
-        if len(self._in_shape) > 1:
+        if len(in_shape) > 1:
             self.layers.append(Reshape([-1]))
 
         # Number of features can be defined by either a factor of the output size or explicitly
@@ -84,31 +81,31 @@ class Linear(BaseLayer):
 
         assert isinstance(features, int)
         self.layers.append(nn.Linear(
-            in_features=int(np.prod(self._in_shape)),
+            in_features=int(np.prod(in_shape)),
             out_features=features,
         ))
 
         # Optional layers
-        if self._activation:
-            self.layers.append(nn.SELU())
+        if activation:
+            self.layers.append(getattr(nn, activation)())
 
-        if self._batch_norm:
+        if batch_norm:
             self.layers.append(nn.BatchNorm1d(features))
 
-        if self._dropout:
-            self.layers.append(nn.Dropout(self._dropout))
+        if dropout:
+            self.layers.append(nn.Dropout(dropout))
 
         # Add channels dimension equal to input channels if input contains channels
-        if len(self._in_shape) == 1:
-            self._out_shape = [features]
-        elif features % self._in_shape[0] == 0:
-            self._out_shape = [self._in_shape[0], features // self._in_shape[0]]
-            self.layers.append(Reshape(self._out_shape))
+        if len(in_shape) == 1:
+            out_shape = [features]
+        elif features % in_shape[0] == 0:
+            out_shape = [in_shape[0], features // in_shape[0]]
+            self.layers.append(Reshape(out_shape))
         else:
-            self._out_shape = [1, features]
-            self.layers.append(Reshape(self._out_shape))
+            out_shape = [1, features]
+            self.layers.append(Reshape(out_shape))
 
-        shapes.append(self._out_shape)
+        shapes.append(out_shape)
 
 
 class OrderedBottleneck(BaseLayer):
@@ -329,13 +326,13 @@ class Upsample(BaseLayer):
             ]
 
         self.layers.append(nn.Upsample(**scale_arg, mode=mode))
-        
+
     @staticmethod
     def _check_mode_dimension(mode: str, shape: list[int], modes: dict[str, list[int]]) -> None:
         if len(shape) not in modes[mode]:
             raise ValueError(f'{mode} only supports input dimensions of {modes[mode]}, '
                              f'input shape is {shape}')
-        
+
     @staticmethod
     def _check_upsample(in_shape: list[int], out_shape: list[int] | None) -> None:
         if out_shape is not None and len(out_shape) != 1 and len(out_shape) + 1 != len(in_shape):
