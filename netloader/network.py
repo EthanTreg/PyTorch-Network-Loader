@@ -6,10 +6,12 @@ import logging as log
 from typing import Any, TextIO, Self
 
 import torch
-from torch import nn, optim, Tensor
+import numpy as np
+from torch import nn, Tensor
 
 from netloader import layers
 from netloader.layers.utils import BaseLayer
+from netloader.utils.utils import check_params
 
 
 class Network(nn.Module):
@@ -30,16 +32,10 @@ class Network(nn.Module):
         Outputs from each checkpoint
     net : ModuleList
         Network construction
-    optimiser : Optimiser
-        Network optimiser, uses Adam optimiser
-    scheduler : LRScheduler
-        Optimiser scheduler, uses reduce learning rate on plateau
     layer_num : int, default = None
         Number of layers to use, if None use all layers
     group : int, default = 0
         Which group is the active group if a layer has the group attribute
-    kl_loss_weight : float, default = 1e-1
-        Relative weight if performing a KL divergence loss on the latent space
     kl_loss : Tensor, default = 0
         KL divergence loss on the latent space, if using a sample layer
 
@@ -57,13 +53,12 @@ class Network(nn.Module):
             in_shape: list[int] | list[list[int]],
             out_shape: list[int],
             suppress_warning: bool = False,
-            learning_rate: float = 1e-2,
             defaults: dict[str, Any] | None = None):
         """
         Parameters
         ----------
         name : str
-            Name of the network configuration file (without extension)
+            Name of the network configuration file
         config_dir : str
             Path to the network config directory
         in_shape : list[int] | list[list[int]],
@@ -72,8 +67,6 @@ class Network(nn.Module):
             shape of the output tensor, excluding batch size
         suppress_warning : bool, default = False
             If output shape mismatch warning should be suppressed
-        learning_rate : float, default = 1e-2
-            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
         defaults : dict[str, Any], default = None
             Default values for the parameters for each type of layer
         """
@@ -81,7 +74,6 @@ class Network(nn.Module):
         self._checkpoints: bool
         self.group: int = 0
         self.layer_num: int | None = None
-        self.kl_loss_weight: float = 1e-1
         self.name: str = name
         self.check_shapes: list[list[int]]
         self.shapes: list[list[int] | list[list[int]]]
@@ -89,8 +81,6 @@ class Network(nn.Module):
         self.checkpoints: list[Tensor] = []
         self.kl_loss: Tensor = torch.tensor(0.)
         self.net: nn.ModuleList
-        self.optimiser: optim.Optimizer
-        self.scheduler: optim.lr_scheduler.ReduceLROnPlateau
 
         if '.json' not in self.name:
             self.name += '.json'
@@ -105,10 +95,6 @@ class Network(nn.Module):
         )
 
         self.name = self.name.replace('.json', '')
-
-        if learning_rate:
-            self.optimiser = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=1e-5)
-            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
 
     def forward(self, x: list[Tensor] | Tensor) -> list[Tensor] | Tensor:
         """
@@ -136,13 +122,12 @@ class Network(nn.Module):
 
                 if layer['type'] == 'Checkpoint':
                     self.checkpoints.append(torch.tensor([]))
-
                 continue
 
             try:
                 x = self.net[i](x, outputs=outputs, checkpoints=self.checkpoints, net=self)
             except RuntimeError:
-                log.error(f"Error in {layer['type']} (layer {i})")
+                log.getLogger(__name__).error(f"Error in {layer['type']} (layer {i})")
                 raise
 
             if not self._checkpoints:
@@ -309,6 +294,7 @@ def _create_network(
     check_shapes: list[list[int]]
     config: dict[str, Any]
     file: TextIO
+    logger: log.Logger = log.getLogger(__name__)
     module_list: nn.ModuleList
 
     shapes = [in_shape]
@@ -327,6 +313,14 @@ def _create_network(
         net_check = config['net']['checkpoints']
 
     config['net'] = config['net'] | defaults
+
+    # Check for unknown net parameters
+    if not suppress_warning:
+        check_params(
+            f"'net' in {config_path.split('/')[-1]}",
+            ['checkpoints', 'Composite', 'description', 'paper', 'github'] + dir(layers),
+            np.array(list(config['net'].keys())),
+        )
 
     # Create layers
     for i, layer in enumerate(config['layers'].copy()):
@@ -348,14 +342,14 @@ def _create_network(
                 **layer,
             ))
         except ValueError:
-            log.error(f"Error in {layer['type']} (layer {i})")
+            logger.error(f"Error in {layer['type']} (layer {i})")
             raise
 
         module_list[-1].initialise_layers()
 
     # Check network output dimensions
     if not suppress_warning and shapes[-1] != out_shape:
-        log.warning(
+        logger.warning(
             f'Network output shape {shapes[-1]} != data output shape {out_shape}'
         )
 

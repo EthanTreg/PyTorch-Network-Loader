@@ -7,6 +7,7 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
+from netloader.layers.misc import LayerNorm
 from netloader.layers.utils import BaseLayer, _int_list_conversion, _kernel_shape, _padding
 
 
@@ -25,14 +26,16 @@ class Conv(BaseLayer):
             self,
             shapes: list[list[int]],
             filters: int | None = None,
+            layer: int | None = None,
             factor: float | None = None,
             net_out: list[int] | None = None,
-            batch_norm: bool = False,
+            groups: int = 1,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
-            padding: int | str | list[int] = 'same',
-            dropout: float = 0.1,
+            padding: int | str | list[int] = 0,
+            dropout: float = 0,
             activation: str | None = 'ELU',
+            norm: str | None = None,
             **kwargs: Any):
         """
         Parameters
@@ -41,23 +44,29 @@ class Conv(BaseLayer):
             Shape of the outputs from each layer
         filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
+        layer : int, optional
+            If factor is not None, which layer for factor to be relative to, if None, network output
+            will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : bool, default = False
-            If batch normalisation should be used
+        groups : int, default = 1
+            Number of input channel groups, each with its own convolutional filter(s), input and
+            output channels must both be divisible by the number of groups
         kernel : int | list[int], default = 3
             Size of the kernel
         stride : int | list[int], default = 1
             Stride of the kernel
-        padding : int | str | list[int], default = 'same'
+        padding : int | str | list[int], default = 0
             Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
-        dropout : float, default = 0.1
+        dropout : float, default = 0
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
+        norm : {None, 'batch', 'layer'}, default = None
+            If batch or layer normalisation should be used
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -65,6 +74,7 @@ class Conv(BaseLayer):
         super().__init__(**kwargs)
         padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
+        target: list[int] = shapes[layer] if layer is not None else net_out
         conv: Type[nn.Module]
         dropout_: Type[nn.Module]
         batch_norm_: Type[nn.Module]
@@ -76,9 +86,10 @@ class Conv(BaseLayer):
             padding = _padding(kernel, stride, shapes[-1], shapes[-1])
 
         # Check for errors and calculate number of filters
-        self._check_kernel(kernel, padding, shape)
         self._check_shape(shape)
-        self._check_factor_filters(shape, filters, factor, net_out)
+        self._check_factor_filters(shape, filters, factor, target)
+        self._check_groups(shapes[-1][0], shape[0], groups)
+        self._check_options('norm', norm, {None, 'batch', 'layer'})
 
         conv, dropout_, batch_norm_ = [
             [nn.Conv1d, nn.Dropout1d, nn.BatchNorm1d],
@@ -92,6 +103,7 @@ class Conv(BaseLayer):
             kernel_size=kernel,
             stride=stride,
             padding=padding_,
+            groups=groups,
             padding_mode='replicate',
         ))
 
@@ -99,8 +111,10 @@ class Conv(BaseLayer):
         if activation:
             self.layers.append(getattr(nn, activation)())
 
-        if batch_norm:
+        if norm == 'batch':
             self.layers.append(batch_norm_(shape[0]))
+        elif norm == 'layer':
+            self.layers.append(LayerNorm(shape=shape[0:1]))
 
         if dropout:
             self.layers.append(dropout_(dropout))
@@ -110,6 +124,101 @@ class Conv(BaseLayer):
         else:
             assert not isinstance(padding, str)
             shapes.append(_kernel_shape(kernel, stride, padding, shape))
+
+    @staticmethod
+    def _check_groups(in_channels: int, out_channels: int, groups: int) -> None:
+        """
+        Checks if the number of groups is compatible with the number of input and output channels
+
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        groups : int
+            Number of groups
+        """
+        if in_channels % groups != 0 or out_channels % groups != 0:
+            raise ValueError(f'Number of groups ({groups}) is not compatible with input channels '
+                             f'({in_channels}) and/or output channels ({out_channels}), check that '
+                             f'they are divisible by groups')
+
+
+class ConvDepth(Conv):
+    """
+    Constructs a depthwise convolutional layer
+
+    Supports 1D, 2D, and 3D convolution
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            shapes: list[list[int]],
+            filters: int | None = None,
+            layer: int | None = None,
+            factor: float | None = None,
+            net_out: list[int] | None = None,
+            kernel: int | list[int] = 3,
+            stride: int | list[int] = 1,
+            padding: int | str | list[int] = 0,
+            dropout: float = 0,
+            activation: str | None = 'ELU',
+            norm: str | None = None,
+            **kwargs: Any):
+        """
+        Parameters
+        ----------
+        shapes : list[list[int]]
+            Shape of the outputs from each layer
+        filters : int, optional
+            Number of convolutional filters, will be used if provided, else factor will be used
+        layer : int, optional
+            If factor is not None, which layer for factor to be relative to, if None, network output
+            will be used
+        factor : float, optional
+            Number of convolutional filters equal to the output channels multiplied by factor,
+            won't be used if filters is provided
+        net_out : list[int], optional
+            Shape of the network's output, required only if layer contains factor
+        groups : int, default = 1
+            Number of input channel groups, each with its own convolutional filter(s), input and
+            output channels must both be divisible by the number of groups
+        kernel : int | list[int], default = 3
+            Size of the kernel
+        stride : int | list[int], default = 1
+            Stride of the kernel
+        padding : int | str | list[int], default = 0
+            Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
+        dropout : float, default = 0
+            Probability of dropout
+        activation : str | None, default = 'ELU'
+            Which activation function to use
+        norm : {None, 'batch', 'layer'}, default = None
+            If batch or layer normalisation should be used
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(
+            shapes=shapes,
+            filters=filters,
+            layer=layer,
+            factor=factor,
+            net_out=net_out,
+            groups=shapes[-1][0],
+            kernel=kernel,
+            stride=stride,
+            padding=padding,
+            dropout=dropout,
+            activation=activation,
+            norm=norm,
+            **kwargs,
+        )
 
 
 class ConvDepthDownscale(Conv):
@@ -125,9 +234,9 @@ class ConvDepthDownscale(Conv):
             self,
             shapes: list[list[int]],
             net_out: list[int] | None = None,
-            batch_norm: bool = False,
             dropout: float = 0,
             activation: str | None = 'ELU',
+            norm: str | None = None,
             **kwargs: Any):
         """
         Parameters
@@ -136,12 +245,12 @@ class ConvDepthDownscale(Conv):
             Shape of the outputs from each layer
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : bool, default = False
-            If batch normalisation should be used
         dropout : float, default = 0
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
+        norm : {None, 'batch', 'layer'}, default = None
+            If batch or layer normalisation should be used
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -150,12 +259,12 @@ class ConvDepthDownscale(Conv):
             shapes=shapes,
             filters=1,
             net_out=net_out,
-            batch_norm=batch_norm,
             stride=1,
             kernel=1,
             padding='same',
             dropout=dropout,
             activation=activation,
+            norm=norm,
             **kwargs,
         )
 
@@ -174,12 +283,13 @@ class ConvDownscale(Conv):
     def __init__(self,
                  shapes: list[list[int]],
                  filters: int | None = None,
+                 layer: int | None = None,
                  factor: float | None = None,
                  net_out: list[int] | None = None,
-                 batch_norm: bool = False,
                  scale: int = 2,
-                 dropout: float = 0.1,
+                 dropout: float = 0,
                  activation: str | None = 'ELU',
+                 norm: str | None = None,
                  **kwargs: Any):
         """
         Parameters
@@ -188,19 +298,22 @@ class ConvDownscale(Conv):
             Shape of the outputs from each layer
         filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
+        layer : int, optional
+            If factor is not None, which layer for factor to be relative to, if None, network output
+            will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : bool, default = False
-            If batch normalisation should be used
         scale : int, default = 2
             Stride and size of the kernel, which acts as the downscaling factor
-        dropout : float, default = 0.1
+        dropout : float, default = 0
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
+        norm : {None, 'batch', 'layer'}, default = None
+            If batch or layer normalisation should be used
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -208,14 +321,15 @@ class ConvDownscale(Conv):
         super().__init__(
             shapes=shapes,
             filters=filters,
+            layer=layer,
             factor=factor,
             net_out=net_out,
-            batch_norm=batch_norm,
             kernel=scale,
             stride=scale,
             padding=0,
             dropout=dropout,
             activation=activation,
+            norm=norm,
             **kwargs,
         )
 
@@ -240,16 +354,17 @@ class ConvTranspose(BaseLayer):
             self,
             shapes: list[list[int]],
             filters: int | None = None,
+            layer: int | None = None,
             factor: float | None = None,
             net_out: list[int] | None = None,
-            batch_norm: bool = False,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
             out_padding: int | list[int] = 0,
             dilation: int | list[int] = 1,
             padding: int | str | list[int] = 0,
-            dropout: float = 0.1,
+            dropout: float = 0,
             activation: str | None = 'ELU',
+            norm: str | None = None,
             **kwargs: Any):
         """
         Parameters
@@ -258,13 +373,14 @@ class ConvTranspose(BaseLayer):
             Shape of the outputs from each layer
         filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
+        layer : int, optional
+            If factor is not None, which layer for factor to be relative to, if None, network output
+            will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : bool, default = False
-            If batch normalisation should be used
         kernel : int | list[int], default = 3
             Size of the kernel
         stride : int | list[int], default = 1
@@ -279,6 +395,8 @@ class ConvTranspose(BaseLayer):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
+        norm : {None, 'batch', 'layer'}, default = None
+            If batch or layer normalisation should be used
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -287,6 +405,7 @@ class ConvTranspose(BaseLayer):
         self._slice: np.ndarray = np.array([slice(None)] * len(shapes[-1][1:]))
         padding_: int | str | list[int] = padding
         shape: list[int] = shapes[-1].copy()
+        target: list[int] = shapes[layer] if layer is not None else net_out
         transpose: Type[nn.Module]
         dropout_: Type[nn.Module]
         batch_norm_: Type[nn.Module]
@@ -299,7 +418,8 @@ class ConvTranspose(BaseLayer):
         # Check for errors and calculate number of filters
         self._check_shape(shape)
         self._check_out_padding(stride, dilation, out_padding)
-        self._check_factor_filters(shape, filters, factor, net_out)
+        self._check_factor_filters(shape, filters, factor, target)
+        self._check_options('norm', norm, {None, 'batch', 'layer'})
 
         transpose, dropout_, batch_norm_ = [
             [nn.ConvTranspose1d, nn.Dropout1d, nn.BatchNorm1d],
@@ -336,8 +456,10 @@ class ConvTranspose(BaseLayer):
         if activation:
             self.layers.append(getattr(nn, activation)())
 
-        if batch_norm:
+        if norm == 'batch':
             self.layers.append(batch_norm_(shape[0]))
+        elif norm == 'layer':
+            self.layers.append(LayerNorm(shape=shape[0:1]))
 
         if dropout:
             self.layers.append(dropout_(dropout))
@@ -402,13 +524,14 @@ class ConvTransposeUpscale(ConvTranspose):
             self,
             shapes: list[list[int]],
             filters: int | None = None,
+            layer: int | None = None,
             factor: float | None = None,
             net_out: list[int] | None = None,
-            batch_norm: bool = False,
             scale: int | list[int] = 2,
             out_padding: int | list[int] = 0,
-            dropout: float = 0.1,
+            dropout: float = 0,
             activation: str | None = 'ELU',
+            norm: str | None = None,
             **kwargs: Any):
         """
         Parameters
@@ -417,13 +540,14 @@ class ConvTransposeUpscale(ConvTranspose):
             Shape of the outputs from each layer
         filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
+        layer : int, optional
+            If factor is not None, which layer for factor to be relative to, if None, network output
+            will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : bool, default = False
-            If batch normalisation should be used
         scale : int | list[int], default = 2
             Stride and size of the kernel, which acts as the upscaling factor
         out_padding : int | list[int], default = 0
@@ -432,6 +556,8 @@ class ConvTransposeUpscale(ConvTranspose):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
+        norm : {None, 'batch', 'layer'}, default = None
+            If batch or layer normalisation should be used
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -439,15 +565,16 @@ class ConvTransposeUpscale(ConvTranspose):
         super().__init__(
             shapes=shapes,
             filters=filters,
+            layer=layer,
             factor=factor,
             net_out=net_out,
-            batch_norm=batch_norm,
             kernel=scale,
             stride=scale,
             padding=0,
             out_padding=out_padding,
             dropout=dropout,
             activation=activation,
+            norm=norm,
             **kwargs,
         )
 
@@ -471,13 +598,14 @@ class ConvUpscale(Conv):
             self,
             shapes: list[list[int]],
             filters: int | None = None,
+            layer: int | None = None,
             factor: float | None = None,
             net_out: list[int] | None = None,
-            batch_norm: bool = False,
             scale: int = 2,
             kernel: int | list[int] = 3,
             dropout: float = 0,
             activation: str | None = 'ELU',
+            norm: str | None = None,
             **kwargs: Any):
         """
         Parameters
@@ -486,13 +614,14 @@ class ConvUpscale(Conv):
             Shape of the outputs from each layer
         filters : int, optional
             Number of convolutional filters, will be used if provided, else factor will be used
+        layer : int, optional
+            If factor is not None, which layer for factor to be relative to, if None, network output
+            will be used
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        batch_norm : bool, default = False
-            If batch normalisation should be used
         scale : int, default = 2
             Factor to upscale the input by
         kernel : int | list[int], default = 3
@@ -501,6 +630,8 @@ class ConvUpscale(Conv):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
+        norm : {None, 'batch', 'layer'}, default = None
+            If batch or layer normalisation should be used
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -510,7 +641,7 @@ class ConvUpscale(Conv):
             shapes[-1].copy(),
             filters,
             factor,
-            net_out,
+            shapes[layer] if layer is not None else net_out,
         )[0] * filters_scale
 
         # Convolutional layer
@@ -518,12 +649,12 @@ class ConvUpscale(Conv):
             shapes=shapes,
             filters=filters,
             net_out=net_out,
-            batch_norm=batch_norm,
             kernel=kernel,
             stride=1,
             padding='same',
             dropout=dropout,
             activation=activation,
+            norm=norm,
             **kwargs,
         )
 

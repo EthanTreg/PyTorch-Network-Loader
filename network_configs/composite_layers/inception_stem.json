@@ -1,7 +1,9 @@
 {
   "net": {
-    "dropout_prob": 0.1,
-    "2d": 1
+    "checkpoints": 1,
+    "Conv": {
+      "dropout": 0.1
+    }
   },
   "layers": [
     {
@@ -21,10 +23,16 @@
       "padding": 1
     },
     {
+      "type": "Checkpoint"
+    },
+    {
       "type": "Pool",
       "kernel": 3,
       "stride": 2,
       "padding": 0
+    },
+    {
+      "type": "Checkpoint"
     },
     {
       "type": "Skip",
@@ -38,7 +46,10 @@
     },
     {
       "type": "Concatenate",
-      "layer": -3
+      "layer": -1
+    },
+    {
+      "type": "Checkpoint"
     },
     {
       "type": "Conv",
@@ -52,8 +63,11 @@
       "padding": 0
     },
     {
+      "type": "Checkpoint"
+    },
+    {
       "type": "Skip",
-      "layer": -3
+      "layer": -2
     },
     {
       "type": "Conv",
@@ -80,13 +94,19 @@
     },
     {
       "type": "Concatenate",
-      "layer": -6
+      "layer": -1
+    },
+    {
+      "type": "Checkpoint"
     },
     {
       "type": "Conv",
       "filters": 192,
       "stride": 2,
       "padding": 0
+    },
+    {
+      "type": "Checkpoint"
     },
     {
       "type": "Skip",
@@ -100,7 +120,7 @@
     },
     {
       "type": "Concatenate",
-      "layer": -3
+      "layer": -1
     }
   ]
 }

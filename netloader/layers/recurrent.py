@@ -34,7 +34,7 @@ class Recurrent(BaseLayer):
             batch_norm: bool = False,
             layers: int = 2,
             filters: int = 1,
-            dropout: float = 0.1,
+            dropout: float = 0,
             mode: str = 'gru',
             activation: str | None = 'ELU',
             bidirectional: str | None = None,
@@ -52,12 +52,12 @@ class Recurrent(BaseLayer):
             Number of stacked recurrent layers
         filters : integer, default = 1
             Number of output filters
-        dropout : float, default =  0.1
+        dropout : float, default =  0
             Probability of dropout, requires layers > 1
         mode : {'gru', 'rnn', 'lstm'}
             Type of recurrent layer
         activation : str | None, default = 'ELU'
-            Which activation function to use
+            Which activation function to use, if mode is 'rnn', ReLU activation will always be used
         bidirectional : {None, 'sum', 'mean', 'concatenate'}
             If a bidirectional recurrence should be used and method for combining the two
             directions

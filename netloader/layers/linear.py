@@ -9,11 +9,46 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.misc import Reshape
 from netloader.layers.utils import BaseLayer
 
 if TYPE_CHECKING:
     from netloader.network import Network
+
+
+class Activation(BaseLayer):
+    """
+    Activation layer constructor
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            activation: str = 'ELU',
+            shapes: list[list[int]] | None = None,
+            **kwargs: Any):
+        """
+        Parameters
+        ----------
+        activation : str, default = 'ELU'
+            Which activation function to use
+        shapes : list[list[int]], optional
+            Shape of the outputs from each layer, only required if tracking layer outputs is
+            necessary
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**({'idx': 0} | kwargs))
+        self.layers.append(getattr(nn, activation)())
+
+        # If not used as a layer in a network
+        if not shapes:
+            return
+
+        shapes.append(shapes[-1].copy())
 
 
 class Linear(BaseLayer):
@@ -35,31 +70,31 @@ class Linear(BaseLayer):
             net_out: list[int],
             shapes: list[list[int]],
             features: int | None = None,
-            factor: int | None = None,
             layer: int | None = None,
+            factor: float | None = None,
             batch_norm: bool = False,
-            dropout: float = 0.01,
+            dropout: float = 0,
             activation: str | None = 'SELU',
             **kwargs: Any):
         """
         Parameters
         ----------
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
+        net_out : list[int]
+            Shape of the network's output
         shapes : list[list[int]]
             Shape of the outputs from each layer
         features : int, optional
-            Number of output features for the layer,
-            if out_shape from kwargs and factor is provided, features will not be used
+            Number of output features for the layer, if factor is provided, features will not be
+            used
+        layer : int, optional
+            If factor is not None, which layer for factor to be relative to, if None, network output
+            will be used
         factor : float, optional
             Output features is equal to the factor of the network's output, or if layer is provided,
             which layer to be relative to, will be used if provided, else features will be used
-        layer : int, optional
-            If factor is True, which layer for factor to be relative to, if None, network output
-            will be used
         batch_norm : bool, default = False
             If batch normalisation should be used
-        dropout : float, default =  0.01
+        dropout : float, default =  0
             Probability of dropout
         activation : str | None, default = 'SELU'
             Which activation function to use
@@ -67,22 +102,15 @@ class Linear(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        out_shape: list[int]
-        in_shape: list[int] = shapes[-1].copy()
+        shape: list[int] = shapes[-1].copy()
         target: list[int] = shapes[layer] if layer is not None else net_out
 
-        # Remove channels dimension
-        if len(in_shape) > 1:
-            self.layers.append(Reshape([-1]))
-
         # Number of features can be defined by either a factor of the output size or explicitly
-        if factor:
-            features = max(1, int(np.prod(target) * factor))
+        shape = self._check_factor_filters(shape[::-1], features, factor, target[::-1])[::-1]
 
-        assert isinstance(features, int)
         self.layers.append(nn.Linear(
-            in_features=int(np.prod(in_shape)),
-            out_features=features,
+            in_features=shapes[-1][-1],
+            out_features=shape[-1],
         ))
 
         # Optional layers
@@ -90,22 +118,12 @@ class Linear(BaseLayer):
             self.layers.append(getattr(nn, activation)())
 
         if batch_norm:
-            self.layers.append(nn.BatchNorm1d(features))
+            self.layers.append(nn.BatchNorm1d(shape[0]))
 
         if dropout:
             self.layers.append(nn.Dropout(dropout))
 
-        # Add channels dimension equal to input channels if input contains channels
-        if len(in_shape) == 1:
-            out_shape = [features]
-        elif features % in_shape[0] == 0:
-            out_shape = [in_shape[0], features // in_shape[0]]
-            self.layers.append(Reshape(out_shape))
-        else:
-            out_shape = [1, features]
-            self.layers.append(Reshape(out_shape))
-
-        shapes.append(out_shape)
+        shapes.append(shape)
 
 
 class OrderedBottleneck(BaseLayer):
@@ -243,7 +261,7 @@ class Sample(BaseLayer):
         std: Tensor = torch.exp(x[:, split:2 * split])
         x = mean + std * self.sample_layer.sample(mean.shape)
 
-        net.kl_loss = net.kl_loss_weight * 0.5 * torch.mean(
+        net.kl_loss = 0.5 * torch.mean(
             mean ** 2 + std ** 2 - 2 * torch.log(std) - 1
         )
         return x

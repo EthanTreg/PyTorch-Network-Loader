@@ -1,8 +1,7 @@
 {
   "net": {
-    "dropout_prob": 0.1,
-    "Paper": "arXiv:1602.07261",
-    "GitHub_Reference": "https://github.com/zhulf0804/Inceptionv4_and_Inception-ResNetv2.PyTorch",
+    "paper": "arXiv:1602.07261",
+    "github": "https://github.com/zhulf0804/Inceptionv4_and_Inception-ResNetv2.PyTorch",
     "Composite": {
       "config_dir": "../network_configs/composite_layers/"
     }

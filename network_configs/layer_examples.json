@@ -1,15 +1,19 @@
 {
   "net": {
     "checkpoints": 0,
-    "Description": "Network to test that all layers are working",
+    "description": "Network to test that all layers are working",
     "Linear": {
       "dropout": 1
     },
     "Conv": {
-      "dropout": 0.3
+      "dropout": 0.3,
+      "padding": "same"
     },
     "Composite": {
       "config_dir": "../network_configs/composite_layers/"
+    },
+    "Test": {
+      "test": 0
     }
   },
   "layers": [
@@ -23,7 +27,8 @@
       "channels": 64,
       "defaults": {
         "Conv": {
-          "dropout": 0.2
+          "dropout": 0.2,
+          "padding": "same"
         }
       }
     },
@@ -31,30 +36,35 @@
       "type": "Conv",
       "filters": 4,
       "dropout":1,
-      "batch_norm": 1,
+      "norm": "layer",
       "activation": "GELU",
       "kernel": 3,
       "stride": 1,
       "padding": "same"
     },
     {
+      "type": "ConvDepth",
+      "filters": 4
+    },
+    {
       "type": "ConvDepthDownscale",
-      "batch_norm": 1,
+      "norm": "batch",
       "activation": "ELU"
     },
     {
       "type": "ConvDownscale",
       "filters": 4,
       "dropout": 1,
-      "batch_norm": 1,
+      "norm": "batch",
       "activation": "ELU"
     },
     {
       "type": "ConvTranspose",
       "factor": 0.5,
       "dropout": 0.2,
-      "batch_norm": 0,
+      "norm": null,
       "activation": "ELU",
+      "padding": "same",
       "dilation": 2,
       "out_padding": 1
     },
@@ -65,7 +75,7 @@
     {
       "type": "ConvUpscale",
       "filters": 2,
-      "batch_norm": 0,
+      "norm": null,
       "activation": "ELU",
       "kernel": 5
     },
@@ -96,6 +106,10 @@
       "kernel": 3
     },
     {
+      "type": "LayerNorm",
+      "dims": 1
+    },
+    {
       "type": "Sample"
     },
     {
@@ -120,11 +134,15 @@
       "type": "Conv",
       "filters": 128,
       "dropout": 0,
-      "batch_norm": 1,
+      "norm": "batch",
       "activation": null,
       "kernel": 5,
       "stride": 1,
       "padding": 1
+    },
+    {
+      "type": "Activation",
+      "activation": "ELU"
     },
     {
       "type": "Sample"
@@ -152,6 +170,10 @@
       "features": 128,
       "batch_norm": 1,
       "activation": "ELU"
+    },
+    {
+      "type": "DropPath",
+      "prob": 0.1
     },
     {
       "type": "Reshape",
@@ -246,6 +268,23 @@
       "factor": 1,
       "shape": [-1],
       "bad_param_2": 1
+    },
+    {
+      "type": "SplineFlow",
+      "features": 2,
+      "transforms": 2,
+      "hidden_features": [4, 4],
+      "context": false
+    },
+    {
+      "type": "Skip",
+      "layer": -2
+    },
+    {
+      "type": "Scale",
+      "dims": 1,
+      "scale": 0.5,
+      "first": true
     }
   ]
 }

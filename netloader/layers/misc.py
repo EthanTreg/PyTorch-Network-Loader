@@ -1,11 +1,11 @@
 """
 Miscellaneous network layers
 """
-from typing import Any
+from typing import Any, Self
 
 import torch
 import numpy as np
-from torch import Tensor
+from torch import nn, Tensor
 from numpy import ndarray
 
 from netloader.layers.utils import BaseLayer, BaseMultiLayer
@@ -23,7 +23,7 @@ class Checkpoint(BaseLayer):
 
     Methods
     -------
-    forward(x, net_check) -> Tensor
+    forward(x, checkpoints, **_) -> Tensor
         Forward pass of the checkpoint layer
     """
     def __init__(self, shapes: list[list[int]], check_shapes: list[list[int]], **kwargs: Any):
@@ -85,7 +85,7 @@ class Concatenate(BaseMultiLayer):
 
     Methods
     -------
-    forward(x, outputs, net_check) -> Tensor
+    forward(x, outputs, checkpoints, **_) -> Tensor
         Forward pass of the concatenation layer
     extra_repr() -> str
         Displays layer parameters when printing the network
@@ -198,6 +198,68 @@ class Concatenate(BaseMultiLayer):
         return f'{super().extra_repr()}, dim={self._dim}'
 
 
+class DropPath(BaseLayer):
+    """
+    Constructs a drop path layer to drop samples in a batch
+
+    See `FractalNet: Ultra-Deep Neural Networks without Residuals
+    <https://arxiv.org/abs/1605.07648>`_ by Larsson et al. (2016) for details.
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+
+    Methods
+    -------
+    forward(x, **_) -> Tensor
+        Forward pass of the drop path layer
+    """
+    def __init__(self, prob: float, shapes: list[list[int]] | None = None, **kwargs: Any):
+        """
+
+        Parameters
+        ----------
+        prob : float
+            Probability of dropout
+        shapes : list[list[int]], optional
+            Shape of the outputs from each layer, only required if tracking layer outputs is
+            necessary
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**({'idx': 0} | kwargs))
+        self._prob: float = 1 - prob
+
+        # If not used as a layer in a network
+        if not shapes:
+            return
+
+        shapes.append(shapes[-1].copy())
+
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
+        """
+        Forward pass of the drop path layer
+
+        Parameters
+        ----------
+        x : (N,...) Tensor
+            Input tensor
+
+        Returns
+        -------
+        (N,...) Tensor
+            Output tensor
+        """
+        if not self.training or self._prob <= 0:
+            return x
+
+        mask: Tensor = x.new_empty(x.shape[0:1] + (1,) * (x.ndim - 1)).bernoulli_(self._prob)
+        mask.div_(self._prob)
+        return x * mask
+
+
 class Index(BaseLayer):
     """
     Constructs a layer to slice the last dimension from the output from the previous layer
@@ -209,7 +271,7 @@ class Index(BaseLayer):
 
     Methods
     -------
-    forward(x) -> Tensor
+    forward(x, **_) -> Tensor
         Forward pass of the indexing layer
     extra_repr() -> str
         Displays layer parameters when printing the network
@@ -256,12 +318,12 @@ class Index(BaseLayer):
 
         Parameters
         ----------
-        x : Tensor
+        x : (N,...) Tensor
             Input tensor
 
         Returns
         -------
-        Tensor
+        (N,...) Tensor
             Output tensor
         """
         if self._greater:
@@ -281,6 +343,79 @@ class Index(BaseLayer):
         return f'greater={bool(self._greater)}, number={self._number}'
 
 
+class LayerNorm(BaseLayer):
+    """
+    Constructs a layer normalisation layer that is the same as PyTorch's LayerNorm, except
+    normalisation priority is the first dimension after batch dimension to follow ConvNeXt
+    implementation
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+
+    Methods
+    -------
+    forward(x, **_) -> Tensor
+        Forward pass of the layer normalisation layer
+    """
+    def __init__(
+            self,
+            dims: int | None = None,
+            shape: list[int] | None = None,
+            shapes: list[list[int]] | None = None,
+            **kwargs: Any):
+        """
+        Parameters
+        ----------
+        dims : int, optional
+            Number of dimensions to normalise starting with the first dimension, ignoring batch
+            dimension, requires shapes argument, won't be used if shape is provided
+        shape : list[int], optional
+            Input shape or shape of the first dimension to normalise, will be used if provided, else
+            dims will be used
+        shapes : list[list[int]], optional
+            Shape of the outputs from each layer, only required if tracking layer outputs is
+            necessary
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**({'idx': 0} | kwargs))
+        self._layer: nn.LayerNorm
+
+        if not shape and dims and shapes:
+            shape = shapes[-1][:dims]
+        elif not shape:
+            raise ValueError(f'Either shape ({shape}) or dims ({dims}) and shapes must be provided')
+
+        self._layer = nn.LayerNorm(shape[::-1])
+
+        # If not used as a layer in a network
+        if not shapes:
+            return
+
+        shapes.append(shapes[-1].copy())
+
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
+        """
+        Forward pass of the layer normalisation layer
+
+        Parameters
+        ----------
+        x : (N,...) Tensor
+            Input tensor
+        _
+
+        Returns
+        -------
+        (N,...) Tensor
+            Output Tensor
+        """
+        permutation: ndarray = np.arange(x.ndim - 1, 0, -1)
+        return self._layer(x.permute(0, *permutation)).permute(0, *permutation)
+
+
 class Reshape(BaseLayer):
     """
     Constructs a reshaping layer to change the data dimensions
@@ -292,7 +427,7 @@ class Reshape(BaseLayer):
 
     Methods
     -------
-    forward(x)
+    forward(x, **_) -> Tensor
         Forward pass of Reshape
     extra_repr() -> str
         Displays layer parameters when printing the network
@@ -332,7 +467,7 @@ class Reshape(BaseLayer):
         target: list[int]
 
         # If not used as a layer in a network
-        if not shapes:
+        if shapes is None:
             return
 
         if factor and shapes is not None:
@@ -368,12 +503,12 @@ class Reshape(BaseLayer):
 
         Parameters
         ----------
-        x : Tensor
+        x : (N,...) Tensor
             Input tensor
 
         Returns
         -------
-        Tensor
+        (N,...) Tensor
             Output tensor
         """
         return x.contiguous().view(x.size(0), *self._shape)
@@ -390,6 +525,79 @@ class Reshape(BaseLayer):
         return f'output={self._shape}'
 
 
+class Scale(BaseLayer):
+    """
+    Constructs a scaling layer that scales the output by a learnable tensor
+
+    Attributes
+    ----------
+    layers : list[Module] | Sequential
+        Layers to loop through in the forward pass
+
+    Methods
+    -------
+    forward(x, **_) -> Tensor
+        Forward pass of the scale layer
+    """
+    def __init__(
+            self,
+            dims: int,
+            scale: float,
+            shapes: list[list[int]],
+            first: bool = True,
+            **kwargs: Any):
+        """
+        Parameters
+        ----------
+        scale : float
+            Initial scale factor
+        dims : list[int]
+            Which dimensions to have individual scales for
+        shapes : list[list[int]]
+            Shape of the outputs from each layer
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**({'idx': 0} | kwargs))
+        self._first: bool = first
+        self._scale: Tensor
+        shape: list[int]
+
+        if self._first:
+            shape = shapes[-1][:dims]
+        else:
+            shape = shapes[-1][-dims:]
+
+        self._scale = nn.Parameter(scale * torch.ones(*shape), requires_grad=True).to(self._device)
+
+        shapes.append(shapes[-1].copy())
+
+    def forward(self, x: Tensor, **_: Any) -> Tensor:
+        """
+        Forward pass of the scale layer
+
+        Parameters
+        ----------
+        x : (N,...) Tensor
+            Input tensor
+
+        Returns
+        -------
+        (N,...) Tensor
+            Output tensor
+        """
+        if self._first:
+            permutation = np.arange(x.ndim - 1, 0, -1)
+            return (self._scale * x.permute(0, *permutation)).permute(0, *permutation)
+        return self._scale * x
+
+    def to(self, *args: Any, **kwargs: Any) -> Self:
+        super().to(*args, **kwargs)
+        self._scale.to(*args, **kwargs)
+        return self
+
+
 class Shortcut(BaseMultiLayer):
     """
     Constructs a shortcut layer to add the outputs from two layers
@@ -401,7 +609,7 @@ class Shortcut(BaseMultiLayer):
 
     Methods
     -------
-    forward(x, outputs, net_check) -> Tensor
+    forward(x, outputs, checkpoints, **_) -> Tensor
         Forward pass of the shortcut layer
     """
     def __init__(
@@ -510,7 +718,7 @@ class Skip(BaseMultiLayer):
 
     Methods
     -------
-    forward(x, outputs, net_check) -> Tensor
+    forward(x, outputs, checkpoints, **_) -> Tensor
         Forward pass of the shortcut layer
     """
     def __init__(
@@ -584,7 +792,7 @@ class Unpack(BaseLayer):
 
     Methods
     -------
-    forward(x)
+    forward(_, outputs, **_) -> Tensor
         Forward pass of Unpack
     extra_repr() -> str
         Displays layer parameters when printing the network
@@ -620,7 +828,7 @@ class Unpack(BaseLayer):
 
         Parameters
         ----------
-        outputs : list[list[Tensor] | Tensor]
+        outputs : list[list[(N,...) Tensor] | (N,...) Tensor]
             Output from each layer
 
         Returns

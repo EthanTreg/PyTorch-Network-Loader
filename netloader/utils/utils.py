@@ -1,6 +1,7 @@
 """
 Misc functions used elsewhere
 """
+import logging as log
 from typing import Any
 from types import ModuleType
 
@@ -8,6 +9,25 @@ import torch
 import numpy as np
 from torch import Tensor
 from numpy import ndarray
+
+
+def check_params(name: str, supported_params: list[str] | ndarray, in_params: ndarray) -> None:
+    """
+    Checks if provided parameters are supported by the function
+
+    Parameters
+    ----------
+    name : str
+        Name of the function
+    supported_params : list[str] | ndarray
+        Parameters supported by the function
+    in_params : ndarray
+        Input parameters
+    """
+    bad_params: ndarray = in_params[~np.isin(in_params, supported_params)]
+
+    if len(bad_params):
+        log.getLogger(__name__).warning(f'Unknown parameters for {name}: {bad_params}')
 
 
 def get_device() -> tuple[dict[str, Any], torch.device]:

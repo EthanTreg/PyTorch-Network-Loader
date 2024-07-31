@@ -10,7 +10,7 @@ from typing import Any, Self
 import torch
 import numpy as np
 import pandas as pd
-from torch import Tensor
+from torch import nn, optim, Tensor
 from torch.utils.data import DataLoader
 from numpy import ndarray
 
@@ -26,6 +26,10 @@ class BaseNetwork:
     ----------
     save_path : str
         Path to the network save file
+    optimiser : Optimiser
+        Network optimiser, uses Adam optimiser
+    scheduler : LRScheduler
+        Optimiser scheduler, uses reduce learning rate on plateau
     net : Network
         Neural network
     description : str, default = ''
@@ -55,8 +59,9 @@ class BaseNetwork:
             self,
             save_num: int,
             states_dir: str,
-            net: Network,
+            net: nn.Module | Network,
             mix_precision: bool = False,
+            learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch'):
         """
@@ -66,10 +71,12 @@ class BaseNetwork:
             File number to save the network
         states_dir : str
             Directory to save the network
-        net : Network
+        net : Module | Network
             Network to predict low-dimensional data
         mix_precision: bool, default = False
             If mixed precision should be used
+        learning_rate : float, default = 1e-3
+            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
         description : str, default = ''
             Description of the network
         verbose : {'epoch', 'full', 'progress', None}
@@ -86,16 +93,31 @@ class BaseNetwork:
         self.transform: tuple[float, float] | None = None
         self.losses: tuple[list[float], list[float]] = ([], [])
         self.idxs: ndarray | None = None
-        self.net: Network = net
+        self.optimiser: optim.Optimizer
+        self.scheduler: optim.lr_scheduler.LRScheduler
+        self.net: nn.Module | Network = net
+
+        if not isinstance(self.net, Network) and not hasattr(net, 'net'):
+            self.net.net = nn.ModuleList(net._modules.values())
+        elif not isinstance(self.net, Network) and not isinstance(self.net.net, nn.ModuleList):
+            raise NameError('net requires an indexable module list as attribute net, but attribute '
+                            'net already exists')
+
+        if not hasattr(self.net, 'name'):
+            self.net.name = type(self.net).__name__
 
         if save_num:
             self.save_path = save_name(save_num, states_dir, self.net.name)
 
             if os.path.exists(self.save_path):
-                log.warning(f'{self.save_path} already exists and will be overwritten '
-                            f'if training continues')
+                log.getLogger(__name__).warning(f'{self.save_path} already exists and will be'
+                                                f'overwritten if training continues')
         else:
             self.save_path = None
+
+        if learning_rate:
+            self.optimiser = optim.AdamW(self.net.parameters(), lr=learning_rate)
+            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
 
     def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -175,37 +197,27 @@ class BaseNetwork:
             Loss to perform backpropagation from
         """
         if self._train_state:
-            self.net.optimiser.zero_grad()
+            self.optimiser.zero_grad()
             loss.backward()
-            self.net.optimiser.step()
+            self.optimiser.step()
 
-    def _update_scheduler(self, scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau) -> None:
+    def _update_scheduler(self) -> None:
         """
         Updates the scheduler for the network
-
-        Parameters
-        ----------
-        scheduler : LRScheduler
-            Scheduler to update
         """
         learning_rate: list[float]
         new_learning_rate: list[float]
+        assert isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau)
 
         try:
-            learning_rate = scheduler.get_last_lr()
-            scheduler.step(self.losses[1][-1])
-            new_learning_rate = scheduler.get_last_lr()
+            learning_rate = self.scheduler.get_last_lr()
+            self.scheduler.step(self.losses[1][-1])
+            new_learning_rate = self.scheduler.get_last_lr()
 
             if learning_rate[-1] != new_learning_rate[-1]:
                 print(f'Learning rate update: {new_learning_rate[-1]:.3e}')
         except AttributeError:
-            scheduler.step(self.losses[1][-1])
-
-    def _scheduler(self) -> None:
-        """
-        Updates the scheduler for the network
-        """
-        self._update_scheduler(self.net.scheduler)
+            self.scheduler.step(self.losses[1][-1])
 
     def _update_epoch(self) -> None:
         """
@@ -311,7 +323,7 @@ class BaseNetwork:
             # Validate network
             self.train(False)
             self.losses[1].append(self._train_val(loaders[1]))
-            self._scheduler()
+            self._update_scheduler()
 
             # Save training progress
             self._update_epoch()

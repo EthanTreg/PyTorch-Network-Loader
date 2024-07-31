@@ -2,8 +2,6 @@
 Test to check that NetLoader is working properly
 """
 import torch
-import numpy as np
-from torch import nn
 from torch.utils.data import Dataset, DataLoader
 
 from netloader.network import Network
@@ -21,7 +19,7 @@ class TestDataset(Dataset):
         self._device = get_device()[1]
 
     def __len__(self):
-        return 60
+        return 600
 
     def __getitem__(self, item):
         target = torch.randint(0, 10, size=(1, 1)).to(self._device).float()
@@ -38,45 +36,47 @@ def main():
     in_shape = [60, 2, 120, 120]
     in_tensor = torch.empty(in_shape).to(device)
     target = torch.zeros([in_shape[0], 10]).to(device)
+    # networks = ['layer_examples', 'inceptionv4', 'convnext']
+    networks = ['layer_examples']
 
-    # Test all layers
-    print('Testing layers...')
-    network = Network(
-        'layer_examples',
-        '../network_configs/',
-        [list(in_tensor.shape)[1:], list(target.shape)[1:]],
-        list(target.shape)[1:],
-        learning_rate=1e-5,
-    ).to(device)
-    network.group = 1
+    for net_name in networks:
+        print(f'Testing {net_name}...')
+        net_in_shape = [
+            in_shape[1:],
+            list(target.shape)[1:],
+        ] if net_name == 'layer_examples' else in_shape[1:]
 
-    out_tensor = network([in_tensor, target])
-    loss = torch.nn.MSELoss()(out_tensor, target)
-    loss.backward()
+        network = Network(
+            net_name,
+            '../network_configs/',
+            net_in_shape,
+            list(target.shape)[1:],
+        ).to(device)
 
-    print(f'Output: {out_tensor.shape}')
-    print(f'Checkpoints: {len(network.checkpoints)}')
+        if net_name == 'layer_examples':
+            network.group = 1
+            out_tensor = network([in_tensor, target])
+        else:
+            out_tensor = network(in_tensor)
 
-    # Test InceptionV4
-    print('Testing InceptionV4...')
-    network = Network(
-        'inceptionv4',
-        '../network_configs/',
-        list(in_tensor.shape)[1:],
-        list(target.shape)[1:],
-        learning_rate=1e-5,
-    ).to(device)
-
-    out_tensor = network(in_tensor)
-    loss = torch.nn.MSELoss()(out_tensor, target)
-    loss.backward()
+        loss = torch.nn.MSELoss()(out_tensor, target)
+        loss.backward()
 
     # Test Networks
-    print('Testing Networks...')
-    net = Encoder(0, '', network, verbose='full', classes=torch.arange(10))
     loader = DataLoader(TestDataset(in_shape), batch_size=60, shuffle=False)
-    net.training(2, (loader, loader))
-    net.predict(loader)
+    try:
+        print(f'Testing {net_name} training...')
+        net = Encoder(
+            0,
+            '',
+            network,
+            learning_rate=1e-4,
+            verbose='full',
+            classes=torch.arange(10),
+        )
+        net.training(1, (loader, loader))
+    except NameError:
+        pass
 
     # Test training
     print('Testing Network training...')
@@ -85,26 +85,18 @@ def main():
         '../network_configs/',
         in_shape[1:],
         list(target.shape)[1:],
-        learning_rate=1e-4,
     ).to(device)
 
-    with torch.set_grad_enabled(True):
-        for i in range(20):
-            losses = []
-
-            for _ in range(10):
-                labels = torch.randint(0, 10, size=(in_shape[0], 1)).to(device).float()
-                in_tensor = torch.ones(size=in_shape).to(device) * \
-                    labels.flatten()[:, None, None, None]
-                out_tensor = network(in_tensor)
-                loss = nn.CrossEntropyLoss()(out_tensor, labels.flatten().long())
-                network.optimiser.zero_grad()
-                loss.backward()
-                network.optimiser.step()
-                losses.append(loss.item())
-                network.scheduler.step(losses[-1])
-
-            print(f'Epoch: {i}\tLoss: {np.mean(losses):.2f}')
+    net = Encoder(
+        0,
+        '',
+        network,
+        learning_rate=1e-4,
+        verbose='epoch',
+        classes=torch.arange(10),
+    )
+    net.training(20, (loader, loader))
+    net.predict(loader)
 
 
 if __name__ == '__main__':

@@ -172,7 +172,6 @@ class Pool(BaseLayer):
 
         # Check for errors
         self._check_shape(shapes[-1])
-        self._check_kernel(kernel, padding, shapes[-1])
         self._check_options('mode', mode, set(modes))
 
         pool = [

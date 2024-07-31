@@ -1,12 +1,13 @@
 """
 Layer utility functions
 """
-import logging as log
 from typing import Any, Self
 
 import torch
 import numpy as np
 from torch import nn, Tensor
+
+from netloader.utils.utils import check_params
 
 
 class BaseLayer(nn.Module):
@@ -47,17 +48,13 @@ class BaseLayer(nn.Module):
             'type',
             'group',
         ]
-        keys: np.ndarray
-        bad_params: np.ndarray
 
         if kwargs:
-            keys = np.array(list(kwargs.keys()))
-            bad_params = keys[~np.isin(keys, supported_params)]
-
-            if len(bad_params):
-                log.warning(
-                    f'Unknown parameters for {self.__class__.__name__} in layer {idx}: {bad_params}'
-                )
+            check_params(
+                f'{self.__class__.__name__} in layer {idx}',
+                supported_params,
+                np.array(list(kwargs.keys())),
+            )
 
     @staticmethod
     def _check_options(name: str, value: str | None, options: set[str | None]) -> None:
@@ -76,24 +73,6 @@ class BaseLayer(nn.Module):
         if value not in options:
             raise ValueError(f'{name.title()} ({value}) is unknown, {name} must be one of '
                              f'{options}')
-
-    @staticmethod
-    def _check_kernel(kernel: int | list[int], padding: int | list[int], shape: list[int]) -> None:
-        """
-        Checks if the kernel size is too large for input shape
-
-        Parameters
-        ----------
-        kernel : int | list[int]
-            Size of the kernel
-        padding : int | list[int]
-            Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
-        shape : list[int]
-            Input shape
-        """
-        if (np.array(shape[1:]) + np.array(padding) < np.array(kernel)).any():
-            raise ValueError(f'Kernel ({kernel}) is too large for input shape {shape} and padding '
-                             f'({padding})')
 
     @staticmethod
     def _check_stride(stride: int | list[int]) -> None:
@@ -127,7 +106,7 @@ class BaseLayer(nn.Module):
             shape: list[int],
             filters: int | None = None,
             factor: float | None = None,
-            net_out: list[int] | None = None) -> list[int]:
+            target: list[int] | None = None) -> list[int]:
         """
         Checks if factor or filters is provided and calculates the number of filters
 
@@ -140,16 +119,16 @@ class BaseLayer(nn.Module):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[int]
-            Shape of the network's output, required only if layer contains factor
+        target : list[int]
+            Target shape that factor is relative to, required only if layer contains factor
 
         Returns
         -------
         list[int]
             Input shape with the adjusted number of filters
         """
-        if factor is not None and net_out is not None:
-            shape[0] = max(1, int(net_out[0] * factor))
+        if factor is not None and target is not None:
+            shape[0] = max(1, int(target[0] * factor))
         elif filters is not None:
             shape[0] = filters
         else:

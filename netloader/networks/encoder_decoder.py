@@ -20,7 +20,11 @@ class Autoencoder(BaseNetwork):
     ----------
     save_path : str
         Path to the network save file
-    net : Network
+    optimiser : Optimiser
+        Network optimiser, uses Adam optimiser
+    scheduler : LRScheduler
+        Optimiser scheduler, uses reduce learning rate on plateau
+    net : nn.Module | Network
         Autoencoder network
     reconstruct_loss : float, default = 1
         Loss weight for the reconstruction MSE loss
@@ -28,6 +32,8 @@ class Autoencoder(BaseNetwork):
         Loss weight for the latent MSE loss
     bound_loss : float, default = 1e-3
         Loss weight for the latent bounds loss
+    kl_loss : float, default = 1e-1
+        Relative weight if performing a KL divergence loss on the latent space
     description : str, default = ''
         Description of the network training
     transform : tuple[float, float], default = None
@@ -42,8 +48,9 @@ class Autoencoder(BaseNetwork):
             self,
             save_num: int,
             states_dir: str,
-            net: Network,
+            net: nn.Module | Network,
             mix_precision: bool = False,
+            learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
             reconstruct_loss: nn.Module = nn.MSELoss()):
@@ -54,10 +61,12 @@ class Autoencoder(BaseNetwork):
             File number to save the network
         states_dir : str
             Directory to save the network
-        net : Network
+        net : Module | Network
             Network to predict low-dimensional data
         mix_precision: bool, default = False
             If mixed precision should be used
+        learning_rate : float, default = 1e-3
+            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
         description : str, default = ''
             Description of the network training
         verbose : {'full', 'progress', None}
@@ -71,6 +80,7 @@ class Autoencoder(BaseNetwork):
             states_dir,
             net,
             mix_precision=mix_precision,
+            learning_rate=learning_rate,
             description=description,
             verbose=verbose,
         )
@@ -78,6 +88,7 @@ class Autoencoder(BaseNetwork):
         self.reconstruct_loss: float = 1
         self.latent_loss: float = 1e-2
         self.bound_loss: float = 1e-3
+        self.kl_loss: float = 1e-1
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
@@ -105,7 +116,7 @@ class Autoencoder(BaseNetwork):
         if self.net.checkpoints:
             latent = self.net.checkpoints[-1]
 
-        loss = self.reconstruct_loss * self._loss_function(output, in_data) + self.net.kl_loss
+        loss = self.reconstruct_loss * self._loss_function(output, in_data)
 
         if self.latent_loss and latent is not None:
             loss += self.latent_loss * nn.MSELoss()(latent, target)
@@ -115,6 +126,9 @@ class Autoencoder(BaseNetwork):
                 (bounds[0] - latent) ** 2 * (latent < bounds[0]),
                 (latent - bounds[1]) ** 2 * (latent > bounds[1]),
             )))
+
+        if self.kl_loss:
+            loss += self.kl_loss * self.net.kl_loss
 
         self._update(loss)
         return loss.item()
@@ -129,7 +143,11 @@ class Decoder(BaseNetwork):
     ----------
     save_path : str
         Path to the network save file
-    net : Network
+    optimiser : Optimiser
+        Network optimiser, uses Adam optimiser
+    scheduler : LRScheduler
+        Optimiser scheduler, uses reduce learning rate on plateau
+    net : nn.Module | Network
         Neural network
     description : str, default = ''
         Description of the network training
@@ -193,7 +211,11 @@ class Encoder(BaseNetwork):
     ----------
     save_path : str
         Path to the network save file
-    net : Network
+    optimiser : Optimiser
+        Network optimiser, uses Adam optimiser
+    scheduler : LRScheduler
+        Optimiser scheduler, uses reduce learning rate on plateau
+    net : nn.Module | Network
         Neural network
     description : str, default = ''
         Description of the network training
@@ -216,8 +238,9 @@ class Encoder(BaseNetwork):
             self,
             save_num: int,
             states_dir: str,
-            net: Network,
+            net: nn.Module | Network,
             mix_precision: bool = False,
+            learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
             classes: Tensor | None = None):
@@ -228,10 +251,12 @@ class Encoder(BaseNetwork):
             File number to save the network
         states_dir : str
             Directory to save the network
-        net : Network
+        net : nn.Module | Network
             Network to predict low-dimensional data
         mix_precision: bool, default = False
             If mixed precision should be used
+        learning_rate : float, default = 1e-3
+            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
         description : str, default = ''
             Description of the network training
         verbose : {'full', 'progress', None}
@@ -245,6 +270,7 @@ class Encoder(BaseNetwork):
             states_dir,
             net,
             mix_precision=mix_precision,
+            learning_rate=learning_rate,
             description=description,
             verbose=verbose,
         )
@@ -280,7 +306,7 @@ class Encoder(BaseNetwork):
         output: Tensor = self.net(in_data)
 
         # Default shape is (N, L), but cross entropy expects (N)
-        if isinstance(self._loss_function, nn.CrossEntropyLoss) and self.classes is not None:
+        if self.classes is not None:
             target = label_change(target.squeeze(), self.classes)
 
         loss = self._loss_function(output, target)
