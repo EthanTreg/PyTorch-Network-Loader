@@ -17,7 +17,7 @@ class Recurrent(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -92,15 +92,15 @@ class Recurrent(BaseLayer):
             shape[0] *= 2
 
         # Convert 2D data to 1D and add recurrent layer
-        self.layers.append(Reshape([shapes[-1][0], -1]))
-        self.layers.append(recurrent)
+        self.layers.add_module('reshape', Reshape([shapes[-1][0], -1]))
+        self.layers.add_module('recurrent', recurrent)
 
         # Optional layers
         if activation and mode.lower() != 'rnn':
-            self.layers.append(getattr(nn, activation)())
+            self.layers.add_module('activation', getattr(nn, activation)())
 
         if batch_norm:
-            self.layers.append(nn.BatchNorm1d(shape[0]))
+            self.layers.add_module('batch_norm', nn.BatchNorm1d(shape[0]))
 
         shapes.append(shape)
 

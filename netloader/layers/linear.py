@@ -33,7 +33,7 @@ class Activation(BaseLayer):
         Parameters
         ----------
         activation : str, default = 'ELU'
-            Which activation function to use
+            Which activation function to use from PyTorch
         shapes : list[list[int]], optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
@@ -42,7 +42,7 @@ class Activation(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
-        self.layers.append(getattr(nn, activation)())
+        self.layers.add_module('activation', getattr(nn, activation)())
 
         # If not used as a layer in a network
         if not shapes:
@@ -97,7 +97,7 @@ class Linear(BaseLayer):
         dropout : float, default =  0
             Probability of dropout
         activation : str | None, default = 'SELU'
-            Which activation function to use
+            Which activation function to use from PyTorch
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -108,20 +108,20 @@ class Linear(BaseLayer):
         # Number of features can be defined by either a factor of the output size or explicitly
         shape = self._check_factor_filters(shape[::-1], features, factor, target[::-1])[::-1]
 
-        self.layers.append(nn.Linear(
+        self.layers.add_module('linear', nn.Linear(
             in_features=shapes[-1][-1],
             out_features=shape[-1],
         ))
 
         # Optional layers
         if activation:
-            self.layers.append(getattr(nn, activation)())
+            self.layers.add_module('activation', getattr(nn, activation)())
 
         if batch_norm:
-            self.layers.append(nn.BatchNorm1d(shape[0]))
+            self.layers.add_module('batch_norm', nn.BatchNorm1d(shape[0]))
 
         if dropout:
-            self.layers.append(nn.Dropout(dropout))
+            self.layers.add_module('dropout', nn.Dropout(dropout))
 
         shapes.append(shape)
 
@@ -291,8 +291,8 @@ class Upsample(BaseLayer):
             self,
             idx: int,
             shapes: list[list[int]],
-            scale: float | tuple[float, ...] = 2,
             shape: list[int] | None = None,
+            scale: float | tuple[float, ...] = 2,
             mode: str = 'nearest',
             **kwargs: Any):
         """
@@ -302,11 +302,11 @@ class Upsample(BaseLayer):
             Layer number
         shapes : list[list[int]]
             Shape of the outputs from each layer
+        shape : list[int], optional
+            Shape of the output, will be used if provided, else scale will be used
         scale : float | tuple[float], default = 2
             Factor to upscale all or individual dimensions, first dimension is ignored, won't be
             used if shape is provided
-        shape : list[int], optional
-            Shape of the output, will be used if provided, else factor will be used
         mode : {'nearest', 'linear', 'bilinear', 'bicubic', 'trilinear'}
             What interpolation method to use for upsampling
         **kwargs
@@ -343,7 +343,7 @@ class Upsample(BaseLayer):
                 int(length * factor) for length, factor in zip(shapes[-1][1:], scale)
             ]
 
-        self.layers.append(nn.Upsample(**scale_arg, mode=mode))
+        self.layers.add_module('upsample', nn.Upsample(**scale_arg, mode=mode))
 
     @staticmethod
     def _check_mode_dimension(mode: str, shape: list[int], modes: dict[str, list[int]]) -> None:

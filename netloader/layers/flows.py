@@ -51,6 +51,8 @@ class SplineFlow(BaseLayer):
             Shape of the network's output
         shapes : list[list[int]]
             Shape of the outputs from each layer
+        context : bool, default = False
+            If the output from the previous layer should be used to condition the normalizing flow
         features : int, optional
             Dimensions of the probability distribution, if factor is provided, features will not be
             used

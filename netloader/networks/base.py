@@ -26,11 +26,11 @@ class BaseNetwork:
     ----------
     save_path : str
         Path to the network save file
-    optimiser : Optimiser
-        Network optimiser, uses Adam optimiser
+    optimiser : Optimizer
+        Network optimiser, uses AdamW optimiser
     scheduler : LRScheduler
         Optimiser scheduler, uses reduce learning rate on plateau
-    net : Network
+    net : Module | Network
         Neural network
     description : str, default = ''
         Description of the network
@@ -50,7 +50,7 @@ class BaseNetwork:
         Trains & validates the network for each epoch
     save()
         If save_num is provided, saves the network to the states directory
-    predict(loader, save, path=None, **kwargs) -> dict[str, (N,...) ndarray]
+    predict(loader, path=None, **kwargs) -> dict[str, (N,...) ndarray]
         Generates predictions for a dataset and can save to a file
     batch_predict(high_dim) -> tuple[(N,...) ndarray]
         Generates predictions for the given data batch
@@ -483,4 +483,4 @@ def load_net(num: int, states_dir: str, net_name: str) -> BaseNetwork:
         Saved network object
     """
     path: str = save_name(num, states_dir, net_name)
-    return torch.load(path, map_location=get_device()[1])
+    return torch.load(path, map_location='cpu')

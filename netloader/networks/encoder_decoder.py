@@ -20,11 +20,11 @@ class Autoencoder(BaseNetwork):
     ----------
     save_path : str
         Path to the network save file
-    optimiser : Optimiser
-        Network optimiser, uses Adam optimiser
+    optimiser : Optimizer
+        Network optimiser, uses AdamW optimiser
     scheduler : LRScheduler
         Optimiser scheduler, uses reduce learning rate on plateau
-    net : nn.Module | Network
+    net : Module | Network
         Autoencoder network
     reconstruct_loss : float, default = 1
         Loss weight for the reconstruction MSE loss
@@ -143,11 +143,11 @@ class Decoder(BaseNetwork):
     ----------
     save_path : str
         Path to the network save file
-    optimiser : Optimiser
-        Network optimiser, uses Adam optimiser
+    optimiser : Optimizer
+        Network optimiser, uses AdamW optimiser
     scheduler : LRScheduler
         Optimiser scheduler, uses reduce learning rate on plateau
-    net : nn.Module | Network
+    net : Module | Network
         Neural network
     description : str, default = ''
         Description of the network training
@@ -211,11 +211,11 @@ class Encoder(BaseNetwork):
     ----------
     save_path : str
         Path to the network save file
-    optimiser : Optimiser
-        Network optimiser, uses Adam optimiser
+    optimiser : Optimizer
+        Network optimiser, uses AdamW optimiser
     scheduler : LRScheduler
         Optimiser scheduler, uses reduce learning rate on plateau
-    net : nn.Module | Network
+    net : Module | Network
         Neural network
     description : str, default = ''
         Description of the network training

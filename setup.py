@@ -3,9 +3,11 @@ Package setup
 """
 from setuptools import setup
 
+import netloader
+
 setup(
     name='netloader',
-    version='3.0.0',
+    version=netloader.__version__,
     description='Utility to generate and train PyTorch neural network objects from JSON files',
     url='https://github.com/EthanTreg/PyTorch-Network-Loader',
     author='Ethan Tregidga',

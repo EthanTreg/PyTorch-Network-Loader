@@ -15,7 +15,7 @@ class AdaptivePool(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -60,7 +60,7 @@ class AdaptivePool(BaseLayer):
             [nn.AdaptiveMaxPool2d, nn.AdaptiveAvgPool2d],
             [nn.AdaptiveMaxPool3d, nn.AdaptiveAvgPool3d],
         ][len(shapes[-1]) - self._channels - 1][self._mode == 'average']
-        self.layers.append(adapt_pool(shape))
+        self.layers.add_module('adaptive_pool', adapt_pool(shape))
 
         assert isinstance(shape, list)
         shapes.append(shapes[-1].copy())
@@ -128,7 +128,7 @@ class Pool(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -199,7 +199,12 @@ class Pool(BaseLayer):
             shape = shapes[-1].copy()
 
         assert not isinstance(padding, str)
-        self.layers.append(pool(kernel_size=kernel, stride=stride, padding=padding, **avg_kwargs))
+        self.layers.add_module('pool', pool(
+            kernel_size=kernel,
+            stride=stride,
+            padding=padding,
+            **avg_kwargs,
+        ))
         shapes.append(shape)
 
     def forward(self, x: Tensor, **kwargs: Any) -> Tensor:
@@ -231,7 +236,7 @@ class PoolDownscale(Pool):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(self, scale: int, shapes: list[list[int]], mode: str = 'max', **kwargs: Any):

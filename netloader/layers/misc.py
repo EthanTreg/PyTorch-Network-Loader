@@ -111,7 +111,8 @@ class Concatenate(BaseMultiLayer):
         check_shapes : list[list[int]]
             Shape of the outputs from each checkpoint
         checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers
+            If layer index should be relative to checkpoint layers or network layers, if checkpoints
+            in net is True, layer will always be relative to checkpoints
         dim : int, default = 0
             Dimension to concatenate to
 
@@ -549,12 +550,15 @@ class Scale(BaseLayer):
         """
         Parameters
         ----------
+        dims : int
+            Number of dimensions to have individual scales for
         scale : float
             Initial scale factor
-        dims : list[int]
-            Which dimensions to have individual scales for
         shapes : list[list[int]]
             Shape of the outputs from each layer
+        first : bool, default = True
+            If dims should count from the first dimension after the batch dimension, or from the
+            final dimension backwards
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -626,13 +630,14 @@ class Shortcut(BaseMultiLayer):
         net_check : bool
             If layer index should be relative to checkpoint layers
         layer : int
-            Layer index to concatenate the previous layer output with
+            Layer index to add the previous layer output with
         shapes : list[list[int]]
             Shape of the outputs from each layer
         check_shapes : list[list[int]]
             Shape of the outputs from each checkpoint
         checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers
+            If layer index should be relative to checkpoint layers or network layers, if checkpoints
+            in net is True, layer will always be relative to checkpoints
 
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -735,13 +740,14 @@ class Skip(BaseMultiLayer):
         net_check : bool
             If layer index should be relative to checkpoint layers
         layer : int
-            Layer index to concatenate the previous layer output with
+            Layer index to get the output from
         shapes : list[list[int]]
             Shape of the outputs from each layer
         check_shapes : list[list[int]]
             Shape of the outputs from each checkpoint
         checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers
+            If layer index should be relative to checkpoint layers or network layers, if checkpoints
+            in net is True, layer will always be relative to checkpoints
 
         **kwargs
             Leftover parameters to pass to base layer for checking

@@ -36,8 +36,7 @@ def main():
     in_shape = [60, 2, 120, 120]
     in_tensor = torch.empty(in_shape).to(device)
     target = torch.zeros([in_shape[0], 10]).to(device)
-    # networks = ['layer_examples', 'inceptionv4', 'convnext']
-    networks = ['layer_examples']
+    networks = ['layer_examples', 'inceptionv4', 'convnext']
 
     for net_name in networks:
         print(f'Testing {net_name}...')

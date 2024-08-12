@@ -16,7 +16,7 @@ class BaseLayer(nn.Module):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers part of the parent layer to loop through in the forward pass
 
     Methods
@@ -39,7 +39,7 @@ class BaseLayer(nn.Module):
         """
         super().__init__()
         self._device: torch.device = torch.device('cpu')
-        self.layers: list[nn.Module] | nn.Sequential = []
+        self.layers: nn.Sequential = nn.Sequential()
         supported_params: list[str] = [
             'net_check',
             'net_out',
@@ -173,7 +173,7 @@ class BaseMultiLayer(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers part of the parent layer to loop through in the forward pass
 
     Methods

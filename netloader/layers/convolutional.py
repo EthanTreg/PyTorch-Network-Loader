@@ -19,7 +19,7 @@ class Conv(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -48,8 +48,8 @@ class Conv(BaseLayer):
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
         factor : float, optional
-            Number of convolutional filters equal to the output channels multiplied by factor,
-            won't be used if filters is provided
+            Number of convolutional filters equal to the output channels, or if layer is provided,
+            the layer's channels, multiplied by factor, won't be used if filters is provided
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
         groups : int, default = 1
@@ -64,7 +64,7 @@ class Conv(BaseLayer):
         dropout : float, default = 0
             Probability of dropout
         activation : str | None, default = 'ELU'
-            Which activation function to use
+            Which activation function to use from PyTorch
         norm : {None, 'batch', 'layer'}, default = None
             If batch or layer normalisation should be used
 
@@ -97,7 +97,7 @@ class Conv(BaseLayer):
             [nn.Conv3d, nn.Dropout3d, nn.BatchNorm3d],
         ][len(shape) - 2]
 
-        self.layers.append(conv(
+        self.layers.add_module('conv', conv(
             in_channels=shapes[-1][0],
             out_channels=shape[0],
             kernel_size=kernel,
@@ -109,15 +109,15 @@ class Conv(BaseLayer):
 
         # Optional layers
         if activation:
-            self.layers.append(getattr(nn, activation)())
+            self.layers.add_module('activation', getattr(nn, activation)())
 
         if norm == 'batch':
-            self.layers.append(batch_norm_(shape[0]))
+            self.layers.add_module('batch_norm', batch_norm_(shape[0]))
         elif norm == 'layer':
-            self.layers.append(LayerNorm(shape=shape[0:1]))
+            self.layers.add_module('layer_norm', LayerNorm(shape=shape[0:1]))
 
         if dropout:
-            self.layers.append(dropout_(dropout))
+            self.layers.add_module('dropout', dropout_(dropout))
 
         if padding_ == 'same':
             shapes.append(shape)
@@ -153,7 +153,7 @@ class ConvDepth(Conv):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -185,9 +185,6 @@ class ConvDepth(Conv):
             won't be used if filters is provided
         net_out : list[int], optional
             Shape of the network's output, required only if layer contains factor
-        groups : int, default = 1
-            Number of input channel groups, each with its own convolutional filter(s), input and
-            output channels must both be divisible by the number of groups
         kernel : int | list[int], default = 3
             Size of the kernel
         stride : int | list[int], default = 1
@@ -227,7 +224,7 @@ class ConvDepthDownscale(Conv):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -277,7 +274,7 @@ class ConvDownscale(Conv):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(self,
@@ -342,7 +339,7 @@ class ConvTranspose(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -391,7 +388,7 @@ class ConvTranspose(BaseLayer):
             Spacing between kernel points
         padding : int | str | list[int], default = 0
             Inverse of convolutional padding which removes rows from each dimension in the output
-        dropout : float, default =  0.1
+        dropout : float, default =  0
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
@@ -442,7 +439,7 @@ class ConvTranspose(BaseLayer):
             self._slice[np.array(shape[1:]) - np.array(shapes[-1][1:]) == 1] = slice(-1)
             shape[1:] = shapes[-1][1:]
 
-        self.layers.append(transpose(
+        self.layers.add_module('transpose', transpose(
             in_channels=shapes[-1][0],
             out_channels=shape[0],
             kernel_size=kernel,
@@ -454,15 +451,15 @@ class ConvTranspose(BaseLayer):
 
         # Optional layers
         if activation:
-            self.layers.append(getattr(nn, activation)())
+            self.layers.add_module('activation', getattr(nn, activation)())
 
         if norm == 'batch':
-            self.layers.append(batch_norm_(shape[0]))
+            self.layers.add_module('batch_norm', batch_norm_(shape[0]))
         elif norm == 'layer':
-            self.layers.append(LayerNorm(shape=shape[0:1]))
+            self.layers.add_module('layer_norm', LayerNorm(shape=shape[0:1]))
 
         if dropout:
-            self.layers.append(dropout_(dropout))
+            self.layers.add_module('dropout', dropout_(dropout))
 
         shapes.append(shape)
 
@@ -517,7 +514,7 @@ class ConvTransposeUpscale(ConvTranspose):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -552,7 +549,7 @@ class ConvTransposeUpscale(ConvTranspose):
             Stride and size of the kernel, which acts as the upscaling factor
         out_padding : int | list[int], default = 0
             Padding applied to the output
-        dropout : float, default =  0.1
+        dropout : float, default =  0
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
@@ -591,7 +588,7 @@ class ConvUpscale(Conv):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -659,7 +656,7 @@ class ConvUpscale(Conv):
         )
 
         # Upscaling done using pixel shuffling
-        self.layers.append(PixelShuffle(scale))
+        self.layers.add_module('pixel_shuffle', PixelShuffle(scale))
         shapes[-1][0] = shapes[-1][0] // filters_scale
         shapes[-1][1:] = [length * scale for length in shapes[-1][1:]]
 
@@ -673,7 +670,7 @@ class PixelShuffle(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods

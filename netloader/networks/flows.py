@@ -26,11 +26,11 @@ class NormFlow(BaseNetwork):
     ----------
     save_path : str
         Path to the network save file
-    optimiser : Optimiser
-        Network optimiser, uses Adam optimiser
+    optimiser : Optimizer
+        Network optimiser, uses AdamW optimiser
     scheduler : LRScheduler
         Optimiser scheduler, uses reduce learning rate on plateau
-    net : nn.Module | Network
+    net : Module | Network
         Neural spline flow
     description : str, default = ''
         Description of the network training
@@ -132,14 +132,16 @@ class NormFlowEncoder(Encoder):
     ----------
     save_path : str
         Path to the network save file
-    optimiser : Optimiser
-        Network optimiser, uses Adam optimiser
+    optimiser : Optimizer
+        Network optimiser, uses AdamW optimiser
     scheduler : LRScheduler
         Optimiser scheduler, uses reduce learning rate on plateau
-    net : nn.Module | Network
+    net : Module | Network
         normalizing flow to predict low-dimensional data distribution
-    encoder_loss : float, default = 0
-        Loss for the output of the network
+    flow_loss : float, default = 1
+        Loss weight for the normalizing flow
+    encoder_loss : float, default = 1
+        Loss weight for the output of the encoder
     description : str, default = ''
         Description of the network training
     transform : tuple[float, float], default = None
@@ -193,7 +195,7 @@ class NormFlowEncoder(Encoder):
         train_epochs : tuple[int, int], default = (0, -1)
             Epoch when to start training the normalizing flow and epoch when to stop training the
             encoder, if both are zero, then flow will be trained from the beginning and encoder will
-            not be trained, if both are -1, then flow will never be trained and encoder will allways
+            not be trained, if both are -1, then flow will never be trained and encoder will always
             be trained
         learning_rate : tuple[float, float], default = (1e-3, 1e-3)
             Optimiser initial learning rate for encoder and normalizing flow, if None, no optimiser
