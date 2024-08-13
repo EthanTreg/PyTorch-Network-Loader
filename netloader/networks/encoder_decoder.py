@@ -5,11 +5,13 @@ from typing import Any
 
 import torch
 import numpy as np
+from numpy import ndarray
 from torch import Tensor, nn
 
 from netloader.network import Network
 from netloader.utils.utils import label_change
 from netloader.networks.base import BaseNetwork
+from netloader.utils.transforms import BaseTransform
 
 
 class Autoencoder(BaseNetwork):
@@ -36,9 +38,6 @@ class Autoencoder(BaseNetwork):
         Relative weight if performing a KL divergence loss on the latent space
     description : str, default = ''
         Description of the network training
-    transform : tuple[float, float], default = None
-        Expected label transformation of the network, with the transformation
-        (data - transform[0]) / transform[1]
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current autoencoder training and validation losses
     idxs: ndarray, default = None
@@ -53,7 +52,9 @@ class Autoencoder(BaseNetwork):
             learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
-            reconstruct_loss: nn.Module = nn.MSELoss()):
+            reconstruct_loss: nn.Module = nn.MSELoss(),
+            transform: BaseTransform | None = None,
+            latent_transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -74,6 +75,10 @@ class Autoencoder(BaseNetwork):
             or nothing (None)
         reconstruct_loss : nn.Module, default = MSELoss()
             Which loss function to use for the reconstruction loss
+        transform : BaseTransform, default = None
+            Transformation applied to the input data
+        latent_transform : BaseTransform, default = None
+            Transformation applied to the latent space
         """
         super().__init__(
             save_num,
@@ -83,12 +88,15 @@ class Autoencoder(BaseNetwork):
             learning_rate=learning_rate,
             description=description,
             verbose=verbose,
+            transform=transform,
         )
         self._loss_function: nn.Module = reconstruct_loss
         self.reconstruct_loss: float = 1
         self.latent_loss: float = 1e-2
         self.bound_loss: float = 1e-3
         self.kl_loss: float = 1e-1
+
+        self._header['latent'] = latent_transform
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
@@ -133,6 +141,25 @@ class Autoencoder(BaseNetwork):
         self._update(loss)
         return loss.item()
 
+    def batch_predict(self, data: Tensor, **_: Any) -> tuple[ndarray, ...]:
+        """
+        Generates predictions for the given data batch
+
+        Parameters
+        ----------
+        data : (N,...) Tensor
+            N data to generate predictions for
+
+        Returns
+        -------
+        tuple[(N,...) ndarray, ...]
+            N predictions for the given data
+        """
+        return (
+            self.net(data).detach().cpu().numpy(),
+            self.net.checkpoints[-1].detach().cpu().numpy(),
+        )
+
 
 class Decoder(BaseNetwork):
     """
@@ -151,9 +178,6 @@ class Decoder(BaseNetwork):
         Neural network
     description : str, default = ''
         Description of the network training
-    transform : tuple[float, float], default = None
-        Expected low-dimensional data transformation of the network, with the transformation
-        (data - transform[0]) / transform[1]
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
     idxs: ndarray, default = None
@@ -219,9 +243,6 @@ class Encoder(BaseNetwork):
         Neural network
     description : str, default = ''
         Description of the network training
-    transform : tuple[float, float], default = None
-        Expected low-dimensional data transformation of the network, with the transformation
-        (data - transform[0]) / transform[1]
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
     idxs: ndarray, default = None
@@ -243,7 +264,8 @@ class Encoder(BaseNetwork):
             learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
-            classes: Tensor | None = None):
+            classes: Tensor | None = None,
+            transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -264,6 +286,8 @@ class Encoder(BaseNetwork):
             or nothing (None)
         classes : (C) Tensor, default = None
             Unique classes of size C if using class classification
+        transform : BaseTransform, default = None
+            Transformation of the low-dimensional data
         """
         super().__init__(
             save_num,
@@ -273,6 +297,7 @@ class Encoder(BaseNetwork):
             learning_rate=learning_rate,
             description=description,
             verbose=verbose,
+            transform=transform,
         )
         self._loss_function: nn.MSELoss | nn.CrossEntropyLoss
         self.classes: Tensor | None
@@ -313,7 +338,7 @@ class Encoder(BaseNetwork):
         self._update(loss)
         return loss.item()
 
-    def batch_predict(self, data: Tensor, **_: Any) -> tuple[np.ndarray, ...]:
+    def batch_predict(self, data: Tensor, **_: Any) -> tuple[ndarray, ...]:
         """
         Generates predictions for the given data
 
@@ -327,9 +352,9 @@ class Encoder(BaseNetwork):
         tuple[N ndarray, ...]
             N predictions for the given data
         """
-        output: np.ndarray = super().batch_predict(data)[0]
+        output: ndarray = super().batch_predict(data)[0]
 
         if isinstance(self._loss_function, nn.CrossEntropyLoss):
-            output = np.argmax(output, axis=-1)
+            output = np.argmax(output, axis=-1, keepdims=True)
 
         return (output,)

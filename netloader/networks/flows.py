@@ -13,6 +13,7 @@ from numpy import ndarray
 from netloader.network import Network
 from netloader.utils.utils import label_change
 from netloader.networks.base import BaseNetwork
+from netloader.utils.transforms import BaseTransform
 from netloader.networks.encoder_decoder import Encoder
 
 
@@ -34,9 +35,6 @@ class NormFlow(BaseNetwork):
         Neural spline flow
     description : str, default = ''
         Description of the network training
-    transform : tuple[float, float], default = None
-        Expected low-dimensional data transformation of the network, with the transformation
-        (data - transform[0]) / transform[1]
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
     idxs: ndarray, default = None
@@ -85,12 +83,7 @@ class NormFlow(BaseNetwork):
         self._update(loss)
         return loss.item()
 
-    def predict(
-            self,
-            path: str | None = None,
-            num: list[int] | None = None,
-            header: list[str] | None = None,
-            **_: Any) -> dict[str, ndarray]:
+    def predict(self, path: str | None = None, num: list[int] | None = None) -> dict[str, ndarray]:
         """
         Generates probability distributions for a dataset and can save to a file
 
@@ -100,8 +93,6 @@ class NormFlow(BaseNetwork):
             Path as CSV file to save the predictions if they should be saved
         num : list[int], default = [1e3]
             Number of samples to generate
-        header : list[str], default = ['samples']
-            Header for the predicted data, only used by child classes
 
         Returns
         -------
@@ -110,13 +101,10 @@ class NormFlow(BaseNetwork):
         """
         data: dict[str, ndarray]
 
-        if header is None:
-            header = ['samples']
-
         if num is None:
             num = [int(1e3)]
 
-        data = {header[0]: self.net().sample(num).moveaxis(0, -1).detach().cpu().numpy()}
+        data = {'samples': self.net().sample(num).moveaxis(0, -1).detach().cpu().numpy()}
         self._save_predictions(path, data)
         return data
 
@@ -144,9 +132,6 @@ class NormFlowEncoder(Encoder):
         Loss weight for the output of the encoder
     description : str, default = ''
         Description of the network training
-    transform : tuple[float, float], default = None
-        Expected low-dimensional data transformation of the network, with the transformation
-        (data - transform[0]) / transform[1]
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current flow training and validation losses
     idxs: ndarray, default = None
@@ -170,9 +155,10 @@ class NormFlowEncoder(Encoder):
             net_checkpoint: int | None = None,
             description: str = '',
             verbose: str = 'epoch',
-            train_epochs: tuple[int, int] | None = None,
-            learning_rate: tuple[float, float] | None = None,
-            classes: Tensor | None = None):
+            train_epochs: tuple[int, int] = (0, -1),
+            learning_rate: tuple[float, float] = (1e-3,) * 2,
+            classes: Tensor | None = None,
+            transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -212,25 +198,24 @@ class NormFlowEncoder(Encoder):
             description=description,
             verbose=verbose,
             classes=classes,
+            transform=transform,
         )
         self._train_flow: bool
         self._train_encoder: bool
         self._checkpoint: int | None = net_checkpoint
-        self._epochs: tuple[int, int] = train_epochs if train_epochs is not None else (0, -1)
+        self._epochs: tuple[int, int] = train_epochs
         self.flow_loss: float = 1
         self.encoder_loss: float = 1
 
         self._train_flow = not self._epochs[0]
         self._train_encoder = bool(self._epochs[-1])
+        self._header |= {'distributions': transform, 'probs': None, 'max': None, 'meds': None}
 
         if not self._train_flow:
             self.net.net[-1].requires_grad_(False)
 
         if not self._train_encoder:
             self.net.net[:-1].requires_grad_(False)
-
-        if learning_rate is None:
-            learning_rate = (1e-3,) * 2
 
         if learning_rate:
             self.optimiser = optim.AdamW([
@@ -298,10 +283,7 @@ class NormFlowEncoder(Encoder):
             loader: DataLoader,
             bin_num: int = 100,
             path: str | None = None,
-            num: list[int] | None = None,
-            header: list[str] | None = None,
-            **_: Any) -> dict[str, ndarray]:
-        # pylint: disable=line-too-long
+            num: list[int] | None = None) -> dict[str, ndarray]:
         """
         Generates probability distributions for a dataset and can save to a file
 
@@ -316,8 +298,6 @@ class NormFlowEncoder(Encoder):
             Path as a pkl file to save the predictions if they should be saved
         num : list[int], default = [1e3]
             Number of samples to generate from the predicted distribution
-        header : list[str], default = ['ids', 'targets', 'preds', 'distributions', 'probs', 'max', 'meds']
-            Header for the predicted data, only used by child classes
 
         Returns
         -------
@@ -332,10 +312,7 @@ class NormFlowEncoder(Encoder):
         bins: ndarray
         prob: ndarray
 
-        if header is None:
-            header = ['ids', 'targets', 'preds', 'distributions', 'probs', 'max', 'meds']
-
-        data = super().predict(loader, header=header, num=num)
+        data = super().predict(loader, num=num)
 
         if data['distributions'] is None:
             self._save_predictions(path, data)
@@ -348,17 +325,16 @@ class NormFlowEncoder(Encoder):
             probs.append(prob[np.clip(np.digitize(target, bins) - 1, 0, bin_num - 1)])
             maxima.append(bins[np.argmax(hist)])
 
-        data[header[-3]] = np.stack(probs)
-        data[header[-2]] = np.stack(maxima)
-        data[header[-1]] = np.median(data['distributions'], axis=-1)
+        data['probs'] = np.stack(probs)
+        data['max'] = np.stack(maxima)
+        data['meds'] = np.median(data['distributions'], axis=-1)
         self._save_predictions(path, data)
         return data
 
     def batch_predict(
             self,
             data: Tensor,
-            num: list[int] | None = None,
-            **_: Any) -> tuple[ndarray | list[None], ndarray | list[None]]:
+            num: list[int] | None = None) -> tuple[ndarray | list[None], ndarray | list[None]]:
         """
         Generates probability distributions for the data batch
 

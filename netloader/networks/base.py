@@ -9,12 +9,12 @@ from typing import Any, Self
 
 import torch
 import numpy as np
-import pandas as pd
 from torch import nn, optim, Tensor
 from torch.utils.data import DataLoader
 from numpy import ndarray
 
 from netloader.network import Network
+from netloader.utils.transforms import BaseTransform
 from netloader.utils.utils import save_name, get_device, progress_bar
 
 
@@ -34,9 +34,6 @@ class BaseNetwork:
         Neural network
     description : str, default = ''
         Description of the network
-    transform : tuple[float, float], default = None
-        Expected low-dimensional data transformation of the network, with the transformation
-        (data - transform[0]) / transform[1]
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Network training and validation losses
     idxs: ndarray, default = None
@@ -63,7 +60,8 @@ class BaseNetwork:
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
-            verbose: str = 'epoch'):
+            verbose: str = 'epoch',
+            transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -82,15 +80,21 @@ class BaseNetwork:
         verbose : {'epoch', 'full', 'progress', None}
             If details about each epoch should be printed ('epoch'), details about epoch and epoch
             progress (full), just total progress ('progress'), or nothing (None)
+        transform : BaseTransform, default = None
+            Transformation of the network's output
         """
         self._train_state: bool = True
         self._half: bool = mix_precision
         self._epoch: int = 0
         self._verbose: str = verbose
         self._device: torch.device = get_device()[1]
+        self._header: dict[str, BaseTransform | None] = {
+            'ids': None,
+            'targets': transform,
+            'preds': transform,
+        }
         self.save_path: str | None
         self.description: str = description
-        self.transform: tuple[float, float] | None = None
         self.losses: tuple[list[float], list[float]] = ([], [])
         self.idxs: ndarray | None = None
         self.optimiser: optim.Optimizer
@@ -164,6 +168,7 @@ class BaseNetwork:
                 low_dim = low_dim.to(self._device)
                 high_dim = high_dim.to(self._device)
                 epoch_loss += self._loss(*self._data_loader_translation(low_dim, high_dim))
+                self._update_scheduler(epoch=self._epoch + (i + 1) / len(loader))
 
                 if self._verbose == 'full':
                     progress_bar(i, len(loader))
@@ -201,7 +206,7 @@ class BaseNetwork:
             loss.backward()
             self.optimiser.step()
 
-    def _update_scheduler(self) -> None:
+    def _update_scheduler(self, **kwargs: Any) -> None:
         """
         Updates the scheduler for the network
         """
@@ -209,62 +214,24 @@ class BaseNetwork:
         new_learning_rate: list[float]
         assert isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau)
 
+        if 'metrics' not in kwargs:
+            return
+
         try:
             learning_rate = self.scheduler.get_last_lr()
-            self.scheduler.step(self.losses[1][-1])
+            self.scheduler.step(**kwargs)
             new_learning_rate = self.scheduler.get_last_lr()
 
             if learning_rate[-1] != new_learning_rate[-1]:
                 print(f'Learning rate update: {new_learning_rate[-1]:.3e}')
         except AttributeError:
-            self.scheduler.step(self.losses[1][-1])
+            self.scheduler.step(**kwargs)
 
     def _update_epoch(self) -> None:
         """
         Updates network epoch
         """
         self._epoch += 1
-
-    def _predict(self, loader: DataLoader, **kwargs: Any) -> pd.DataFrame:
-        """
-        Generates predictions for the network
-
-        Parameters
-        ----------
-        loader : DataLoader
-            Data loader to generate predictions for
-
-        **kwargs
-            Optional keyword arguments to pass to batch_predict
-
-        Returns
-        -------
-        (N,Y) DataFrame
-            N predictions with Y columns for ids, targets, and network outputs, where each column
-            can be an array with different dimensions
-        """
-        initial_time: float = time()
-        ids: tuple[str, ...] | Tensor
-        data: list[pd.DataFrame] = []
-        in_data: Tensor
-        target: Tensor
-        self.train(False)
-
-        # Generate predictions
-        with torch.no_grad(), torch.autocast(
-                enabled=self._half,
-                device_type=self._device.type,
-                dtype=torch.float32):
-            for ids, low_dim, high_dim, *_ in loader:
-                in_data, target = self._data_loader_translation(low_dim, high_dim)
-                data.append(pd.DataFrame([
-                    ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
-                    target.numpy(),
-                    *self.batch_predict(in_data.to(self._device), **kwargs),
-                ]))
-
-        print(f'Prediction time: {time() - initial_time:.3e} s')
-        return pd.concat(data, axis=1).transpose()
 
     @staticmethod
     def _save_predictions(path: str | None, data: dict[str, ndarray]) -> None:
@@ -323,7 +290,7 @@ class BaseNetwork:
             # Validate network
             self.train(False)
             self.losses[1].append(self._train_val(loaders[1]))
-            self._update_scheduler()
+            self._update_scheduler(metrics=self.losses[1][-1])
 
             # Save training progress
             self._update_epoch()
@@ -360,43 +327,59 @@ class BaseNetwork:
             self,
             loader: DataLoader,
             path: str | None = None,
-            header: list[str] | None = None,
             **kwargs: Any) -> dict[str, ndarray]:
         """
-        Generates predictions for a dataset and can save to a file
+        Generates predictions for the network and can save to a file
 
         Parameters
         ----------
         loader : DataLoader
-            Dataset to generate predictions for
+            Data loader to generate predictions for
         path : str, default = None
             Path as CSV file to save the predictions if they should be saved
-        header : list[str], default = ['ids', 'targets', 'preds']
-            Header for the predicted data, only used by child classes
 
         **kwargs
-            Optional keyword arguments to pass into batch_predict
+            Optional keyword arguments to pass to batch_predict
 
         Returns
         -------
         dict[str, (N,...) ndarray]
             Prediction IDs, target values and predicted values for dataset of size N
         """
-        data: pd.DataFrame | dict[str, ndarray]
+        initial_time: float = time()
+        key: str
+        ids: tuple[str, ...] | ndarray | Tensor
+        data: list[list[ndarray]] = []
+        data_: dict[str, ndarray]
+        value: ndarray
+        target: Tensor
+        in_data: Tensor
+        low_dim: Tensor
+        high_dim: Tensor
+        transform: BaseTransform | None
+        self.train(False)
 
-        if header is None:
-            header = ['ids', 'targets', 'preds']
+        # Generate predictions
+        with torch.no_grad(), torch.autocast(
+                enabled=self._half,
+                device_type=self._device.type,
+                dtype=torch.float32):
+            for ids, low_dim, high_dim, *_ in loader:
+                in_data, target = self._data_loader_translation(low_dim, high_dim)
+                data.append([
+                    ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
+                    target.numpy(),
+                    *self.batch_predict(in_data.to(self._device), **kwargs),
+                ])
 
-        # Transform values
-        data = self._predict(loader, **kwargs)
-
-        if self.transform is not None:
-            data.iloc[:, 1:3] = data.iloc[:, 1:3] * self.transform[1] + self.transform[0]
-
-        data.columns = pd.Index(header[:len(data.columns)])
-        data = {str(key): np.stack(array).squeeze() for key, array in data.items()}
-        self._save_predictions(path, data)
-        return data
+        data_ = {
+            key: np.concatenate(value) if transform is None
+            else transform.backward(np.concatenate(value))
+            for (key, transform), value in zip(self._header.items(), zip(*data))
+        }
+        print(f'Prediction time: {time() - initial_time:.3e} s')
+        self._save_predictions(path, data_)
+        return data_
 
     def batch_predict(self, data: Tensor, **_: Any) -> tuple[ndarray, ...]:
         """
@@ -460,7 +443,7 @@ class BaseNetwork:
             Module: self
         """
         self.net = self.net.to(*args, **kwargs)
-        self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)
+        self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)  # pylint: disable=protected-access
         return self
 
 

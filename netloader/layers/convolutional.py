@@ -24,11 +24,11 @@ class Conv(BaseLayer):
     """
     def __init__(
             self,
+            net_out: list[int],
             shapes: list[list[int]],
             filters: int | None = None,
             layer: int | None = None,
             factor: float | None = None,
-            net_out: list[int] | None = None,
             groups: int = 1,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
@@ -40,6 +40,8 @@ class Conv(BaseLayer):
         """
         Parameters
         ----------
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -50,8 +52,6 @@ class Conv(BaseLayer):
         factor : float, optional
             Number of convolutional filters equal to the output channels, or if layer is provided,
             the layer's channels, multiplied by factor, won't be used if filters is provided
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
         groups : int, default = 1
             Number of input channel groups, each with its own convolutional filter(s), input and
             output channels must both be divisible by the number of groups
@@ -158,11 +158,11 @@ class ConvDepth(Conv):
     """
     def __init__(
             self,
+            net_out: list[int],
             shapes: list[list[int]],
             filters: int | None = None,
             layer: int | None = None,
             factor: float | None = None,
-            net_out: list[int] | None = None,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
             padding: int | str | list[int] = 0,
@@ -173,6 +173,8 @@ class ConvDepth(Conv):
         """
         Parameters
         ----------
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -183,8 +185,6 @@ class ConvDepth(Conv):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
         kernel : int | list[int], default = 3
             Size of the kernel
         stride : int | list[int], default = 1
@@ -202,11 +202,11 @@ class ConvDepth(Conv):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(
+            net_out=net_out,
             shapes=shapes,
             filters=filters,
             layer=layer,
             factor=factor,
-            net_out=net_out,
             groups=shapes[-1][0],
             kernel=kernel,
             stride=stride,
@@ -229,8 +229,8 @@ class ConvDepthDownscale(Conv):
     """
     def __init__(
             self,
+            net_out: list[int],
             shapes: list[list[int]],
-            net_out: list[int] | None = None,
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: str | None = None,
@@ -238,10 +238,10 @@ class ConvDepthDownscale(Conv):
         """
         Parameters
         ----------
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
         shapes : list[list[int]]
             Shape of the outputs from each layer
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
         dropout : float, default = 0
             Probability of dropout
         activation : str | None, default = 'ELU'
@@ -253,9 +253,9 @@ class ConvDepthDownscale(Conv):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(
+            net_out=net_out,
             shapes=shapes,
             filters=1,
-            net_out=net_out,
             stride=1,
             kernel=1,
             padding='same',
@@ -278,11 +278,11 @@ class ConvDownscale(Conv):
         Layers to loop through in the forward pass
     """
     def __init__(self,
+                 net_out: list[int],
                  shapes: list[list[int]],
                  filters: int | None = None,
                  layer: int | None = None,
                  factor: float | None = None,
-                 net_out: list[int] | None = None,
                  scale: int = 2,
                  dropout: float = 0,
                  activation: str | None = 'ELU',
@@ -291,6 +291,8 @@ class ConvDownscale(Conv):
         """
         Parameters
         ----------
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -301,8 +303,6 @@ class ConvDownscale(Conv):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
         scale : int, default = 2
             Stride and size of the kernel, which acts as the downscaling factor
         dropout : float, default = 0
@@ -316,11 +316,11 @@ class ConvDownscale(Conv):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(
+            net_out=net_out,
             shapes=shapes,
             filters=filters,
             layer=layer,
             factor=factor,
-            net_out=net_out,
             kernel=scale,
             stride=scale,
             padding=0,
@@ -349,11 +349,11 @@ class ConvTranspose(BaseLayer):
     """
     def __init__(
             self,
+            net_out: list[int],
             shapes: list[list[int]],
             filters: int | None = None,
             layer: int | None = None,
             factor: float | None = None,
-            net_out: list[int] | None = None,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
             out_padding: int | list[int] = 0,
@@ -366,6 +366,8 @@ class ConvTranspose(BaseLayer):
         """
         Parameters
         ----------
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -376,8 +378,6 @@ class ConvTranspose(BaseLayer):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
         kernel : int | list[int], default = 3
             Size of the kernel
         stride : int | list[int], default = 1
@@ -519,11 +519,11 @@ class ConvTransposeUpscale(ConvTranspose):
     """
     def __init__(
             self,
+            net_out: list[int],
             shapes: list[list[int]],
             filters: int | None = None,
             layer: int | None = None,
             factor: float | None = None,
-            net_out: list[int] | None = None,
             scale: int | list[int] = 2,
             out_padding: int | list[int] = 0,
             dropout: float = 0,
@@ -533,6 +533,8 @@ class ConvTransposeUpscale(ConvTranspose):
         """
         Parameters
         ----------
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -543,8 +545,6 @@ class ConvTransposeUpscale(ConvTranspose):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
         scale : int | list[int], default = 2
             Stride and size of the kernel, which acts as the upscaling factor
         out_padding : int | list[int], default = 0
@@ -560,11 +560,11 @@ class ConvTransposeUpscale(ConvTranspose):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(
+            net_out=net_out,
             shapes=shapes,
             filters=filters,
             layer=layer,
             factor=factor,
-            net_out=net_out,
             kernel=scale,
             stride=scale,
             padding=0,
@@ -593,11 +593,11 @@ class ConvUpscale(Conv):
     """
     def __init__(
             self,
+            net_out: list[int],
             shapes: list[list[int]],
             filters: int | None = None,
             layer: int | None = None,
             factor: float | None = None,
-            net_out: list[int] | None = None,
             scale: int = 2,
             kernel: int | list[int] = 3,
             dropout: float = 0,
@@ -607,6 +607,8 @@ class ConvUpscale(Conv):
         """
         Parameters
         ----------
+        net_out : list[int]
+            Shape of the network's output, required only if layer contains factor
         shapes : list[list[int]]
             Shape of the outputs from each layer
         filters : int, optional
@@ -617,8 +619,6 @@ class ConvUpscale(Conv):
         factor : float, optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        net_out : list[int], optional
-            Shape of the network's output, required only if layer contains factor
         scale : int, default = 2
             Factor to upscale the input by
         kernel : int | list[int], default = 3
@@ -643,9 +643,9 @@ class ConvUpscale(Conv):
 
         # Convolutional layer
         super().__init__(
+            net_out=net_out,
             shapes=shapes,
             filters=filters,
-            net_out=net_out,
             kernel=kernel,
             stride=1,
             padding='same',

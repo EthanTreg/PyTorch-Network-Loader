@@ -10,3 +10,12 @@ generated-members=torch.*
 
 [pylint.FORMAT]
 disable=logging-fstring-interpolation
+
+[MESSAGES CONTROL]
+disable=
+    too-few-public-methods,
+
+[DESIGN]
+max-args=10
+max-locals=25
+max-attributes=11

@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from netloader.network import Network
 from netloader.networks import Encoder
+from netloader.utils import transforms
 from netloader.utils.utils import get_device
 
 
@@ -13,18 +14,22 @@ class TestDataset(Dataset):
     """
     Fake dataset to test netloader.networks
     """
+    def __init__(self, in_shape: list[int]):
+        self._in_shape: list[int] = in_shape
+        self._device: torch.device = get_device()[1]
+        self.transform: transforms.BaseTransform | None = None
 
-    def __init__(self, in_shape):
-        self._in_shape = in_shape
-        self._device = get_device()[1]
-
-    def __len__(self):
+    def __len__(self) -> int:
         return 600
 
-    def __getitem__(self, item):
-        target = torch.randint(0, 10, size=(1, 1)).to(self._device).float()
-        in_tensor = (torch.ones(size=(1, *self._in_shape[1:])).to(self._device) *
-                     target[..., None, None])
+    def __getitem__(self, item: int):
+        target: torch.Tensor = torch.randint(0, 10, size=(1, 1)).to(self._device).float()
+        in_tensor: torch.Tensor = (torch.ones(size=(1, *self._in_shape[1:])).to(self._device) *
+                                   target[..., None, None])
+
+        if self.transform:
+            target = self.transform(target)
+
         return 0, target[0], in_tensor[0]
 
 
@@ -62,7 +67,8 @@ def main():
         loss.backward()
 
     # Test Networks
-    loader = DataLoader(TestDataset(in_shape), batch_size=60, shuffle=False)
+    dataset = TestDataset(in_shape)
+    loader = DataLoader(dataset, batch_size=60, shuffle=False)
     try:
         print(f'Testing {net_name} training...')
         net = Encoder(
@@ -83,8 +89,9 @@ def main():
         'training_test',
         '../network_configs/',
         in_shape[1:],
-        list(target.shape)[1:],
+        [1],
     ).to(device)
+    dataset.transform = transforms.Normalise(next(iter(loader))[1])
 
     net = Encoder(
         0,
@@ -92,7 +99,7 @@ def main():
         network,
         learning_rate=1e-4,
         verbose='epoch',
-        classes=torch.arange(10),
+        transform=dataset.transform,
     )
     net.training(20, (loader, loader))
     net.predict(loader)

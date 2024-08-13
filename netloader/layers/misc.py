@@ -471,11 +471,13 @@ class Reshape(BaseLayer):
         if shapes is None:
             return
 
-        if factor and shapes is not None:
+        if factor and shapes is not None and net_out is not None:
             target = shapes[layer] if layer is not None else net_out
             self._shape = [
                 int(elm * length) if elm != -1 else -1 for elm, length in zip(self._shape, target)
             ]
+        if factor and net_out is None:
+            raise ValueError('factor requires net_out to not be None')
 
         # If -1 in output shape, calculate the dimension length from the input dimensions
         if -1 not in self._shape:

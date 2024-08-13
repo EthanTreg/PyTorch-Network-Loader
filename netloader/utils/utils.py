@@ -2,13 +2,16 @@
 Misc functions used elsewhere
 """
 import logging as log
-from typing import Any
 from types import ModuleType
+from typing import Any, TypeVar
 
 import torch
 import numpy as np
 from torch import Tensor
 from numpy import ndarray
+
+
+ArrayLike = TypeVar('ArrayLike', ndarray, Tensor)
 
 
 def check_params(name: str, supported_params: list[str] | ndarray, in_params: ndarray) -> None:
@@ -45,32 +48,32 @@ def get_device() -> tuple[dict[str, Any], torch.device]:
 
 
 def label_change(
-        data: ndarray | Tensor,
-        in_label: ndarray | Tensor,
+        data: ArrayLike,
+        in_label: ArrayLike,
         one_hot: bool = False,
-        out_label: ndarray | Tensor | None = None) -> ndarray | Tensor:
+        out_label: ArrayLike | None = None) -> ArrayLike:
     """
     Converts an array or tensor of class values to an array or tensor of class indices
 
     Parameters
     ----------
-    data : N ndarray | Tensor
+    data : (N) ArrayLike
         Classes of size N
-    in_label : C ndarray | Tensor
+    in_label : (C) ArrayLike
         Unique class values of size C found in data
     one_hot : bool, default = False
         If the returned tensor should be 1D array of class indices or 2D one hot tensor if out_label
         is None or is an int
-    out_label : C ndarray | Tensor, default = None
+    out_label : (C) ArrayLike, default = None
         Unique class values of size C to transform data into, if None, then values will be indexes
 
     Returns
     -------
-    N | NxC ndarray | Tensor
+    (N) | (N,C) ArrayLike
         ndarray or Tensor of class indices, or if one_hot is True, one hot tensor
     """
-    data_one_hot: ndarray | Tensor
-    out_data: ndarray | Tensor
+    data_one_hot: ArrayLike
+    out_data: ArrayLike
     module: ModuleType
 
     if isinstance(data, Tensor):
@@ -86,6 +89,7 @@ def label_change(
     if isinstance(out_label, Tensor):
         out_label = out_label.to(get_device()[1])
 
+    assert out_label is not None
     out_data = out_label[module.searchsorted(in_label, data)]
 
     if one_hot:
