@@ -40,8 +40,12 @@ class Autoencoder(BaseNetwork):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current autoencoder training and validation losses
-    idxs: ndarray, default = None
+    header : dict[str, BaseTransform | None], default = {...: None, ...}
+        Keys for the output data from predict and corresponding transforms
+    idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    in_transform : BaseTransform, default = None
+        Transformation for the input data
     """
     def __init__(
             self,
@@ -95,8 +99,9 @@ class Autoencoder(BaseNetwork):
         self.latent_loss: float = 1e-2
         self.bound_loss: float = 1e-3
         self.kl_loss: float = 1e-1
+        self.in_transform: BaseTransform = transform
 
-        self._header['latent'] = latent_transform
+        self.header['latent'] = latent_transform
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
@@ -180,8 +185,12 @@ class Decoder(BaseNetwork):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
-    idxs: ndarray, default = None
+    header : dict[str, BaseTransform | None], default = {...: None, ...}
+        Keys for the output data from predict and corresponding transforms
+    idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    in_transform : BaseTransform, default = None
+        Transformation for the input data
     """
     def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -245,10 +254,14 @@ class Encoder(BaseNetwork):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
-    idxs: ndarray, default = None
+    header : dict[str, BaseTransform | None], default = {...: None, ...}
+        Keys for the output data from predict and corresponding transforms
+    idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
     classes : (C) Tensor, default = None
         Unique classes of size C if using class classification
+    in_transform : BaseTransform, default = None
+        Transformation for the input data
 
     Methods
     -------

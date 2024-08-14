@@ -36,8 +36,12 @@ class BaseNetwork:
         Description of the network
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Network training and validation losses
-    idxs: ndarray, default = None
+    header : dict[str, BaseTransform | None], default = {...: None, ...}
+        Keys for the output data from predict and corresponding transforms
+    idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    in_transform : BaseTransform, default = None
+        Transformation for the input data
 
     Methods
     -------
@@ -88,21 +92,22 @@ class BaseNetwork:
         self._epoch: int = 0
         self._verbose: str = verbose
         self._device: torch.device = get_device()[1]
-        self._header: dict[str, BaseTransform | None] = {
+        self.save_path: str | None
+        self.description: str = description
+        self.losses: tuple[list[float], list[float]] = ([], [])
+        self.header: dict[str, BaseTransform | None] = {
             'ids': None,
             'targets': transform,
             'preds': transform,
         }
-        self.save_path: str | None
-        self.description: str = description
-        self.losses: tuple[list[float], list[float]] = ([], [])
         self.idxs: ndarray | None = None
         self.optimiser: optim.Optimizer
         self.scheduler: optim.lr_scheduler.LRScheduler
         self.net: nn.Module | Network = net
+        self.in_transform: BaseTransform | None = None
 
-        if not isinstance(self.net, Network) and not hasattr(net, 'net'):
-            self.net.net = nn.ModuleList(net._modules.values())
+        if not isinstance(self.net, Network) and not hasattr(self.net, 'net'):
+            self.net.net = nn.ModuleList(self.net._modules.values())
         elif not isinstance(self.net, Network) and not isinstance(self.net.net, nn.ModuleList):
             raise NameError('net requires an indexable module list as attribute net, but attribute '
                             'net already exists')
@@ -375,7 +380,7 @@ class BaseNetwork:
         data_ = {
             key: np.concatenate(value) if transform is None
             else transform.backward(np.concatenate(value))
-            for (key, transform), value in zip(self._header.items(), zip(*data))
+            for (key, transform), value in zip(self.header.items(), zip(*data))
         }
         print(f'Prediction time: {time() - initial_time:.3e} s')
         self._save_predictions(path, data_)

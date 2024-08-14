@@ -37,8 +37,12 @@ class NormFlow(BaseNetwork):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
-    idxs: ndarray, default = None
+    header : dict[str, BaseTransform | None], default = {...: None, ...}
+        Keys for the output data from predict and corresponding transforms
+    idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    in_transform : BaseTransform, default = None
+        Transformation for the input data
 
     Methods
     -------
@@ -134,10 +138,14 @@ class NormFlowEncoder(Encoder):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current flow training and validation losses
-    idxs: ndarray, default = None
+    header : dict[str, BaseTransform | None], default = {...: None, ...}
+        Keys for the output data from predict and corresponding transforms
+    idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
     classes : (C) Tensor, default = None
         Unique classes of size C if using class classification
+    in_transform : BaseTransform, default = None
+        Transformation for the input data
 
     Methods
     -------
@@ -209,7 +217,7 @@ class NormFlowEncoder(Encoder):
 
         self._train_flow = not self._epochs[0]
         self._train_encoder = bool(self._epochs[-1])
-        self._header |= {'distributions': transform, 'probs': None, 'max': None, 'meds': None}
+        self.header |= {'distributions': transform, 'probs': None, 'max': None, 'meds': None}
 
         if not self._train_flow:
             self.net.net[-1].requires_grad_(False)
