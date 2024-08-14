@@ -74,8 +74,10 @@ class Log(BaseTransform):
 
     Attributes
     ----------
-    base : float, default = e
+    base : float, default = 10
         Base of the logarithm
+    idxs : list[int], default = None
+        Indices to slice the last dimension to perform the log on
 
     Methods
     -------
@@ -84,15 +86,18 @@ class Log(BaseTransform):
     backward(x) -> Tensor
         Backwards pass to invert the log
     """
-    def __init__(self, base: float = torch.e):
+    def __init__(self, base: float = 10, idxs: list[int] | None = None):
         """
         Parameters
         ----------
-        base : float, default = e
+        base : float, default = 10
             Base of the logarithm
+        idxs : list[int], default = None
+            Indices to slice the last dimension to perform the log on
         """
         super().__init__()
         self.base: float = base
+        self.idxs: list[int] | None = idxs
 
     def forward(self, x: ndarray | Tensor) -> ndarray | Tensor:
         """
@@ -111,10 +116,15 @@ class Log(BaseTransform):
         module: ModuleType = torch if isinstance(x, Tensor) else np
         logs: dict[float, Callable] = {module.e: module.log, 10: module.log10, 2: module.log2}
 
-        if self.base in logs:
-            return logs[self.base](x)
-
-        return module.log(x) / np.log(self.base)
+        if self.base in logs and self.idxs is not None:
+            x[..., self.idxs] = logs[self.base](x[..., self.idxs])
+        elif self.base in logs:
+            x = logs[self.base](x)
+        elif self.idxs is not None:
+            x[..., self.idxs] = module.log(x[..., self.idxs]) / np.log(self.base)
+        else:
+            x = module.log(x) / np.log(self.base)
+        return x
 
     def backward(self, x: ndarray | Tensor) -> ndarray | Tensor:
         """
