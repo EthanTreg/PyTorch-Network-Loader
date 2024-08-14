@@ -275,7 +275,8 @@ class Normalise(BaseTransform):
         if isinstance(x, type(self.offset)):
             return (x - self.offset) / self.scale
         if isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            return (x - torch.from_numpy(self.offset)) / torch.from_numpy(self.scale)
+            return ((x - torch.from_numpy(self.offset)) /
+                    torch.from_numpy(self.scale)).type(x.dtype)
         if isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
             return (x - self.offset.numpy()) / self.scale.numpy()
         return (x - self.offset) / self.scale
@@ -297,7 +298,7 @@ class Normalise(BaseTransform):
         if isinstance(x, type(self.offset)):
             return x * self.scale + self.offset
         if isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            return x * torch.from_numpy(self.scale) + torch.from_numpy(self.offset)
+            return (x * torch.from_numpy(self.scale) + torch.from_numpy(self.offset)).type(x.dtype)
         if isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
             return x * self.scale.numpy() + self.offset.numpy()
         return x * self.scale + self.offset
