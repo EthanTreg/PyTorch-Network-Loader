@@ -324,7 +324,7 @@ class MultiTransform(BaseTransform):
             self,
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
-        for transform in self.transforms:
+        for transform in self.transforms[::-1]:
             x, uncertainty = transform(x, back=True, uncertainty=uncertainty)
         return x, uncertainty
 
@@ -400,8 +400,8 @@ class Normalise(BaseTransform):
         if isinstance(x, type(self.offset)):
             return (x - self.offset) / self.scale
         if isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            return ((x - torch.from_numpy(self.offset)) /
-                    torch.from_numpy(self.scale)).type(x.dtype)
+            return ((x - torch.from_numpy(self.offset).to(x.device)) /
+                    torch.from_numpy(self.scale).to(x.device)).type(x.dtype)
         if isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
             return (x - self.offset.numpy()) / self.scale.numpy()
         return (x - self.offset) / self.scale
@@ -410,7 +410,8 @@ class Normalise(BaseTransform):
         if isinstance(x, type(self.offset)):
             return x * self.scale + self.offset
         if isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            return (x * torch.from_numpy(self.scale) + torch.from_numpy(self.offset)).type(x.dtype)
+            return (x * torch.from_numpy(self.scale).to(x.device) +
+                    torch.from_numpy(self.offset).to(x.device)).type(x.dtype)
         if isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
             return x * self.scale.numpy() + self.offset.numpy()
         return x * self.scale + self.offset
@@ -422,7 +423,7 @@ class Normalise(BaseTransform):
         if isinstance(x, type(self.offset)):
             uncertainty /= self.scale
         elif isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            uncertainty /= torch.from_numpy(self.scale).type(x.dtype)
+            uncertainty /= torch.from_numpy(self.scale).to(x.device).type(x.dtype)
         elif isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
             uncertainty /= self.scale.numpy()
         return self(x), uncertainty
@@ -434,7 +435,7 @@ class Normalise(BaseTransform):
         if isinstance(x, type(self.offset)):
             uncertainty *= self.scale
         elif isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            uncertainty *= torch.from_numpy(self.scale).type(x.dtype)
+            uncertainty *= torch.from_numpy(self.scale).to(x.device).type(x.dtype)
         elif isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
             uncertainty *= self.scale.numpy()
         return self(x, back=True), uncertainty
