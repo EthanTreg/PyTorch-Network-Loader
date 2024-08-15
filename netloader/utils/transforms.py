@@ -346,9 +346,9 @@ class Normalise(BaseTransform):
 
     Attributes
     ----------
-    offset : Tensor
+    offset : ndarray
         Offset to subtract from the data
-    scale : Tensor
+    scale : ndarray
         Scale to divide the data by
 
     Methods
@@ -378,66 +378,47 @@ class Normalise(BaseTransform):
             Dimensions to normalise over, if None, all dimensions will be normalised over
         """
         super().__init__()
-        self.offset: ArrayLike
-        self.scale: ArrayLike
-        module: ModuleType
+        self.offset: ndarray
+        self.scale: ndarray
 
         if isinstance(data, Tensor):
-            module = torch
-            kwargs = {'dim': dim, 'keepdim': True}
-        else:
-            module = np
-            kwargs = {'axis': dim, 'keepdims': True}
+            data = data.cpu().numpy()
 
         if mean:
-            self.offset = module.mean(data, **kwargs)
-            self.scale = module.std(data, **kwargs)
+            self.offset = np.mean(data, axis=dim, keepdims=True)
+            self.scale = np.std(data, axis=dim, keepdims=True)
         else:
-            self.offset = module.amin(data, **kwargs)
-            self.scale = module.amax(data, **kwargs) - self.offset
+            self.offset = np.amin(data, axis=dim, keepdims=True)
+            self.scale = np.amax(data, axis=dim, keepdims=True) - self.offset
 
     def forward(self, x: ArrayLike) -> ArrayLike:
-        if isinstance(x, type(self.offset)):
-            return (x - self.offset) / self.scale
-        if isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            return ((x - torch.from_numpy(self.offset).to(x.device)) /
-                    torch.from_numpy(self.scale).to(x.device)).type(x.dtype)
-        if isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
-            return (x - self.offset.numpy()) / self.scale.numpy()
+        if isinstance(x, Tensor):
+            return (x - x.new_tensor(self.offset)) / x.new_tensor(self.scale)
         return (x - self.offset) / self.scale
 
     def backward(self, x: ArrayLike) -> ArrayLike:
-        if isinstance(x, type(self.offset)):
-            return x * self.scale + self.offset
-        if isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            return (x * torch.from_numpy(self.scale).to(x.device) +
-                    torch.from_numpy(self.offset).to(x.device)).type(x.dtype)
-        if isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
-            return x * self.scale.numpy() + self.offset.numpy()
+        if isinstance(x, Tensor):
+            return x * x.new_tensor(self.scale) + x.new_tensor(self.offset)
         return x * self.scale + self.offset
 
     def forward_grad(
             self,
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
-        if isinstance(x, type(self.offset)):
+        if isinstance(uncertainty, Tensor):
+            uncertainty /= uncertainty.new_tensor(self.scale)
+        else:
             uncertainty /= self.scale
-        elif isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            uncertainty /= torch.from_numpy(self.scale).to(x.device).type(x.dtype)
-        elif isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
-            uncertainty /= self.scale.numpy()
         return self(x), uncertainty
 
     def backward_grad(
             self,
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
-        if isinstance(x, type(self.offset)):
+        if isinstance(x, Tensor):
+            uncertainty *= uncertainty.new_tensor(self.scale)
+        else:
             uncertainty *= self.scale
-        elif isinstance(self.offset, ndarray) and isinstance(self.scale, ndarray):
-            uncertainty *= torch.from_numpy(self.scale).to(x.device).type(x.dtype)
-        elif isinstance(self.offset, Tensor) and isinstance(self.scale, Tensor):
-            uncertainty *= self.scale.numpy()
         return self(x, back=True), uncertainty
 
 
