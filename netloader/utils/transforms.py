@@ -240,25 +240,31 @@ class MinClamp(BaseTransform):
     ----------
     dim : int, default = None
         Dimension to take the minimum value over
+    idxs : list[int], default = None
+            Indices to slice the last dimension to perform the min clamp on
 
     Methods
     -------
     forward(x) -> ArrayLike
         Forward pass of the transformation
     """
-    def __init__(self, dim: int | None = None):
+    def __init__(self, dim: int | None = None, idxs: list[int] | None = None):
         """
         Parameters
         ----------
         dim : int, default = None
             Dimension to take the minimum value over
+        idxs : list[int], default = None
+            Indices to slice the last dimension to perform the min clamp on
         """
         super().__init__()
         self.dim: int | None = dim
+        self.idxs: list[int] | None = idxs
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         kwargs: dict[str, Any]
         module: ModuleType = torch if isinstance(x, Tensor) else np
+        x_clamp: ArrayLike
         min_count: ArrayLike
 
         if isinstance(x, Tensor):
@@ -266,8 +272,18 @@ class MinClamp(BaseTransform):
         else:
             kwargs = {'axis': self.dim, 'keepdims': True}
 
-        min_count = module.amin(x[x > 0], **kwargs)
-        return module.maximum(x, min_count)
+        if self.idxs is None:
+            min_count = module.amin(module.where(x > 0, x, module.max(x)), **kwargs)
+            x = module.maximum(x, min_count)
+        else:
+            x_clamp = x[..., self.idxs]
+            min_count = module.amin(module.where(
+                x_clamp > 0,
+                x_clamp,
+                module.max(x_clamp),
+            ), **kwargs)
+            x[..., self.idxs] = module.maximum(x_clamp, min_count)
+        return x
 
 
 class MultiTransform(BaseTransform):

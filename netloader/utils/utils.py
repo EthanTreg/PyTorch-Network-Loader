@@ -39,11 +39,15 @@ def get_device() -> tuple[dict[str, Any], torch.device]:
 
     Returns
     -------
-    tuple[dict, device]
+    tuple[dict[str, Any], device]
         Arguments for the PyTorch DataLoader to use when loading data into memory and PyTorch device
     """
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    kwargs: dict[str, Any] = {'num_workers': 1, 'pin_memory': True} if device == 'cuda' else {}
+    kwargs: dict[str, Any] = {
+        'num_workers': 4,
+        'pin_memory': True,
+        'persistent_workers': True,
+    } if device == 'cuda' else {}
     return kwargs, device
 
 

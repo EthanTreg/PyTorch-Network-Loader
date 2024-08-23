@@ -1,7 +1,7 @@
 """
 Classes for encoder, decoder, or autoencoder type architectures
 """
-from typing import Any
+from typing import Any, Callable
 
 import torch
 import numpy as np
@@ -42,6 +42,10 @@ class Autoencoder(BaseNetwork):
         Current autoencoder training and validation losses
     header : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
+    reconstruct_func : Callable, default = MSELoss
+        Loss function for the reconstruction loss
+    latent_func : Callable, default = MSELoss
+        Loss function for the latent loss
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
     in_transform : BaseTransform, default = None
@@ -56,9 +60,9 @@ class Autoencoder(BaseNetwork):
             learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
-            reconstruct_loss: nn.Module = nn.MSELoss(),
             transform: BaseTransform | None = None,
-            latent_transform: BaseTransform | None = None):
+            latent_transform: BaseTransform | None = None,
+            in_transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -77,12 +81,12 @@ class Autoencoder(BaseNetwork):
         verbose : {'full', 'progress', None}
             If details about epoch should be printed ('full'), just a progress bar ('progress'),
             or nothing (None)
-        reconstruct_loss : nn.Module, default = MSELoss()
-            Which loss function to use for the reconstruction loss
         transform : BaseTransform, default = None
             Transformation applied to the input data
         latent_transform : BaseTransform, default = None
             Transformation applied to the latent space
+        in_transform : BaseTransform, default = None
+            Transformation for the input data
         """
         super().__init__(
             save_num,
@@ -93,15 +97,18 @@ class Autoencoder(BaseNetwork):
             description=description,
             verbose=verbose,
             transform=transform,
+            in_transform=in_transform,
         )
-        self._loss_function: nn.Module = reconstruct_loss
         self.reconstruct_loss: float = 1
         self.latent_loss: float = 1e-2
         self.bound_loss: float = 1e-3
         self.kl_loss: float = 1e-1
-        self.in_transform: BaseTransform = transform
+        self.reconstruct_func: Callable = nn.MSELoss()
+        self.latent_func : Callable = nn.MSELoss()
 
         self.header['latent'] = latent_transform
+        self.header['targets'] = latent_transform
+        self.header['inputs'] = transform
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
@@ -129,10 +136,10 @@ class Autoencoder(BaseNetwork):
         if self.net.checkpoints:
             latent = self.net.checkpoints[-1]
 
-        loss = self.reconstruct_loss * self._loss_function(output, in_data)
+        loss = self.reconstruct_loss * self.reconstruct_func(output, in_data)
 
         if self.latent_loss and latent is not None:
-            loss += self.latent_loss * nn.MSELoss()(latent, target)
+            loss += self.latent_loss * self.latent_func(latent, target)
 
         if self.bound_loss and latent is not None:
             loss += self.bound_loss * torch.mean(torch.cat((
@@ -163,6 +170,7 @@ class Autoencoder(BaseNetwork):
         return (
             self.net(data).detach().cpu().numpy(),
             self.net.checkpoints[-1].detach().cpu().numpy(),
+            data.detach().cpu().numpy(),
         )
 
 
@@ -187,11 +195,60 @@ class Decoder(BaseNetwork):
         Current network training and validation losses
     header : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
+    loss_func : Callable, default = MSELoss
+            Loss function for the reconstructions
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
     in_transform : BaseTransform, default = None
         Transformation for the input data
     """
+    def __init__(
+            self,
+            save_num: int,
+            states_dir: str,
+            net: nn.Module | Network,
+            mix_precision: bool = False,
+            learning_rate: float = 1e-3,
+            description: str = '',
+            verbose: str = 'epoch',
+            transform: BaseTransform | None = None,
+            in_transform: BaseTransform | None = None):
+        """
+        Parameters
+        ----------
+        save_num : int
+            File number to save the network
+        states_dir : str
+            Directory to save the network
+        net : Module | Network
+            Network to predict low-dimensional data
+        mix_precision: bool, default = False
+            If mixed precision should be used
+        learning_rate : float, default = 1e-3
+            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
+        description : str, default = ''
+            Description of the network
+        verbose : {'epoch', 'full', 'progress', None}
+            If details about each epoch should be printed ('epoch'), details about epoch and epoch
+            progress (full), just total progress ('progress'), or nothing (None)
+        transform : BaseTransform, default = None
+            Transformation of the network's output
+        in_transform : BaseTransform, default = None
+            Transformation for the input data
+        """
+        super().__init__(
+            save_num,
+            states_dir,
+            net,
+            mix_precision=mix_precision,
+            learning_rate=learning_rate,
+            description=description,
+            verbose=verbose,
+            transform=transform,
+            in_transform=in_transform,
+        )
+        self.loss_func: Callable = nn.MSELoss()
+
     def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """
         Takes the low and high dimensional tensors from the data loader, and orders them as inputs
@@ -230,7 +287,7 @@ class Decoder(BaseNetwork):
             Loss from the network's predictions
         """
         output: Tensor = self.net(in_data)
-        loss: Tensor = nn.MSELoss()(output, target)
+        loss: Tensor = self.loss_func(output, target)
         self._update(loss)
         return loss.item()
 
@@ -278,7 +335,8 @@ class Encoder(BaseNetwork):
             description: str = '',
             verbose: str = 'epoch',
             classes: Tensor | None = None,
-            transform: BaseTransform | None = None):
+            transform: BaseTransform | None = None,
+            in_transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -301,6 +359,8 @@ class Encoder(BaseNetwork):
             Unique classes of size C if using class classification
         transform : BaseTransform, default = None
             Transformation of the low-dimensional data
+        in_transform : BaseTransform, default = None
+            Transformation for the input data
         """
         super().__init__(
             save_num,
@@ -311,6 +371,7 @@ class Encoder(BaseNetwork):
             description=description,
             verbose=verbose,
             transform=transform,
+            in_transform=in_transform,
         )
         self._loss_function: nn.MSELoss | nn.CrossEntropyLoss
         self.classes: Tensor | None

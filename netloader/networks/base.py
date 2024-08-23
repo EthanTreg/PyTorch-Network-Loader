@@ -65,7 +65,8 @@ class BaseNetwork:
             learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
-            transform: BaseTransform | None = None):
+            transform: BaseTransform | None = None,
+            in_transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -86,6 +87,8 @@ class BaseNetwork:
             progress (full), just total progress ('progress'), or nothing (None)
         transform : BaseTransform, default = None
             Transformation of the network's output
+        in_transform : BaseTransform, default = None
+            Transformation for the input data
         """
         self._train_state: bool = True
         self._half: bool = mix_precision
@@ -104,7 +107,7 @@ class BaseNetwork:
         self.optimiser: optim.Optimizer
         self.scheduler: optim.lr_scheduler.LRScheduler
         self.net: nn.Module | Network = net
-        self.in_transform: BaseTransform | None = None
+        self.in_transform: BaseTransform | None = in_transform
 
         if not isinstance(self.net, Network) and not hasattr(self.net, 'net'):
             self.net.net = nn.ModuleList(self.net._modules.values())
@@ -211,26 +214,34 @@ class BaseNetwork:
             loss.backward()
             self.optimiser.step()
 
-    def _update_scheduler(self, **kwargs: Any) -> None:
+    def _update_scheduler(self, metrics: float | None = None, **_: Any) -> None:
         """
         Updates the scheduler for the network
+
+        Parameters
+        ----------
+        metrics : float, default = None
+            Loss metric to update ReduceLROnPlateau
+
+        **kwargs
+            Optional arguments to pass to scheduler.step
         """
         learning_rate: list[float]
         new_learning_rate: list[float]
         assert isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau)
 
-        if 'metrics' not in kwargs:
+        if metrics is None:
             return
 
         try:
             learning_rate = self.scheduler.get_last_lr()
-            self.scheduler.step(**kwargs)
+            self.scheduler.step(metrics)
             new_learning_rate = self.scheduler.get_last_lr()
 
             if learning_rate[-1] != new_learning_rate[-1]:
                 print(f'Learning rate update: {new_learning_rate[-1]:.3e}')
         except AttributeError:
-            self.scheduler.step(**kwargs)
+            self.scheduler.step(metrics)
 
     def _update_epoch(self) -> None:
         """
@@ -369,13 +380,16 @@ class BaseNetwork:
                 enabled=self._half,
                 device_type=self._device.type,
                 dtype=torch.float32):
-            for ids, low_dim, high_dim, *_ in loader:
+            for i, (ids, low_dim, high_dim, *_) in enumerate(loader):
                 in_data, target = self._data_loader_translation(low_dim, high_dim)
                 data.append([
                     ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
                     target.numpy(),
                     *self.batch_predict(in_data.to(self._device), **kwargs),
                 ])
+
+                if self._verbose == 'full':
+                    progress_bar(i, len(loader))
 
         data_ = {
             key: np.concatenate(value) if transform is None

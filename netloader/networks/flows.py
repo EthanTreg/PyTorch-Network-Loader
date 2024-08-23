@@ -166,7 +166,8 @@ class NormFlowEncoder(Encoder):
             train_epochs: tuple[int, int] = (0, -1),
             learning_rate: tuple[float, float] = (1e-3,) * 2,
             classes: Tensor | None = None,
-            transform: BaseTransform | None = None):
+            transform: BaseTransform | None = None,
+            in_transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -196,6 +197,8 @@ class NormFlowEncoder(Encoder):
             or scheduler will be set
         classes : Tensor, default = None
             Unique classes of size C if using class classification
+        in_transform : BaseTransform, default = None
+            Transformation for the input data
         """
         super().__init__(
             save_num,
@@ -207,6 +210,7 @@ class NormFlowEncoder(Encoder):
             verbose=verbose,
             classes=classes,
             transform=transform,
+            in_transform=in_transform,
         )
         self._train_flow: bool
         self._train_encoder: bool
