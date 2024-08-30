@@ -36,7 +36,7 @@ class BaseNetwork:
         Neural network
     description : str, default = ''
         Description of the network
-    losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
+    losses : tuple[list[float], list[float]], default = ([], [])
         Network training and validation losses
     header : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
@@ -57,6 +57,8 @@ class BaseNetwork:
         Generates predictions for a dataset and can save to a file
     batch_predict(high_dim) -> tuple[(N,...) ndarray]
         Generates predictions for the given data batch
+    to(*args, **kwargs) -> Self
+        Move and/or cast the parameters and buffers
     """
     def __init__(
             self,
@@ -279,9 +281,6 @@ class BaseNetwork:
         ----------
         metrics : float, default = None
             Loss metric to update ReduceLROnPlateau
-
-        **kwargs
-            Optional arguments to pass to scheduler.step
         """
         learning_rate: list[float]
         new_learning_rate: list[float]
@@ -450,7 +449,7 @@ class BaseNetwork:
 
         data_ = {
             key: np.concatenate(value) if transform is None
-            else transform.backward(np.concatenate(value))
+            else transform(np.concatenate(value), back=True)
             for (key, transform), value in zip(self.header.items(), zip(*data))
         }
         print(f'Prediction time: {time() - initial_time:.3e} s')

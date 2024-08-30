@@ -46,17 +46,22 @@ class BaseTransform:
             back: bool = False,
             uncertainty: ArrayLike | None = None) -> ArrayLike | tuple[ArrayLike, ArrayLike]:
         """
-        Calling function returns the forward pass of the transformation
+        Calling function returns the forward, backwards or uncertainty propagation of the
+        transformation
 
         Parameters
         ----------
         x : (N,...) ArrayLike
             Input array or tensor
+        back : bool, default = False
+            If the inverse transformation should be applied
+        uncertainty : ArrayLike, default = None
+            Corresponding uncertainties for the input data for uncertainty propagation
 
         Returns
         -------
-        (N,...) ArrayLike
-            Transformed array or tensor
+        (N,...) ArrayLike | tuple[(N,...) ArrayLike, (N,...) ArrayLike]
+            Transformed array or tensor and propagated uncertainties if provided
         """
         if back and uncertainty is not None:
             return self.backward_grad(x, uncertainty)
@@ -94,7 +99,7 @@ class BaseTransform:
         Returns
         -------
         (N,...) ArrayLike
-            Un-transformed array or tensor
+            Untransformed array or tensor
         """
         return x
 
@@ -136,7 +141,7 @@ class BaseTransform:
         Returns
         -------
         (N,...) ArrayLike
-            Un-transformed array or tensor and un-transformed uncertainty
+            Untransformed array or tensor and untransformed uncertainty
         """
         return self(x, back=True), uncertainty
 
@@ -144,13 +149,6 @@ class BaseTransform:
 class Log(BaseTransform):
     """
     Logarithm transform
-
-    Attributes
-    ----------
-    base : float, default = 10
-        Base of the logarithm
-    idxs : list[int], default = None
-        Indices to slice the last dimension to perform the log on
 
     Methods
     -------
@@ -173,28 +171,28 @@ class Log(BaseTransform):
             Indices to slice the last dimension to perform the log on
         """
         super().__init__()
-        self.base: float = base
-        self.idxs: list[int] | None = idxs
+        self._base: float = base
+        self._idxs: list[int] | None = idxs
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         module: ModuleType = torch if isinstance(x, Tensor) else np
         logs: dict[float, Callable] = {module.e: module.log, 10: module.log10, 2: module.log2}
 
-        if self.base in logs and self.idxs is not None:
-            x[..., self.idxs] = logs[self.base](x[..., self.idxs])
-        elif self.base in logs:
-            x = logs[self.base](x)
-        elif self.idxs is not None:
-            x[..., self.idxs] = module.log(x[..., self.idxs]) / np.log(self.base)
+        if self._base in logs and self._idxs is not None:
+            x[..., self._idxs] = logs[self._base](x[..., self._idxs])
+        elif self._base in logs:
+            x = logs[self._base](x)
+        elif self._idxs is not None:
+            x[..., self._idxs] = module.log(x[..., self._idxs]) / np.log(self._base)
         else:
-            x = module.log(x) / np.log(self.base)
+            x = module.log(x) / np.log(self._base)
         return x
 
     def backward(self, x: ArrayLike) -> ArrayLike:
-        if self.idxs is not None:
-            x[..., self.idxs] = self.base ** x[..., self.idxs]
+        if self._idxs is not None:
+            x[..., self._idxs] = self._base ** x[..., self._idxs]
         else:
-            x = self.base ** x
+            x = self._base ** x
         return x
 
     def forward_grad(
@@ -203,15 +201,15 @@ class Log(BaseTransform):
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
         module: ModuleType = torch if isinstance(x, Tensor) else np
 
-        if self.base == module.e and self.idxs is not None:
-            uncertainty[..., self.idxs] *= x ** -1
-        elif self.base == module.e:
-            uncertainty *= x ** -1
-        elif self.idxs is not None:
-            uncertainty[..., self.idxs] *= x[..., self.idxs] ** -1 / np.log(self.base)
+        if self._base == module.e and self._idxs is not None:
+            uncertainty[..., self._idxs] /= x[..., self._idxs]
+        elif self._base == module.e:
+            uncertainty /= x
+        elif self._idxs is not None:
+            uncertainty[..., self._idxs] /= x[..., self._idxs] * np.log(self._base)
         else:
-            uncertainty *= x ** -1 / np.log(self.base)
-        return self(x), uncertainty
+            uncertainty /= x * np.log(self._base)
+        return self(x), module.abs(uncertainty)
 
     def backward_grad(
             self,
@@ -220,28 +218,21 @@ class Log(BaseTransform):
         module: ModuleType = torch if isinstance(x, Tensor) else np
         x = self(x, back=True)
 
-        if self.idxs is not None:
-            uncertainty[..., self.idxs] *= x[..., self.idxs]
+        if self._idxs is not None:
+            uncertainty[..., self._idxs] *= x[..., self._idxs]
         else:
             uncertainty *= x
 
-        if self.base != module.e and self.idxs is not None:
-            uncertainty[..., self.idxs] *= np.log(self.base)
-        elif self.base != module.e:
-            uncertainty *= np.log(self.base)
-        return x, uncertainty
+        if self._base != module.e and self._idxs is not None:
+            uncertainty[..., self._idxs] *= np.log(self._base)
+        elif self._base != module.e:
+            uncertainty *= np.log(self._base)
+        return x, module.abs(uncertainty)
 
 
 class MinClamp(BaseTransform):
     """
     Clamps the minimum value to be the smallest positive value
-
-    Attributes
-    ----------
-    dim : int, default = None
-        Dimension to take the minimum value over
-    idxs : list[int], default = None
-            Indices to slice the last dimension to perform the min clamp on
 
     Methods
     -------
@@ -258,8 +249,8 @@ class MinClamp(BaseTransform):
             Indices to slice the last dimension to perform the min clamp on
         """
         super().__init__()
-        self.dim: int | None = dim
-        self.idxs: list[int] | None = idxs
+        self._dim: int | None = dim
+        self._idxs: list[int] | None = idxs
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         kwargs: dict[str, Any]
@@ -268,21 +259,21 @@ class MinClamp(BaseTransform):
         min_count: ArrayLike
 
         if isinstance(x, Tensor):
-            kwargs = {'dim': self.dim, 'keepdim': True}
+            kwargs = {'dim': self._dim, 'keepdim': True}
         else:
-            kwargs = {'axis': self.dim, 'keepdims': True}
+            kwargs = {'axis': self._dim, 'keepdims': True}
 
-        if self.idxs is None:
+        if self._idxs is None:
             min_count = module.amin(module.where(x > 0, x, module.max(x)), **kwargs)
             x = module.maximum(x, min_count)
         else:
-            x_clamp = x[..., self.idxs]
+            x_clamp = x[..., self._idxs]
             min_count = module.amin(module.where(
                 x_clamp > 0,
                 x_clamp,
                 module.max(x_clamp),
             ), **kwargs)
-            x[..., self.idxs] = module.maximum(x_clamp, min_count)
+            x[..., self._idxs] = module.maximum(x_clamp, min_count)
         return x
 
 
@@ -386,7 +377,7 @@ class Normalise(BaseTransform):
         """
         Parameters
         ----------
-        data : ArrayLike
+        data : (N,...) ArrayLike
             Data to normalise
         mean : bool, default = True
             If data should be normalised to zero mean and unit variance, or between 0 and 1

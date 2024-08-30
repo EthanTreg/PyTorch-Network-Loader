@@ -104,11 +104,14 @@ class NormFlow(BaseNetwork):
             Predicted distribution
         """
         data: dict[str, ndarray]
+        samples: ndarray
+        transform: BaseTransform | None = self.header['preds']
 
         if num is None:
             num = [int(1e3)]
 
-        data = {'samples': self.net().sample(num).moveaxis(0, -1).detach().cpu().numpy()}
+        samples = self.net().sample(num).moveaxis(0, -1).detach().cpu().numpy()
+        data = {'samples': samples if transform is None else transform(samples, back=True)}
         self._save_predictions(path, data)
         return data
 
@@ -221,7 +224,12 @@ class NormFlowEncoder(Encoder):
 
         self._train_flow = not self._epochs[0]
         self._train_encoder = bool(self._epochs[-1])
-        self.header |= {'distributions': transform, 'probs': None, 'max': None, 'meds': None}
+        self.header |= {
+            'distributions': transform,
+            'probs': None,
+            'max': transform,
+            'meds': transform,
+        }
 
         if not self._train_flow:
             self.net.net[-1].requires_grad_(False)
