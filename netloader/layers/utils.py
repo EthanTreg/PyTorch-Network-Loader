@@ -158,7 +158,6 @@ class BaseLayer(nn.Module):
         (N,...) Tensor
             Output tensor with batch size N
         """
-        assert isinstance(self.layers, nn.Sequential)
         return self.layers(x)
 
     def to(self, *args: Any, **kwargs: Any) -> Self:

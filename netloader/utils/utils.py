@@ -33,6 +33,34 @@ def check_params(name: str, supported_params: list[str] | ndarray, in_params: nd
         log.getLogger(__name__).warning(f'Unknown parameters for {name}: {bad_params}')
 
 
+def deep_merge(base: dict, new: dict) -> dict:
+    """
+    Performs a deep merge of two dictionaries, equivalent to recursive base | new
+
+    Parameters
+    ----------
+    base : dict
+        Base dictionary
+    new : dict
+        Dictionary to deep merge into base
+
+    Returns
+    -------
+    dict
+        Deep merged dictionary
+    """
+    merged: dict = base.copy()
+    key: Any
+    value: Any
+
+    for key, value in new.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def get_device() -> tuple[dict[str, Any], torch.device]:
     """
     Gets the device for PyTorch to use

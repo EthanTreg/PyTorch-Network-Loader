@@ -5,7 +5,7 @@ import os
 import pickle
 import logging as log
 from time import time
-from typing import Any, Self
+from typing import Any, Self, Union
 
 import torch
 import numpy as np
@@ -16,6 +16,8 @@ from numpy import ndarray
 from netloader.network import Network
 from netloader.utils.transforms import BaseTransform
 from netloader.utils.utils import save_name, get_device, progress_bar
+
+Param = dict[Any, Union[torch.Tensor, 'Param']]
 
 
 class BaseNetwork:
@@ -199,6 +201,61 @@ class BaseNetwork:
         float
             Loss
         """
+
+    def _param_device(self, params: Param, *args: Any, **kwargs: Any) -> None:  # pylint: disable=protected-access
+        r"""
+        Sends parameters to the device, such as the parameters in the optimiser
+
+        This can be called as
+
+        .. function:: to(device=None, dtype=None, non_blocking=False)
+           :noindex:
+
+        .. function:: to(dtype, non_blocking=False)
+           :noindex:
+
+        .. function:: to(tensor, non_blocking=False)
+           :noindex:
+
+        .. function:: to(memory_format=torch.channels_last)
+           :noindex:
+
+        Its signature is similar to :meth:`torch.Tensor.to`, but only accepts
+        floating point or complex :attr:`dtype`\ s. In addition, this method will
+        only cast the floating point or complex parameters and buffers to :attr:`dtype`
+        (if given). The integral parameters and buffers will be moved
+        :attr:`device`, if that is given, but with dtypes unchanged. When
+        :attr:`non_blocking` is set, it tries to convert/move asynchronously
+        with respect to the host if possible, e.g., moving CPU Tensors with
+        pinned memory to CUDA devices.
+
+        See below for examples.
+
+        .. note::
+            This method modifies the module in-place.
+
+        Args:
+            device (:class:`torch.device`): the desired device of the parameters
+                and buffers in this module
+            dtype (:class:`torch.dtype`): the desired floating point or complex dtype of
+                the parameters and buffers in this module
+            tensor (torch.Tensor): Tensor whose dtype and device are the desired
+                dtype and device for all parameters and buffers in this module
+            memory_format (:class:`torch.memory_format`): the desired memory
+                format for 4D parameters and buffers in this module (keyword
+                only argument)
+
+        Returns:
+            Module: self
+        """
+        for param in params.values():
+            if isinstance(param, dict):
+                self._param_device(param, *args, **kwargs)
+            else:
+                param.data = param.data.to(*args, **kwargs)
+
+                if param._grad is not None:
+                    param._grad.data = param._grad.data.to(*args, **kwargs)
 
     def _update(self, loss: Tensor) -> None:
         """
@@ -462,6 +519,7 @@ class BaseNetwork:
             Module: self
         """
         self.net = self.net.to(*args, **kwargs)
+        self._param_device(self.optimiser.state, *args, **kwargs)
         self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)  # pylint: disable=protected-access
         return self
 

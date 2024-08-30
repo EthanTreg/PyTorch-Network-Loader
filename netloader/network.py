@@ -11,7 +11,7 @@ from torch import nn, Tensor
 
 from netloader import layers
 from netloader.layers.utils import BaseLayer
-from netloader.utils.utils import check_params
+from netloader.utils.utils import check_params, deep_merge
 
 
 class Network(nn.Module):
@@ -312,7 +312,7 @@ def _create_network(
     if 'checkpoints' in config['net']:
         net_check = config['net']['checkpoints']
 
-    config['net'] = config['net'] | defaults
+    config['net'] = deep_merge(config['net'], defaults)
 
     # Check for unknown net parameters
     if not suppress_warning:
