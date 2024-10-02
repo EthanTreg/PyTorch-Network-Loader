@@ -1,7 +1,7 @@
 """
 Classes for encoder, decoder, or autoencoder type architectures
 """
-from typing import Any, Callable
+from typing import Any, Callable, Self
 
 import torch
 import numpy as np
@@ -432,3 +432,11 @@ class Encoder(BaseNetwork):
             output = np.argmax(output, axis=-1, keepdims=True)
 
         return (output,)
+
+    def to(self, *args: Any, **kwargs: Any) -> Self:
+        super().to(*args, **kwargs)
+
+        if self.classes is not None:
+            self.classes.to(self._device)
+
+        return self

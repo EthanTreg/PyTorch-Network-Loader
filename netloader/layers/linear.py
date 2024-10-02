@@ -177,7 +177,7 @@ class OrderedBottleneck(BaseLayer):
         (N,...,Z) Tensor
             Input zeroed from a random index to the last value along the dimension Z
         """
-        if not self.training:
+        if not self.training or self.min_size >= x.size(-1):
             return x
 
         idx: int = np.random.randint(self.min_size, x.size(-1))
@@ -347,12 +347,34 @@ class Upsample(BaseLayer):
 
     @staticmethod
     def _check_mode_dimension(mode: str, shape: list[int], modes: dict[str, list[int]]) -> None:
+        """
+        Checks if the upsampling mode supports the number of input dimensions
+
+        Parameters
+        ----------
+        mode : str
+            Current upsampling mode
+        shape : list[int]
+            Input shape
+        modes : dict[str, list[int]]
+            Modes with a list of supported dimensions
+        """
         if len(shape) not in modes[mode]:
             raise ValueError(f'{mode} only supports input dimensions of {modes[mode]}, '
                              f'input shape is {shape}')
 
     @staticmethod
     def _check_upsample(in_shape: list[int], out_shape: list[int] | None) -> None:
+        """
+        Checks if the input shape has the same number of dimensions as the output shape
+
+        Parameters
+        ----------
+        in_shape : list[int]
+            Input shape
+        out_shape : list[int]
+            Target output shape
+        """
         if out_shape is not None and len(out_shape) != 1 and len(out_shape) + 1 != len(in_shape):
             raise ValueError(f'Target shape {out_shape} is not compatible with input shape '
                              f'{in_shape}, check that channels dimension is not in target shape')

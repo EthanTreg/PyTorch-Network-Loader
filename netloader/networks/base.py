@@ -452,7 +452,10 @@ class BaseNetwork:
             else transform(np.concatenate(value), back=True)
             for (key, transform), value in zip(self.header.items(), zip(*data))
         }
-        print(f'Prediction time: {time() - initial_time:.3e} s')
+
+        if self._verbose is not None:
+            print(f'Prediction time: {time() - initial_time:.3e} s')
+
         self._save_predictions(path, data_)
         return data_
 

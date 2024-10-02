@@ -1,6 +1,7 @@
 """
 Transformations that can be inverted
 """
+import logging as log
 from types import ModuleType
 from typing import Callable, Any, overload
 
@@ -70,6 +71,28 @@ class BaseTransform:
         if uncertainty is not None:
             return self.forward_grad(x, uncertainty)
         return self.forward(x)
+
+    def __repr__(self) -> str:
+        """
+        Representation of the transformation
+
+        Returns
+        -------
+        str
+            Representation string
+        """
+        return f'{self.__class__.__name__}({self._extra_repr()})'
+
+    def _extra_repr(self) -> str:
+        """
+        Additional representation of the transformation
+
+        Returns
+        -------
+        str
+            Transform specific representation
+        """
+        return ''
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         """
@@ -174,6 +197,9 @@ class Log(BaseTransform):
         self._base: float = base
         self._idxs: list[int] | None = idxs
 
+    def _extra_repr(self) -> str:
+        return f'base: {self._base}, idxs: {self._idxs}'
+
     def forward(self, x: ArrayLike) -> ArrayLike:
         module: ModuleType = torch if isinstance(x, Tensor) else np
         logs: dict[float, Callable] = {module.e: module.log, 10: module.log10, 2: module.log2}
@@ -252,6 +278,9 @@ class MinClamp(BaseTransform):
         self._dim: int | None = dim
         self._idxs: list[int] | None = idxs
 
+    def _extra_repr(self) -> str:
+        return f'dim: {self._dim}, idxs: {self._idxs}'
+
     def forward(self, x: ArrayLike) -> ArrayLike:
         kwargs: dict[str, Any]
         module: ModuleType = torch if isinstance(x, Tensor) else np
@@ -299,22 +328,47 @@ class MultiTransform(BaseTransform):
     append(transform)
         Appends a transform to the list of transforms
     """
-    def __init__(self, transforms: list[BaseTransform]):
+    def __init__(self, *args: BaseTransform):
         """
         Parameters
         ----------
-        transforms : list[BaseTransform]
-            List of transformations
+        args : BaseTransform
+            Transformations
         """
         super().__init__()
-        self.transforms = transforms
+        if isinstance(args[0], list):
+            log.getLogger(__name__).warning('List of transforms is deprecated, pass transforms as '
+                                            'arguments directly')
+            self.transforms = args[0]
+        else:
+            self.transforms: list[BaseTransform] = list(args)
+
+    def __getitem__(self, item: int | slice) -> BaseTransform:
+        if isinstance(item, int):
+            return self.transforms[item]
+
+        return MultiTransform(*self.transforms[item])
+
+    def _extra_repr(self) -> str:
+        transform_repr: str
+        extra_repr: str = ''
+
+        for i, transform in enumerate(self.transforms):
+            transform_repr = repr(transform).replace('\n', '\n\t')
+            extra_repr += f"\n\t({i}): {transform_repr},"
+
+        return f'{extra_repr}\n'
 
     def forward(self, x: ArrayLike) -> ArrayLike:
+        transform: BaseTransform
+
         for transform in self.transforms:
             x = transform(x)
         return x
 
     def backward(self, x: ArrayLike) -> ArrayLike:
+        transform: BaseTransform
+
         for transform in self.transforms[::-1]:
             x = transform(x, back=True)
         return x
@@ -323,6 +377,8 @@ class MultiTransform(BaseTransform):
             self,
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+        transform: BaseTransform
+
         for transform in self.transforms:
             x, uncertainty = transform(x, uncertainty=uncertainty)
         return x, uncertainty
@@ -331,6 +387,8 @@ class MultiTransform(BaseTransform):
             self,
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+        transform: BaseTransform
+
         for transform in self.transforms[::-1]:
             x, uncertainty = transform(x, back=True, uncertainty=uncertainty)
         return x, uncertainty
@@ -397,6 +455,16 @@ class Normalise(BaseTransform):
         else:
             self.offset = np.amin(data, axis=dim, keepdims=True)
             self.scale = np.amax(data, axis=dim, keepdims=True) - self.offset
+
+    def _extra_repr(self) -> str:
+        if 1 < self.offset.size <= 10:
+            return (f"\n\toffset: {np.vectorize(lambda x: f'{x:.2g}')(self.offset)},"
+                    f"\n\tscale: {np.vectorize(lambda x: f'{x:.2g}')(self.scale)},\n")
+
+        if self.offset.size > 1:
+            return f'offset shape: {self.offset.shape}, scale shape: {self.scale.shape}'
+
+        return f'offset: {self.offset.item():.2g}, scale: {self.scale.item():.2g}'
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         if isinstance(x, Tensor):
