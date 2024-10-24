@@ -11,7 +11,7 @@ from torch import Tensor, nn
 from netloader.network import Network
 from netloader.utils.utils import label_change
 from netloader.networks.base import BaseNetwork
-from netloader.utils.transforms import BaseTransform
+from netloader.transforms import BaseTransform
 
 
 class Autoencoder(BaseNetwork):
@@ -20,12 +20,6 @@ class Autoencoder(BaseNetwork):
 
     Attributes
     ----------
-    save_path : str
-        Path to the network save file
-    optimiser : Optimizer
-        Network optimiser, uses AdamW optimiser
-    scheduler : LRScheduler
-        Optimiser scheduler, uses reduce learning rate on plateau
     net : Module | Network
         Autoencoder network
     reconstruct_loss : float, default = 1
@@ -36,6 +30,8 @@ class Autoencoder(BaseNetwork):
         Loss weight for the latent bounds loss
     kl_loss : float, default = 1e-1
         Relative weight if performing a KL divergence loss on the latent space
+    save_path : str, default = ''
+        Path to the network save file
     description : str, default = ''
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
@@ -48,6 +44,10 @@ class Autoencoder(BaseNetwork):
         Loss function for the latent loss
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    optimiser : Optimizer, default = AdamW
+        Network optimiser
+    scheduler : LRScheduler, default = ReduceLROnPlateau
+        Optimiser scheduler
     in_transform : BaseTransform, default = None
         Transformation for the input data
     """
@@ -104,11 +104,30 @@ class Autoencoder(BaseNetwork):
         self.bound_loss: float = 1e-3
         self.kl_loss: float = 1e-1
         self.reconstruct_func: Callable = nn.MSELoss()
-        self.latent_func : Callable = nn.MSELoss()
+        self.latent_func: Callable = nn.MSELoss()
 
         self.header['latent'] = latent_transform
         self.header['targets'] = latent_transform
         self.header['inputs'] = transform
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'reconstruct_loss': self.reconstruct_loss,
+            'latent_loss': self.latent_loss,
+            'bound_loss': self.bound_loss,
+            'kl_loss': self.kl_loss,
+            'reconstruct_func': self.reconstruct_func,
+            'latent_func': self.latent_func,
+        }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self.reconstruct_loss = state['reconstruct_loss']
+        self.latent_loss = state['latent_loss']
+        self.bound_loss = state['bound_loss']
+        self.kl_loss = state['kl_loss']
+        self.reconstruct_func = state['reconstruct_func']
+        self.latent_func = state['latent_func']
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
@@ -181,14 +200,10 @@ class Decoder(BaseNetwork):
 
     Attributes
     ----------
-    save_path : str
-        Path to the network save file
-    optimiser : Optimizer
-        Network optimiser, uses AdamW optimiser
-    scheduler : LRScheduler
-        Optimiser scheduler, uses reduce learning rate on plateau
     net : Module | Network
         Neural network
+    save_path : str, default = ''
+        Path to the network save file
     description : str, default = ''
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
@@ -199,6 +214,10 @@ class Decoder(BaseNetwork):
             Loss function for the reconstructions
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    optimiser : Optimizer, default = AdamW
+        Network optimiser
+    scheduler : LRScheduler, default = ReduceLROnPlateau
+        Optimiser scheduler
     in_transform : BaseTransform, default = None
         Transformation for the input data
     """
@@ -248,6 +267,13 @@ class Decoder(BaseNetwork):
             in_transform=in_transform,
         )
         self.loss_func: Callable = nn.MSELoss()
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'loss_func': self.loss_func}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self.loss_func = state['loss_func']
 
     def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -299,14 +325,10 @@ class Encoder(BaseNetwork):
 
     Attributes
     ----------
-    save_path : str
-        Path to the network save file
-    optimiser : Optimizer
-        Network optimiser, uses AdamW optimiser
-    scheduler : LRScheduler
-        Optimiser scheduler, uses reduce learning rate on plateau
     net : Module | Network
         Neural network
+    save_path : str, default = ''
+        Path to the network save file
     description : str, default = ''
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
@@ -317,6 +339,10 @@ class Encoder(BaseNetwork):
         Data indices for random training & validation datasets
     classes : (C) Tensor, default = None
         Unique classes of size C if using class classification
+    optimiser : Optimizer, default = AdamW
+        Network optimiser
+    scheduler : LRScheduler, default = ReduceLROnPlateau
+        Optimiser scheduler
     in_transform : BaseTransform, default = None
         Transformation for the input data
 
@@ -373,15 +399,23 @@ class Encoder(BaseNetwork):
             transform=transform,
             in_transform=in_transform,
         )
-        self._loss_function: nn.MSELoss | nn.CrossEntropyLoss
+        self._loss_func: nn.MSELoss | nn.CrossEntropyLoss
         self.classes: Tensor | None
 
         if classes is None:
             self.classes = classes
-            self._loss_function = nn.MSELoss()
+            self._loss_func = nn.MSELoss()
         else:
             self.classes = classes.to(self._device)
-            self._loss_function = nn.CrossEntropyLoss()
+            self._loss_func = nn.CrossEntropyLoss()
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'loss_func': self._loss_func, 'classes': self.classes}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self._loss_func = state['loss_func']
+        self.classes = state['classes']
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
@@ -408,7 +442,7 @@ class Encoder(BaseNetwork):
         if self.classes is not None:
             target = label_change(target.squeeze(), self.classes)
 
-        loss = self._loss_function(output, target)
+        loss = self._loss_func(output, target)
         self._update(loss)
         return loss.item()
 
@@ -428,7 +462,7 @@ class Encoder(BaseNetwork):
         """
         output: ndarray = super().batch_predict(data)[0]
 
-        if isinstance(self._loss_function, nn.CrossEntropyLoss):
+        if isinstance(self._loss_func, nn.CrossEntropyLoss):
             output = np.argmax(output, axis=-1, keepdims=True)
 
         return (output,)

@@ -336,12 +336,14 @@ class MultiTransform(BaseTransform):
             Transformations
         """
         super().__init__()
+        self.transforms: list[BaseTransform]
+
         if isinstance(args[0], list):
             log.getLogger(__name__).warning('List of transforms is deprecated, pass transforms as '
                                             'arguments directly')
             self.transforms = args[0]
         else:
-            self.transforms: list[BaseTransform] = list(args)
+            self.transforms = list(args)
 
     def __getitem__(self, item: int | slice) -> BaseTransform:
         if isinstance(item, int):

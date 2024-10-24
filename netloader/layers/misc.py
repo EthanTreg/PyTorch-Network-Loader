@@ -8,7 +8,7 @@ import numpy as np
 from torch import nn, Tensor
 from numpy import ndarray
 
-from netloader.layers.utils import BaseLayer, BaseMultiLayer
+from netloader.layers.base import BaseLayer, BaseMultiLayer
 
 
 class Checkpoint(BaseLayer):
@@ -496,6 +496,16 @@ class Reshape(BaseLayer):
 
     @staticmethod
     def _check_reshape(in_shape: list[int], out_shape: list[int]) -> None:
+        """
+        Checks if the input tensor can be reshaped into the output tensor
+
+        Parameters
+        ----------
+        in_shape : list[int]
+            Input shape
+        out_shape : list[int]
+            Output shape
+        """
         if np.prod(out_shape) != np.prod(in_shape):
             raise ValueError(f'Input size does not match output size for input shape {in_shape} '
                              f'& output shape {out_shape}')

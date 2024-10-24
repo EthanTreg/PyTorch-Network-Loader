@@ -7,7 +7,7 @@ from zuko.flows import NSF
 from zuko.distributions import NormalizingFlow
 from torch import Tensor
 
-from netloader.layers.utils import BaseLayer
+from netloader.layers.base import BaseLayer
 
 
 class SplineFlow(BaseLayer):

@@ -14,8 +14,8 @@ from torch.utils.data import DataLoader
 from numpy import ndarray
 
 from netloader.network import Network
-from netloader.utils.transforms import BaseTransform
-from netloader.utils.utils import save_name, get_device, progress_bar
+from netloader.transforms import BaseTransform
+from netloader.utils.utils import save_name, progress_bar
 
 Param = dict[Any, Union[torch.Tensor, 'Param']]
 
@@ -26,14 +26,10 @@ class BaseNetwork:
 
     Attributes
     ----------
-    save_path : str
-        Path to the network save file
-    optimiser : Optimizer
-        Network optimiser, uses AdamW optimiser
-    scheduler : LRScheduler
-        Optimiser scheduler, uses reduce learning rate on plateau
     net : Module | Network
         Neural network
+    save_path : str, default = ''
+        Path to the network save file
     description : str, default = ''
         Description of the network
     losses : tuple[list[float], list[float]], default = ([], [])
@@ -42,6 +38,10 @@ class BaseNetwork:
         Keys for the output data from predict and corresponding transforms
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    optimiser : Optimizer, default = AdamW
+        Network optimiser
+    scheduler : LRScheduler, default = ReduceLROnPlateau
+        Optimiser scheduler
     in_transform : BaseTransform, default = None
         Transformation for the input data
 
@@ -98,8 +98,8 @@ class BaseNetwork:
         self._half: bool = mix_precision
         self._epoch: int = 0
         self._verbose: str = verbose
-        self._device: torch.device = get_device()[1]
-        self.save_path: str | None
+        self._device: torch.device = torch.device('cpu')
+        self.save_path: str = ''
         self.description: str = description
         self.losses: tuple[list[float], list[float]] = ([], [])
         self.header: dict[str, BaseTransform | None] = {
@@ -128,12 +128,59 @@ class BaseNetwork:
             if os.path.exists(self.save_path):
                 log.getLogger(__name__).warning(f'{self.save_path} already exists and will be'
                                                 f'overwritten if training continues')
-        else:
-            self.save_path = None
 
         if learning_rate:
             self.optimiser = optim.AdamW(self.net.parameters(), lr=learning_rate)
             self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Returns a dictionary containing the state of the network for pickling
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing the state of the network
+        """
+        self._param_device(self.optimiser.state, 'cpu')
+        return {
+            'half': self._half,
+            'epoch': self._epoch,
+            'verbose': self._verbose,
+            'save_path': self.save_path,
+            'description': self.description,
+            'losses': self.losses,
+            'header': self.header,
+            'idxs': self.idxs,
+            'optimiser': self.optimiser,
+            'scheduler': self.scheduler,
+            'net': self.net,
+            'in_transform': self.in_transform,
+        }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Sets the state of the network for pickling
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            Dictionary containing the state of the network
+        """
+        self._train_state: bool = True
+        self._half = state['half']
+        self._epoch = state['epoch']
+        self._verbose = state['verbose']
+        self._device = torch.device('cpu')
+        self.save_path = state['save_path']
+        self.description = state['description']
+        self.losses = state['losses']
+        self.header = state['header']
+        self.idxs = state['idxs']
+        self.optimiser = state['optimiser']
+        self.scheduler = state['scheduler']
+        self.net = state['net']
+        self.in_transform = state['in_transform']
 
     def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -168,7 +215,8 @@ class BaseNetwork:
         float
             Average loss value
         """
-        epoch_loss: float = 0
+        t_initial: float
+        loss: float = 0
         low_dim: Tensor
         high_dim: Tensor
 
@@ -177,15 +225,20 @@ class BaseNetwork:
                 device_type=self._device.type,
                 dtype=torch.bfloat16):
             for i, (_, low_dim, high_dim, *_) in enumerate(loader):
+                t_initial = time()
                 low_dim = low_dim.to(self._device)
                 high_dim = high_dim.to(self._device)
-                epoch_loss += self._loss(*self._data_loader_translation(low_dim, high_dim))
+                loss += self._loss(*self._data_loader_translation(low_dim, high_dim))
                 self._update_scheduler(epoch=self._epoch + (i + 1) / len(loader))
 
                 if self._verbose == 'full':
-                    progress_bar(i, len(loader))
+                    progress_bar(
+                        i,
+                        len(loader),
+                        text=f'Average loss: {loss / (i + 1):.2e}\tTime: {time() - t_initial:.1f}',
+                    )
 
-        return epoch_loss / len(loader)
+        return loss / len(loader)
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
@@ -204,7 +257,7 @@ class BaseNetwork:
             Loss
         """
 
-    def _param_device(self, params: Param, *args: Any, **kwargs: Any) -> None:  # pylint: disable=protected-access
+    def _param_device(self, params: Param, *args: Any, **kwargs: Any) -> None:
         r"""
         Sends parameters to the device, such as the parameters in the optimiser
 
@@ -250,6 +303,7 @@ class BaseNetwork:
         Returns:
             Module: self
         """
+        # pylint: disable=protected-access
         for param in params.values():
             if isinstance(param, dict):
                 self._param_device(param, *args, **kwargs)
@@ -392,8 +446,8 @@ class BaseNetwork:
         Saves the network to the given path
         """
         if self.save_path:
-            self.net.checkpoints = []
             torch.save(self, self.save_path)
+            self.to(self._device)
 
     def predict(
             self,
@@ -544,5 +598,4 @@ def load_net(num: int, states_dir: str, net_name: str) -> BaseNetwork:
     BaseNetwork
         Saved network object
     """
-    path: str = save_name(num, states_dir, net_name)
-    return torch.load(path, map_location='cpu')
+    return torch.load(save_name(num, states_dir, net_name), map_location='cpu')

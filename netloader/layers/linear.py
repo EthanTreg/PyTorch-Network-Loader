@@ -9,7 +9,7 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.utils import BaseLayer
+from netloader.layers.base import BaseLayer
 
 if TYPE_CHECKING:
     from netloader.network import Network

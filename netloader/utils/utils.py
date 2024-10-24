@@ -118,7 +118,7 @@ def label_change(
         out_label = module.arange(len(in_label))
 
     if isinstance(out_label, Tensor):
-        out_label = out_label.to(get_device()[1])
+        out_label = out_label.to(data.device)
 
     assert out_label is not None
     out_data = out_label[module.searchsorted(in_label, data)]
@@ -129,12 +129,12 @@ def label_change(
         out_data = data_one_hot
 
     if isinstance(out_data, Tensor):
-        out_data = out_data.to(get_device()[1])
+        out_data = out_data.to(data.device)
 
     return out_data
 
 
-def progress_bar(i: int, total: int, text: str = '') -> None:
+def progress_bar(i: int, total: int, text: str = '', **kwargs: Any) -> None:
     """
     Terminal progress bar
 
@@ -146,6 +146,9 @@ def progress_bar(i: int, total: int, text: str = '') -> None:
         Completion number
     text : str, default = ''
         Optional text to place at the end of the progress bar
+
+    **kwargs
+        Optional keyword arguments to pass to print
     """
     filled: int
     length: int = 50
@@ -156,7 +159,7 @@ def progress_bar(i: int, total: int, text: str = '') -> None:
     filled = int(i * length / total)
     percent = i * 100 / total
     bar_fill = '█' * filled + '-' * (length - filled)
-    print(f'\rProgress: |{bar_fill}| {int(percent)}%\t{text}\t', end='')
+    print(f'\rProgress: |{bar_fill}| {int(percent)}%\t{text}\t', end='', **kwargs)
 
     if i == total:
         print()

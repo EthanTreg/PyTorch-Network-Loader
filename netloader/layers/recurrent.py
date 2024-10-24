@@ -8,7 +8,7 @@ import numpy as np
 from torch import nn, Tensor
 
 from netloader.layers.misc import Reshape
-from netloader.layers.utils import BaseLayer
+from netloader.layers.base import BaseLayer
 
 
 class Recurrent(BaseLayer):

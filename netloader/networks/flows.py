@@ -13,7 +13,7 @@ from numpy import ndarray
 from netloader.network import Network
 from netloader.utils.utils import label_change
 from netloader.networks.base import BaseNetwork
-from netloader.utils.transforms import BaseTransform
+from netloader.transforms import BaseTransform
 from netloader.networks.encoder_decoder import Encoder
 
 
@@ -25,14 +25,10 @@ class NormFlow(BaseNetwork):
 
     Attributes
     ----------
-    save_path : str
-        Path to the network save file
-    optimiser : Optimizer
-        Network optimiser, uses AdamW optimiser
-    scheduler : LRScheduler
-        Optimiser scheduler, uses reduce learning rate on plateau
     net : Module | Network
         Neural spline flow
+    save_path : str, default = ''
+        Path to the network save file
     description : str, default = ''
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
@@ -41,6 +37,10 @@ class NormFlow(BaseNetwork):
         Keys for the output data from predict and corresponding transforms
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
+    optimiser : Optimizer, default = AdamW
+        Network optimiser
+    scheduler : LRScheduler, default = ReduceLROnPlateau
+        Optimiser scheduler
     in_transform : BaseTransform, default = None
         Transformation for the input data
 
@@ -125,18 +125,14 @@ class NormFlowEncoder(Encoder):
 
     Attributes
     ----------
-    save_path : str
-        Path to the network save file
-    optimiser : Optimizer
-        Network optimiser, uses AdamW optimiser
-    scheduler : LRScheduler
-        Optimiser scheduler, uses reduce learning rate on plateau
     net : Module | Network
         normalizing flow to predict low-dimensional data distribution
     flow_loss : float, default = 1
         Loss weight for the normalizing flow
     encoder_loss : float, default = 1
         Loss weight for the output of the encoder
+    save_path : str, default = ''
+        Path to the network save file
     description : str, default = ''
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
@@ -147,6 +143,10 @@ class NormFlowEncoder(Encoder):
         Data indices for random training & validation datasets
     classes : (C) Tensor, default = None
         Unique classes of size C if using class classification
+    optimiser : Optimizer, default = AdamW
+        Network optimiser
+    scheduler : LRScheduler, default = ReduceLROnPlateau
+        Optimiser scheduler
     in_transform : BaseTransform, default = None
         Transformation for the input data
 
@@ -244,6 +244,25 @@ class NormFlowEncoder(Encoder):
             ])
             self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
 
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'train_flow': self._train_flow,
+            'train_encoder': self._train_encoder,
+            'checkpoint': self._checkpoint,
+            'epochs': self._epochs,
+            'flow_loss': self.flow_loss,
+            'encoder_loss': self.encoder_loss,
+        }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self._train_flow = state['train_flow']
+        self._train_encoder = state['train_encoder']
+        self._checkpoint = state['checkpoint']
+        self._epochs = state['epochs']
+        self.flow_loss = state['flow_loss']
+        self.encoder_loss = state['encoder_loss']
+
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """
         Calculates the loss from the network and flow's predictions
@@ -279,7 +298,7 @@ class NormFlowEncoder(Encoder):
             target = label_change(target.squeeze(), self.classes)
 
         if self.encoder_loss and isinstance(output, Tensor):
-            loss += self.encoder_loss * self._loss_function(output, target)
+            loss += self.encoder_loss * self._loss_func(output, target)
 
         self._update(loss)
         return loss.item()

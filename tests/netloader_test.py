@@ -6,7 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from netloader.network import Network
 from netloader.networks import Encoder
-from netloader.utils import transforms
+from netloader import transforms
 from netloader.utils.utils import get_device
 
 

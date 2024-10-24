@@ -8,7 +8,8 @@ import numpy as np
 from torch import nn, Tensor
 
 from netloader.layers.misc import LayerNorm
-from netloader.layers.utils import BaseLayer, _int_list_conversion, _kernel_shape, _padding
+from netloader.layers.utils import _int_list_conversion, _kernel_shape, _padding
+from netloader.layers.base import BaseLayer
 
 
 class Conv(BaseLayer):
@@ -709,6 +710,16 @@ class PixelShuffle(BaseLayer):
 
     @staticmethod
     def _check_filters(filters_scale: int, shape: list[int]) -> None:
+        """
+        Checks if the number of channels is an integer multiple of the upscaling factor
+
+        Parameters
+        ----------
+        filters_scale : int
+            Upscaling factor for the number of filters
+        shape : list[int]
+            Shape of the input
+        """
         if shape[0] % filters_scale != 0:
             raise ValueError(f'Channels ({shape}) must be an integer multiple of '
                              f'{filters_scale}')

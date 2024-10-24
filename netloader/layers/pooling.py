@@ -6,7 +6,8 @@ from typing import Any, Type
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.utils import BaseLayer, _kernel_shape, _padding
+from netloader.layers.utils import _kernel_shape, _padding
+from netloader.layers.base import BaseLayer
 
 
 class AdaptivePool(BaseLayer):
