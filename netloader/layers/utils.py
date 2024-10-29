@@ -1,6 +1,48 @@
 """
 Layer utility functions
 """
+from warnings import warn
+
+# For compatibility
+from netloader.layers import base
+
+
+class BaseLayer(base.BaseLayer):
+    def __init_subclass__(cls, **kwargs):
+        warn(
+            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init_subclass__(**kwargs)
+
+    def __init__(self, *args, **kwargs):
+        warn(
+            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
+
+
+class BaseMultiLayer(base.BaseMultiLayer):
+    def __init_subclass__(cls, **kwargs):
+        warn(
+            'BaseMultiLayer is deprecated, use BaseLayer from netloader.layers.base '
+            'instead',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init_subclass__(**kwargs)
+
+    def __init__(self, *args, **kwargs):
+        warn(
+            'BaseMultiLayer is deprecated, use BaseLayer from netloader.layers.base '
+            'instead',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
 
 
 def _int_list_conversion(length: int, elements: list[int | list[int]]) -> list[list[int]]:
