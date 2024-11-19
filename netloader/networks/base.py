@@ -131,7 +131,11 @@ class BaseNetwork:
 
         if learning_rate:
             self.optimiser = optim.AdamW(self.net.parameters(), lr=learning_rate)
-            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, factor=0.5)
+            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimiser,
+                factor=0.5,
+                min_lr=learning_rate * 1e-3,
+            )
 
     def __getstate__(self) -> dict[str, Any]:
         """
