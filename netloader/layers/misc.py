@@ -485,7 +485,7 @@ class Reshape(BaseLayer):
         elif self._shape.count(-1) == 1:
             shape = self._shape.copy()
             prod = np.prod(np.array(shape)[np.array(shape) != -1])
-            shape[shape.index(-1)] = np.prod(shapes[-1]) // prod
+            shape[shape.index(-1)] = int(np.prod(shapes[-1]) // prod)
             shapes.append(shape)
         else:
             raise ValueError(f'Cannot infer output shape as -1 occurs more than once in '
@@ -665,6 +665,7 @@ class Shortcut(BaseMultiLayer):
         idxs: ndarray
         shape: ndarray = np.array(shapes[-1].copy())
         mask: ndarray = (shape != 1) & (self._target != 1)
+        self._target = np.array(self._target)
         self._check_addition(shape, mask)
 
         # If input has any dimensions of length one, output will take the target dimension

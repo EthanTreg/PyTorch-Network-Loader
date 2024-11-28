@@ -92,15 +92,15 @@ class Recurrent(BaseLayer):
             shape[0] *= 2
 
         # Convert 2D data to 1D and add recurrent layer
-        self.layers.add_module('reshape', Reshape([shapes[-1][0], -1]))
-        self.layers.add_module('recurrent', recurrent)
+        self.layers.add_module('Reshape', Reshape([shapes[-1][0], -1]))
+        self.layers.add_module('Recurrent', recurrent)
 
         # Optional layers
         if activation and mode.lower() != 'rnn':
-            self.layers.add_module('activation', getattr(nn, activation)())
+            self.layers.add_module('Activation', getattr(nn, activation)())
 
         if batch_norm:
-            self.layers.add_module('batch_norm', nn.BatchNorm1d(shape[0]))
+            self.layers.add_module('BatchNorm', nn.BatchNorm1d(shape[0]))
 
         shapes.append(shape)
 

@@ -1,0 +1,29 @@
+{
+  "net": {
+    "checkpoints": 1,
+    "description": "Tests the decoder architecture"
+  },
+  "layers": [
+    {
+      "type": "Linear",
+      "factor": 0.0625,
+      "flatten_target": true
+    },
+    {
+      "type": "Reshape",
+      "shape": [1, 0.25, 0.25],
+      "factor": true
+    },
+    {
+      "type": "Upsample"
+    },
+    {
+      "type": "Upsample"
+    },
+    {
+      "type": "Conv",
+      "filters": 1,
+      "padding": "same"
+    }
+  ]
+}

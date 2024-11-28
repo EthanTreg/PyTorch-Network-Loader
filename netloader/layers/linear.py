@@ -42,7 +42,7 @@ class Activation(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
-        self.layers.add_module('activation', getattr(nn, activation)())
+        self.layers.add_module('Activation', getattr(nn, activation)())
 
         # If not used as a layer in a network
         if not shapes:
@@ -73,6 +73,7 @@ class Linear(BaseLayer):
             layer: int | None = None,
             factor: float | None = None,
             batch_norm: bool = False,
+            flatten_target: bool = False,
             dropout: float = 0,
             activation: str | None = 'SELU',
             **kwargs: Any):
@@ -94,6 +95,9 @@ class Linear(BaseLayer):
             which layer to be relative to, will be used if provided, else features will be used
         batch_norm : bool, default = False
             If batch normalisation should be used
+        flatten_target : bool, default = False
+            If the target should be flattened so that features is equal to the product of the target
+            multiplied by factor, if factor is provided
         dropout : float, default =  0
             Probability of dropout
         activation : str | None, default = 'SELU'
@@ -106,7 +110,12 @@ class Linear(BaseLayer):
         target: list[int] = shapes[layer] if layer is not None else net_out
 
         # Number of features can be defined by either a factor of the output size or explicitly
-        shape = self._check_factor_filters(shape[::-1], features, factor, target[::-1])[::-1]
+        shape = self._check_factor_filters(
+            shape[::-1],
+            features,
+            factor,
+            [np.prod(target)] if flatten_target else target[::-1],
+        )[::-1]
 
         self.layers.add_module('linear', nn.Linear(
             in_features=shapes[-1][-1],
@@ -115,13 +124,13 @@ class Linear(BaseLayer):
 
         # Optional layers
         if activation:
-            self.layers.add_module('activation', getattr(nn, activation)())
+            self.layers.add_module('Activation', getattr(nn, activation)())
 
         if batch_norm:
-            self.layers.add_module('batch_norm', nn.BatchNorm1d(shape[0]))
+            self.layers.add_module('BatchNorm', nn.BatchNorm1d(shape[0]))
 
         if dropout:
-            self.layers.add_module('dropout', nn.Dropout(dropout))
+            self.layers.add_module('Dropout', nn.Dropout(dropout))
 
         shapes.append(shape)
 
@@ -343,7 +352,7 @@ class Upsample(BaseLayer):
                 int(length * factor) for length, factor in zip(shapes[-1][1:], scale)
             ]
 
-        self.layers.add_module('upsample', nn.Upsample(**scale_arg, mode=mode))
+        self.layers.add_module('Upsample', nn.Upsample(**scale_arg, mode=mode))
 
     @staticmethod
     def _check_mode_dimension(mode: str, shape: list[int], modes: dict[str, list[int]]) -> None:

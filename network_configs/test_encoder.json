@@ -1,6 +1,7 @@
 {
   "net": {
-    "checkpoints": 1
+    "checkpoints": 1,
+    "description": "Tests the encoder architecture"
   },
   "layers": [
     {

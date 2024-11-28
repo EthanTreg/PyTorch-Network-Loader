@@ -7,4 +7,4 @@ __pycache__/
 **/*[Tt][Ee][Mm][Pp]*
 !/tests/
 !/tests/netloader_test.py
-!/network_configs/training_test.json
+!/network_configs/test*

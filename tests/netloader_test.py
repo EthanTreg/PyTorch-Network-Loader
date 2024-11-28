@@ -1,12 +1,14 @@
 """
 Test to check that NetLoader is working properly
 """
+import os
+
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from netloader.network import Network
-from netloader.networks import Encoder
+import netloader.networks as nets
 from netloader import transforms
+from netloader.network import Network
 from netloader.utils.utils import get_device
 
 
@@ -38,10 +40,14 @@ def main():
     Main function to test NetLoader
     """
     device = get_device()[1]
-    in_shape = [60, 2, 120, 120]
+    in_shape = [60, 1, 100, 100]
     in_tensor = torch.empty(in_shape).to(device)
     target = torch.zeros([in_shape[0], 10]).to(device)
     networks = ['layer_examples', 'inceptionv4', 'convnext']
+    states_dir = './model_states/'
+
+    if not os.path.exists(states_dir):
+        os.mkdir(states_dir)
 
     for net_name in networks:
         print(f'Testing {net_name}...')
@@ -71,7 +77,7 @@ def main():
     loader = DataLoader(dataset, batch_size=60, shuffle=False)
     try:
         print(f'Testing {net_name} training...')
-        net = Encoder(
+        net = nets.Encoder(
             0,
             '',
             network,
@@ -86,22 +92,44 @@ def main():
     # Test training
     print('Testing Network training...')
     network = Network(
-        'training_test',
+        'test_encoder',
         '../network_configs/',
         in_shape[1:],
         [1],
     ).to(device)
     dataset.transform = transforms.Normalise(next(iter(loader))[1])
 
-    net = Encoder(
-        0,
-        '',
+    net = nets.Encoder(
+        1,
+        states_dir,
         network,
         learning_rate=1e-4,
         verbose='epoch',
         transform=dataset.transform,
     )
-    net.training(20, (loader, loader))
+    net.training(1, (loader, loader))
+    net = nets.load_net(1, states_dir, net.net.name)
+    net.training(2, (loader, loader))
+    net.predict(loader)
+
+    # Test architectures
+    network = Network(
+        'test_decoder',
+        '../network_configs/',
+        [1],
+        in_shape[1:],
+    ).to(device)
+    net = nets.Decoder(
+        1,
+        states_dir,
+        network,
+        learning_rate=1e-4,
+        verbose='epoch',
+        in_transform=dataset.transform,
+    )
+    net.training(1, (loader, loader))
+    net = nets.load_net(1, states_dir, net.net.name)
+    net.training(2, (loader, loader))
     net.predict(loader)
 
 

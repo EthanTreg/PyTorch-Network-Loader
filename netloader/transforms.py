@@ -1,7 +1,7 @@
 """
 Transformations that can be inverted
 """
-import logging as log
+from warnings import warn
 from types import ModuleType
 from typing import Callable, Any, overload
 
@@ -28,6 +28,10 @@ class BaseTransform:
     backward_grad(x, uncertainty) -> ArrayLike
         Backwards pass to invert the transformation and uncertainty propagation
     """
+    def __init__(self):
+        # Adds all transform classes to list of safe PyTorch classes when loading saved networks
+        torch.serialization.add_safe_globals([self.__class__])
+
     @overload
     def __call__(self, x: ArrayLike, *, back: bool = ...) -> ArrayLike:
         ...
@@ -93,6 +97,27 @@ class BaseTransform:
             Transform specific representation
         """
         return ''
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Returns a dictionary containing the state of the transformation for pickling
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing the state of the transformation
+        """
+        return {}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Sets the state of the transformation for pickling
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            Dictionary containing the state of the transformation
+        """
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         """
@@ -200,6 +225,13 @@ class Log(BaseTransform):
     def _extra_repr(self) -> str:
         return f'base: {self._base}, idxs: {self._idxs}'
 
+    def __getstate__(self) -> dict[str, Any]:
+        return {'base': self._base, 'idxs': self._idxs}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._base = state['base']
+        self._idxs = state['idxs']
+
     def forward(self, x: ArrayLike) -> ArrayLike:
         module: ModuleType = torch if isinstance(x, Tensor) else np
         logs: dict[float, Callable] = {module.e: module.log, 10: module.log10, 2: module.log2}
@@ -281,6 +313,13 @@ class MinClamp(BaseTransform):
     def _extra_repr(self) -> str:
         return f'dim: {self._dim}, idxs: {self._idxs}'
 
+    def __getstate__(self) -> dict[str, Any]:
+        return {'dim': self._dim, 'idxs': self._idxs}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._dim = state['dim']
+        self._idxs = state['idxs']
+
     def forward(self, x: ArrayLike) -> ArrayLike:
         kwargs: dict[str, Any]
         module: ModuleType = torch if isinstance(x, Tensor) else np
@@ -339,8 +378,12 @@ class MultiTransform(BaseTransform):
         self.transforms: list[BaseTransform]
 
         if isinstance(args[0], list):
-            log.getLogger(__name__).warning('List of transforms is deprecated, pass transforms as '
-                                            'arguments directly')
+            warn(
+                'List of transforms is deprecated, pass transforms as arguments directly; '
+                'version=3.5.0',
+                DeprecationWarning,
+                stacklevel=2,
+            )
             self.transforms = args[0]
         else:
             self.transforms = list(args)
@@ -360,6 +403,18 @@ class MultiTransform(BaseTransform):
             extra_repr += f"\n\t({i}): {transform_repr},"
 
         return f'{extra_repr}\n'
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {'transforms': [(
+            transform.__class__.__name__,
+            transform.__getstate__(),
+        ) for transform in self.transforms]}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.transforms = []
+
+        for name, transform in state['transforms']:
+            self.transforms.append(globals()[name]().__setstate__(transform))
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         transform: BaseTransform
@@ -429,20 +484,34 @@ class Normalise(BaseTransform):
     backward_grad(x, uncertainty) -> ArrayLike
         Backwards pass to invert the transformation and uncertainty propagation
     """
+    @overload
+    def __init__(self, offset: ndarray, scale: ndarray):
+        ...
+
+    @overload
+    def __init__(self, data: ArrayLike, mean: bool = ..., dim: int | tuple[int, ...] | None = ...):
+        ...
+
     def __init__(
             self,
-            data: ArrayLike,
             mean: bool = True,
-            dim: int | tuple[int, ...] | None = None):
+            dim: int | tuple[int, ...] | None = None,
+            offset: ndarray | None = None,
+            scale: ndarray | None = None,
+            data: ArrayLike | None = None):
         """
         Parameters
         ----------
-        data : (N,...) ArrayLike
-            Data to normalise
         mean : bool, default = True
             If data should be normalised to zero mean and unit variance, or between 0 and 1
         dim : int | tuple[int, ...] | None, default = None
             Dimensions to normalise over, if None, all dimensions will be normalised over
+        offset : ndarray | None = None
+            Offset to subtract from the data if data argument is None
+        scale : ndarray | None = None
+            Scale to divide the data if data argument is None
+        data : (N,...) ArrayLike | None, default = None
+            Data to normalise
         """
         super().__init__()
         self.offset: ndarray
@@ -450,6 +519,10 @@ class Normalise(BaseTransform):
 
         if isinstance(data, Tensor):
             data = data.cpu().numpy()
+        elif data is None:
+            self.offset = offset or np.array([0])
+            self.scale = scale or np.array([1])
+            return
 
         if mean:
             self.offset = np.mean(data, axis=dim, keepdims=True)
@@ -467,6 +540,13 @@ class Normalise(BaseTransform):
             return f'offset shape: {self.offset.shape}, scale shape: {self.scale.shape}'
 
         return f'offset: {self.offset.item():.2g}, scale: {self.scale.item():.2g}'
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {'offset': self.offset.tolist(), 'scale': self.scale.tolist()}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.offset = np.array(state['offset'])
+        self.scale = np.array(state['scale'])
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         if isinstance(x, Tensor):

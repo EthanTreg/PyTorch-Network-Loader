@@ -1,7 +1,7 @@
 """
 Classes for encoder, decoder, or autoencoder type architectures
 """
-from typing import Any, Callable, Self
+from typing import Any, Self
 
 import torch
 import numpy as np
@@ -10,8 +10,9 @@ from torch import Tensor, nn
 
 from netloader.network import Network
 from netloader.utils.utils import label_change
-from netloader.networks.base import BaseNetwork
 from netloader.transforms import BaseTransform
+from netloader.networks.base import BaseNetwork
+from netloader.loss_funcs import BaseLoss, MSELoss, CrossEntropyLoss
 
 
 class Autoencoder(BaseNetwork):
@@ -38,16 +39,16 @@ class Autoencoder(BaseNetwork):
         Current autoencoder training and validation losses
     header : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
-    reconstruct_func : Callable, default = MSELoss
-        Loss function for the reconstruction loss
-    latent_func : Callable, default = MSELoss
-        Loss function for the latent loss
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
     optimiser : Optimizer, default = AdamW
         Network optimiser
     scheduler : LRScheduler, default = ReduceLROnPlateau
         Optimiser scheduler
+    reconstruct_func : BaseLoss, default = MSELoss
+        Loss function for the reconstruction loss
+    latent_func : BaseLoss, default = MSELoss
+        Loss function for the latent loss
     in_transform : BaseTransform, default = None
         Transformation for the input data
     """
@@ -103,8 +104,8 @@ class Autoencoder(BaseNetwork):
         self.latent_loss: float = 1e-2
         self.bound_loss: float = 1e-3
         self.kl_loss: float = 1e-1
-        self.reconstruct_func: Callable = nn.MSELoss()
-        self.latent_func: Callable = nn.MSELoss()
+        self.reconstruct_func: BaseLoss = MSELoss()
+        self.latent_func: BaseLoss = MSELoss()
 
         self.header['latent'] = latent_transform
         self.header['targets'] = latent_transform
@@ -210,7 +211,7 @@ class Decoder(BaseNetwork):
         Current network training and validation losses
     header : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
-    loss_func : Callable, default = MSELoss
+    loss_func : BaseLoss, default = MSELoss
             Loss function for the reconstructions
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
@@ -266,7 +267,7 @@ class Decoder(BaseNetwork):
             transform=transform,
             in_transform=in_transform,
         )
-        self.loss_func: Callable = nn.MSELoss()
+        self.loss_func: BaseLoss = MSELoss()
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {'loss_func': self.loss_func}
@@ -399,23 +400,27 @@ class Encoder(BaseNetwork):
             transform=transform,
             in_transform=in_transform,
         )
-        self._loss_func: nn.MSELoss | nn.CrossEntropyLoss
+        self._loss_func: MSELoss | CrossEntropyLoss
         self.classes: Tensor | None
 
         if classes is None:
             self.classes = classes
-            self._loss_func = nn.MSELoss()
+            self._loss_func = MSELoss()
         else:
             self.classes = classes.to(self._device)
-            self._loss_func = nn.CrossEntropyLoss()
+            self._loss_func = CrossEntropyLoss()
 
     def __getstate__(self) -> dict[str, Any]:
-        return super().__getstate__() | {'loss_func': self._loss_func, 'classes': self.classes}
+        return super().__getstate__() | {'classes': self.classes}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         super().__setstate__(state)
-        self._loss_func = state['loss_func']
         self.classes = state['classes']
+
+        if self.classes is None:
+            self._loss_func = MSELoss()
+        else:
+            self._loss_func = CrossEntropyLoss()
 
     def _loss(self, in_data: Tensor, target: Tensor) -> float:
         """

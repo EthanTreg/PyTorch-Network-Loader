@@ -38,10 +38,10 @@ class BaseNetwork:
         Keys for the output data from predict and corresponding transforms
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
-    optimiser : Optimizer, default = AdamW
-        Network optimiser
-    scheduler : LRScheduler, default = ReduceLROnPlateau
-        Optimiser scheduler
+    optimiser : Optimizer | None, default = None
+        Network optimiser, if learning rate is provided AdamW will be used
+    scheduler : LRScheduler, default = None
+        Optimiser scheduler, if learning rate is provided ReduceLROnPlateau will be used
     in_transform : BaseTransform, default = None
         Transformation for the input data
 
@@ -108,8 +108,8 @@ class BaseNetwork:
             'preds': transform,
         }
         self.idxs: ndarray | None = None
-        self.optimiser: optim.Optimizer
-        self.scheduler: optim.lr_scheduler.LRScheduler
+        self.optimiser: optim.Optimizer | None = None
+        self.scheduler: optim.lr_scheduler.LRScheduler | None = None
         self.net: nn.Module | Network = net
         self.in_transform: BaseTransform | None = in_transform
 
@@ -126,16 +126,15 @@ class BaseNetwork:
             self.save_path = save_name(save_num, states_dir, self.net.name)
 
             if os.path.exists(self.save_path):
-                log.getLogger(__name__).warning(f'{self.save_path} already exists and will be'
+                log.getLogger(__name__).warning(f'{self.save_path} already exists and will be '
                                                 f'overwritten if training continues')
 
         if learning_rate:
-            self.optimiser = optim.AdamW(self.net.parameters(), lr=learning_rate)
-            self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                self.optimiser,
-                factor=0.5,
-                min_lr=learning_rate * 1e-3,
-            )
+            self.set_optimiser(lr=learning_rate)
+            self.set_scheduler(factor=0.5, min_lr=learning_rate * 1e-3)
+
+        # Adds all network classes to list of safe PyTorch classes when loading saved networks
+        torch.serialization.add_safe_globals([self.__class__])
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -156,8 +155,8 @@ class BaseNetwork:
             'losses': self.losses,
             'header': self.header,
             'idxs': self.idxs,
-            'optimiser': self.optimiser,
-            'scheduler': self.scheduler,
+            'optimiser': self.optimiser.state_dict(),
+            'scheduler': self.scheduler.state_dict(),
             'net': self.net,
             'in_transform': self.in_transform,
         }
@@ -171,7 +170,7 @@ class BaseNetwork:
         state : dict[str, Any]
             Dictionary containing the state of the network
         """
-        self._train_state: bool = True
+        self._train_state = True
         self._half = state['half']
         self._epoch = state['epoch']
         self._verbose = state['verbose']
@@ -181,10 +180,12 @@ class BaseNetwork:
         self.losses = state['losses']
         self.header = state['header']
         self.idxs = state['idxs']
-        self.optimiser = state['optimiser']
-        self.scheduler = state['scheduler']
         self.net = state['net']
         self.in_transform = state['in_transform']
+        self.set_optimiser()
+        self.set_scheduler()
+        self.optimiser.load_state_dict(state['optimiser'])
+        self.scheduler.load_state_dict(state['scheduler'])
 
     def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -378,6 +379,32 @@ class BaseNetwork:
         if path:
             with open(path, 'wb') as file:
                 pickle.dump(data, file)
+
+    def set_optimiser(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Sets the optimiser for the network
+
+        Parameters
+        ----------
+        *args
+            Optional arguments to pass to the optimiser
+        **kwargs
+            Optional keyword arguments to pass to the optimiser
+        """
+        self.optimiser = optim.AdamW(self.net.parameters(), *args, **kwargs)
+
+    def set_scheduler(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Sets the scheduler for the network
+
+        Parameters
+        ----------
+        *args
+            Optional arguments to pass to the scheduler
+        **kwargs
+            Optional keyword arguments to pass to the scheduler
+        """
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, *args, **kwargs)
 
     def train(self, train: bool) -> None:
         """
@@ -584,7 +611,7 @@ class BaseNetwork:
         return self
 
 
-def load_net(num: int, states_dir: str, net_name: str) -> BaseNetwork:
+def load_net(num: int, states_dir: str, net_name: str, weights_only: bool = True) -> BaseNetwork:
     """
     Loads a network from file
 
@@ -596,10 +623,17 @@ def load_net(num: int, states_dir: str, net_name: str) -> BaseNetwork:
         Directory to the save files
     net_name : str
         Name of the network
+    weights_only : bool, default = True
+        If PyTorch should only load tensors, primitive types, dictionaries & types added to the
+        torch.serialization.add_safe_globals()
 
     Returns
     -------
     BaseNetwork
         Saved network object
     """
-    return torch.load(save_name(num, states_dir, net_name), map_location='cpu')
+    return torch.load(
+        save_name(num, states_dir, net_name),
+        map_location='cpu',
+        weights_only=weights_only,
+    )

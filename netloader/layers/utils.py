@@ -8,9 +8,13 @@ from netloader.layers import base
 
 
 class BaseLayer(base.BaseLayer):
+    """
+    Deprecated BaseLayer class as BaseLayer was moved to netloader.layers.base
+    """
     def __init_subclass__(cls, **kwargs):
         warn(
-            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead',
+            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead; '
+            'version=3.5.0',
             DeprecationWarning,
             stacklevel=2,
         )
@@ -18,7 +22,8 @@ class BaseLayer(base.BaseLayer):
 
     def __init__(self, *args, **kwargs):
         warn(
-            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead',
+            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead; '
+            'version=3.5.0',
             DeprecationWarning,
             stacklevel=2,
         )
@@ -26,10 +31,13 @@ class BaseLayer(base.BaseLayer):
 
 
 class BaseMultiLayer(base.BaseMultiLayer):
+    """
+    Deprecated MultiBaseLayer class as MultiBaseLayer was moved to netloader.layers.base
+    """
     def __init_subclass__(cls, **kwargs):
         warn(
             'BaseMultiLayer is deprecated, use BaseLayer from netloader.layers.base '
-            'instead',
+            'instead; version=3.5.0',
             DeprecationWarning,
             stacklevel=2,
         )
@@ -38,7 +46,7 @@ class BaseMultiLayer(base.BaseMultiLayer):
     def __init__(self, *args, **kwargs):
         warn(
             'BaseMultiLayer is deprecated, use BaseLayer from netloader.layers.base '
-            'instead',
+            'instead; version=3.5.0',
             DeprecationWarning,
             stacklevel=2,
         )

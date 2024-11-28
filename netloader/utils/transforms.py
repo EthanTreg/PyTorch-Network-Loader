@@ -1,8 +1,9 @@
 """
 Deprecated module for backwards compatibility
 """
-import logging as log
+from warnings import warn
 
+# pylint: disable=unused-import
 from netloader.transforms import (
     BaseTransform,
     Log,
@@ -13,6 +14,9 @@ from netloader.transforms import (
 )
 
 
-log.getLogger(__name__).warning(
-    'Importing transforms from utils is deprecated, please use netloader.transforms',
+warn(
+    'Importing transforms from utils is deprecated, please use netloader.transforms; '
+    'version=3.5.0',
+    DeprecationWarning,
+    stacklevel=2,
 )

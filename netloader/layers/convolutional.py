@@ -98,7 +98,7 @@ class Conv(BaseLayer):
             [nn.Conv3d, nn.Dropout3d, nn.BatchNorm3d],
         ][len(shape) - 2]
 
-        self.layers.add_module('conv', conv(
+        self.layers.add_module('Conv', conv(
             in_channels=shapes[-1][0],
             out_channels=shape[0],
             kernel_size=kernel,
@@ -110,15 +110,15 @@ class Conv(BaseLayer):
 
         # Optional layers
         if activation:
-            self.layers.add_module('activation', getattr(nn, activation)())
+            self.layers.add_module('Activation', getattr(nn, activation)())
 
         if norm == 'batch':
-            self.layers.add_module('batch_norm', batch_norm_(shape[0]))
+            self.layers.add_module('BatchNorm', batch_norm_(shape[0]))
         elif norm == 'layer':
-            self.layers.add_module('layer_norm', LayerNorm(shape=shape[0:1]))
+            self.layers.add_module('LayerNorm', LayerNorm(shape=shape[0:1]))
 
         if dropout:
-            self.layers.add_module('dropout', dropout_(dropout))
+            self.layers.add_module('Dropout', dropout_(dropout))
 
         if padding_ == 'same':
             shapes.append(shape)
@@ -440,7 +440,7 @@ class ConvTranspose(BaseLayer):
             self._slice[np.array(shape[1:]) - np.array(shapes[-1][1:]) == 1] = slice(-1)
             shape[1:] = shapes[-1][1:]
 
-        self.layers.add_module('transpose', transpose(
+        self.layers.add_module('Transpose', transpose(
             in_channels=shapes[-1][0],
             out_channels=shape[0],
             kernel_size=kernel,
@@ -452,15 +452,15 @@ class ConvTranspose(BaseLayer):
 
         # Optional layers
         if activation:
-            self.layers.add_module('activation', getattr(nn, activation)())
+            self.layers.add_module('Activation', getattr(nn, activation)())
 
         if norm == 'batch':
-            self.layers.add_module('batch_norm', batch_norm_(shape[0]))
+            self.layers.add_module('BatchNorm', batch_norm_(shape[0]))
         elif norm == 'layer':
-            self.layers.add_module('layer_norm', LayerNorm(shape=shape[0:1]))
+            self.layers.add_module('LayerNorm', LayerNorm(shape=shape[0:1]))
 
         if dropout:
-            self.layers.add_module('dropout', dropout_(dropout))
+            self.layers.add_module('Dropout', dropout_(dropout))
 
         shapes.append(shape)
 
@@ -657,7 +657,7 @@ class ConvUpscale(Conv):
         )
 
         # Upscaling done using pixel shuffling
-        self.layers.add_module('pixel_shuffle', PixelShuffle(scale))
+        self.layers.add_module('PixelShuffle', PixelShuffle(scale))
         shapes[-1][0] = shapes[-1][0] // filters_scale
         shapes[-1][1:] = [length * scale for length in shapes[-1][1:]]
 

@@ -61,7 +61,7 @@ class AdaptivePool(BaseLayer):
             [nn.AdaptiveMaxPool2d, nn.AdaptiveAvgPool2d],
             [nn.AdaptiveMaxPool3d, nn.AdaptiveAvgPool3d],
         ][len(shapes[-1]) - self._channels - 1][self._mode == 'average']
-        self.layers.add_module('adaptive_pool', adapt_pool(shape))
+        self.layers.add_module('AdaptivePool', adapt_pool(shape))
 
         assert isinstance(shape, list)
         shapes.append(shapes[-1].copy())
@@ -200,7 +200,7 @@ class Pool(BaseLayer):
             shape = shapes[-1].copy()
 
         assert not isinstance(padding, str)
-        self.layers.add_module('pool', pool(
+        self.layers.add_module('Pool', pool(
             kernel_size=kernel,
             stride=stride,
             padding=padding,

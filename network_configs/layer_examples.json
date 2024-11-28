@@ -3,7 +3,7 @@
     "checkpoints": 0,
     "description": "Network to test that all layers are working",
     "Linear": {
-      "dropout": 1
+      "dropout": 0.5
     },
     "Conv": {
       "dropout": 0.3,
@@ -220,6 +220,12 @@
     {
       "type": "Reshape",
       "shape": [2, -1]
+    },
+    {
+      "type": "Linear",
+      "factor": 1,
+      "layer": -1,
+      "flatten_target": true
     },
     {
       "type": "Sample",

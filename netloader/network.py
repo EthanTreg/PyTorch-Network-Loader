@@ -96,7 +96,18 @@ class Network(nn.Module):
 
         self.name = self.name.replace('.json', '')
 
+        # Adds Network class to list of safe PyTorch classes when loading saved networks
+        torch.serialization.add_safe_globals([self.__class__])
+
     def __getstate__(self) -> dict[str, Any]:
+        """
+        Returns a dictionary containing the state of the network for pickling
+
+        Returns
+        -------
+        dict[str, Any]
+            Dictionary containing the state of the network
+        """
         return {
             'checkpoints': self._checkpoints,
             'group': self.group,
@@ -105,10 +116,18 @@ class Network(nn.Module):
             'check_shapes': self.check_shapes,
             'shapes': self.shapes,
             'config': self.config,
-            'net': self.net.cpu().state_dict(),
+            'net': self.cpu().state_dict(),
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Sets the state of the network for pickling
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            Dictionary containing the state of the network
+        """
         super().__init__()
         self.group = state['group']
         self.layer_num = state['layer_num']
@@ -121,7 +140,7 @@ class Network(nn.Module):
             state['shapes'][-1],
             suppress_warning=True,
         )
-        self.net.load_state_dict(state['net'])
+        self.load_state_dict(state['net'])
 
     def forward(self, x: list[Tensor] | Tensor) -> list[Tensor] | Tensor:
         """
@@ -320,21 +339,15 @@ def _create_network(
         If layer outputs should not be saved, layer output shapes, checkpoint shapes,
         layers in the network with parameters and network construction
     """
+    net_check: bool = False
     config_path: str = config if isinstance(config, str) else 'config'
-    net_check: bool
-    shapes: list[list[int] | list[list[int]]]
-    check_shapes: list[list[int]]
+    check_shapes: list[list[int]] = []
+    shapes: list[list[int] | list[list[int]]] = [in_shape]
     file: TextIO
     logger: log.Logger = log.getLogger(__name__)
-    module_list: nn.ModuleList
+    module_list: nn.ModuleList = nn.ModuleList()
 
-    shapes = [in_shape]
-    check_shapes = []
-    net_check = False
-    module_list = nn.ModuleList()
-
-    if defaults is None:
-        defaults = {}
+    defaults = defaults or {}
 
     # Load network configuration file
     if isinstance(config, str):
