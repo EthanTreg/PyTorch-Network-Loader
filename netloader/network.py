@@ -1,6 +1,7 @@
 """
 Constructs a network from layers and can load weights to resume network training
 """
+import os
 import json
 import logging as log
 from typing import Any, TextIO, Self
@@ -87,7 +88,7 @@ class Network(nn.Module):
 
         # Construct layers in network
         self._checkpoints, self.shapes, self.check_shapes, self.config, self.net = _create_network(
-            f'{config}{self.name}' if isinstance(config, str) else config,
+            os.path.join(config, self.name) if isinstance(config, str) else config,
             in_shape,
             out_shape,
             suppress_warning=suppress_warning,

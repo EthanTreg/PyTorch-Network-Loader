@@ -1,6 +1,7 @@
 """
 Misc functions used elsewhere
 """
+import os
 import logging as log
 from types import ModuleType
 from typing import Any, TypeVar
@@ -187,4 +188,4 @@ def save_name(num: int, states_dir: str, name: str) -> str:
     str
         Path to the network save file
     """
-    return f'{states_dir}{name}_{num}.pth'
+    return os.path.join(states_dir, f'{name}_{num}.pth')

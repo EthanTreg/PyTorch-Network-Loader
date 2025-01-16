@@ -47,6 +47,10 @@ class BaseNetwork:
 
     Methods
     -------
+    set_optimiser(*args, **kwargs)
+        Sets the optimiser for the network
+    set_scheduler(*args, **kwargs)
+        Sets the scheduler for the network
     train(train)
         Flips the train/eval state of the network
     training(epoch, training)
