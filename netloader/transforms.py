@@ -414,7 +414,8 @@ class MultiTransform(BaseTransform):
         self.transforms = []
 
         for name, transform in state['transforms']:
-            self.transforms.append(globals()[name]().__setstate__(transform))
+            self.transforms.append(globals()[name]())
+            self.transforms[-1].__setstate__(transform)
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         transform: BaseTransform

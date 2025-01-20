@@ -12,21 +12,22 @@ For a real-world example of the `Network` object from this package in use, see
 
 ### Using Within Projects
 
-- Add `netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@LATEST-VERSION`<sup>1</sup> to
+- pip install `netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@LATEST-VERSION`[^1] to
   `requirements.txt`
 - Install using `pip install -r requirements.txt`
 - Example of [InceptionV4](https://arxiv.org/abs/1602.07261) can be downloaded under
   `./network_configs/inceptionv4.json` along with the composite layers in
   `./network_configs/composite_layers/`
 
-<sup>1</sup><sub>To use normalizing flows, `netloader` must be pip installed with the optional argument `flows`: `pip install netloader[flows] @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@LATEST-VERSION`</sub>  
+[^1]: To use normalizing flows, `netloader` must be pip installed with the optional argument `flows`:
+`pip install netloader[flows] @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@LATEST-VERSION`  
 
 ### Locally Running NetLoader
 
 - Clone or download the repository
 - Install dependencies:
   `pip install -r requirements.txt`
-- PyTorch's dependencies[^1]:  
+- PyTorch's dependencies[^2]:  
   NVIDIA GPU with [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit-archive) ~= v12.1
-  [^1]: Only required for use with NVIDIA GPU, v11.8 is also supported, but requirements.txt will
+  [^2]: Only required for use with NVIDIA GPU, v11.8 is also supported, but requirements.txt will
   try to install the v12.1 version
