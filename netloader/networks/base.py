@@ -158,7 +158,7 @@ class BaseNetwork:
             'description': self.description,
             'losses': self.losses,
             'header': self.header,
-            'idxs': self.idxs,
+            'idxs': self.idxs.tolist(),
             'optimiser': self.optimiser.state_dict(),
             'scheduler': self.scheduler.state_dict(),
             'net': self.net,
@@ -183,7 +183,7 @@ class BaseNetwork:
         self.description = state['description']
         self.losses = state['losses']
         self.header = state['header']
-        self.idxs = state['idxs']
+        self.idxs = state['idxs'] if state['idxs'] is None else np.array(state['idxs'])
         self.net = state['net']
         self.in_transform = state['in_transform']
         self.set_optimiser()
