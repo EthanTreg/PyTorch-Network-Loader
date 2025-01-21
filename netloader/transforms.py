@@ -610,6 +610,12 @@ class NumpyTensor(BaseTransform):
         super().__init__()
         self.dtype: torch.dtype = dtype
 
+    def __getstate__(self) -> dict[str, Any]:
+        return {'dtype': self.dtype}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.dtype = state['dtype']
+
     def forward(self, x: ArrayLike) -> Tensor:
         if isinstance(x, ndarray):
             return torch.from_numpy(x).type(self.dtype)
