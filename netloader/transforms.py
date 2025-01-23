@@ -229,8 +229,12 @@ class Log(BaseTransform):
         return {'base': self._base, 'idxs': self._idxs}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        self._base = state['base']
-        self._idxs = state['idxs']
+        try:
+            self._base = state['base']
+            self._idxs = state['idxs']
+        except KeyError:
+            self._base = state['_base']
+            self._idxs = state['_idxs']
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         module: ModuleType = torch if isinstance(x, Tensor) else np
@@ -317,8 +321,12 @@ class MinClamp(BaseTransform):
         return {'dim': self._dim, 'idxs': self._idxs}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        self._dim = state['dim']
-        self._idxs = state['idxs']
+        try:
+            self._dim = state['dim']
+            self._idxs = state['idxs']
+        except KeyError:
+            self._dim = state['_dim']
+            self._idxs = state['_idxs']
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         kwargs: dict[str, Any]
@@ -614,7 +622,10 @@ class NumpyTensor(BaseTransform):
         return {'dtype': self.dtype}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        self.dtype = state['dtype']
+        try:
+            self.dtype = state['dtype']
+        except KeyError:
+            self.dtype = torch.float32
 
     def forward(self, x: ArrayLike) -> Tensor:
         if isinstance(x, ndarray):
