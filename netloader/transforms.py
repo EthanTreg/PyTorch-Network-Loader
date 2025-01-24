@@ -421,11 +421,7 @@ class MultiTransform(BaseTransform):
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.transforms = []
 
-        if isinstance(state['transforms'], dict):
-            for name, transform in state['transforms']:
-                self.transforms.append(globals()[name]())
-                self.transforms[-1].__setstate__(transform)
-        else:
+        if isinstance(state['transforms'][0], BaseTransform):
             warn(
                 'Transform is saved in old non-weights safe format and is deprecated, '
                 'please resave the transform in the new format using net.save(); version=3.5.0',
@@ -433,6 +429,10 @@ class MultiTransform(BaseTransform):
                 stacklevel=2,
             )
             self.transforms = state['transforms']
+        else:
+            for name, transform in state['transforms']:
+                self.transforms.append(globals()[name]())
+                self.transforms[-1].__setstate__(transform)
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         transform: BaseTransform

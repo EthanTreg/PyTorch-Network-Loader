@@ -5,6 +5,7 @@ import os
 import pickle
 import logging as log
 from time import time
+from warnings import warn
 from typing import Any, Self, Union
 
 import torch
@@ -188,8 +189,20 @@ class BaseNetwork:
         self.in_transform = state['in_transform']
         self.set_optimiser()
         self.set_scheduler()
-        self.optimiser.load_state_dict(state['optimiser'])
-        self.scheduler.load_state_dict(state['scheduler'])
+
+        if isinstance(state['optimiser'], dict):
+            self.optimiser.load_state_dict(state['optimiser'])
+            self.scheduler.load_state_dict(state['scheduler'])
+        else:
+            warn(
+                'Optimiser & scheduler is saved in old non-weights safe format and is'
+                ' deprecated, please resave the network in the new format using net.save(); '
+                'version=3.5.0',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.optimiser = state['optimiser']
+            self.scheduler = state['scheduler']
 
     def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """

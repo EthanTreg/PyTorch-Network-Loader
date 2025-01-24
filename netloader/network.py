@@ -4,6 +4,7 @@ Constructs a network from layers and can load weights to resume network training
 import os
 import json
 import logging as log
+from warnings import warn
 from typing import Any, TextIO, Self
 
 import torch
@@ -141,7 +142,17 @@ class Network(nn.Module):
             state['shapes'][-1],
             suppress_warning=True,
         )
-        self.load_state_dict(state['net'])
+
+        if list(state['net'].keys())[0].split('.')[0] == 'net':
+            self.load_state_dict(state['net'])
+        else:
+            warn(
+                'Network state is saved in old non-weights safe format and is deprecated, please '
+                'resave the network in the new format using net.save(); version=3.5.0',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.load_state_dict(dict(zip(self.state_dict(), state['net'].values())))
 
     def forward(self, x: list[Tensor] | Tensor) -> list[Tensor] | Tensor:
         """

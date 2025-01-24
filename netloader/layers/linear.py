@@ -117,7 +117,7 @@ class Linear(BaseLayer):
             [np.prod(target)] if flatten_target else target[::-1],
         )[::-1]
 
-        self.layers.add_module('linear', nn.Linear(
+        self.layers.add_module('Linear', nn.Linear(
             in_features=shapes[-1][-1],
             out_features=shape[-1],
         ))
