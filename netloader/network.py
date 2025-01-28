@@ -143,15 +143,21 @@ class Network(nn.Module):
             suppress_warning=True,
         )
 
-        if list(state['net'].keys())[0].split('.')[0] == 'net':
+        try:
             self.load_state_dict(state['net'])
-        else:
-            warn(
-                'Network state is saved in old non-weights safe format and is deprecated, please '
-                'resave the network in the new format using net.save(); version=3.5.0',
-                DeprecationWarning,
-                stacklevel=2,
-            )
+        except RuntimeError:
+            if 'net' not in list(state['net'].keys())[0]:
+                warn(
+                    'Network state is saved in old non-weights safe format and is '
+                    'deprecated, please resave the network in the new format using net.save(); '
+                    'version=3.5.0',
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            else:
+                log.getLogger().warning('Failed to load network, incorrect layer names, will try '
+                                        'to match weights.')
+
             self.load_state_dict(dict(zip(self.state_dict(), state['net'].values())))
 
     def forward(self, x: list[Tensor] | Tensor) -> list[Tensor] | Tensor:

@@ -6,7 +6,7 @@ import inspect
 import logging
 
 
-__version__ = '3.4.7'
+__version__ = '3.4.8'
 __author__ = 'Ethan Tregidga'
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
 
@@ -33,4 +33,6 @@ try:
     ])
     torch.serialization.add_safe_globals([Network])
 except ModuleNotFoundError:
+    pass
+except ImportError:
     pass

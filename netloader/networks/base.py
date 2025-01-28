@@ -141,6 +141,18 @@ class BaseNetwork:
         # Adds all network classes to list of safe PyTorch classes when loading saved networks
         torch.serialization.add_safe_globals([self.__class__])
 
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the network
+
+        Returns
+        -------
+        str
+            String representation of the network
+        """
+        return (f'Architecture: {self.__class__.__name__}\nDescription: {self.description}\n'
+                f'Network: {self.net.name}')
+
     def __getstate__(self) -> dict[str, Any]:
         """
         Returns a dictionary containing the state of the network for pickling
@@ -500,6 +512,7 @@ class BaseNetwork:
     def predict(
             self,
             loader: DataLoader,
+            input_: bool = False,
             path: str | None = None,
             **kwargs: Any) -> dict[str, ndarray]:
         """
@@ -542,6 +555,7 @@ class BaseNetwork:
                 in_data, target = self._data_loader_translation(low_dim, high_dim)
                 data.append([
                     ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
+                    *([in_data] if input_ else []),
                     target.numpy(),
                     *self.batch_predict(in_data.to(self._device), **kwargs),
                 ])
