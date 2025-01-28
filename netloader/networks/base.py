@@ -35,7 +35,7 @@ class BaseNetwork:
         Description of the network
     losses : tuple[list[float], list[float]], default = ([], [])
         Network training and validation losses
-    header : dict[str, BaseTransform | None], default = {...: None, ...}
+    transforms : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
@@ -43,8 +43,6 @@ class BaseNetwork:
         Network optimiser, if learning rate is provided AdamW will be used
     scheduler : LRScheduler, default = None
         Optimiser scheduler, if learning rate is provided ReduceLROnPlateau will be used
-    in_transform : BaseTransform, default = None
-        Transformation for the input data
 
     Methods
     -------
@@ -107,8 +105,9 @@ class BaseNetwork:
         self.save_path: str = ''
         self.description: str = description
         self.losses: tuple[list[float], list[float]] = ([], [])
-        self.header: dict[str, BaseTransform | None] = {
+        self.transforms: dict[str, BaseTransform | None] = {
             'ids': None,
+            'inputs': in_transform,
             'targets': transform,
             'preds': transform,
         }
@@ -116,7 +115,6 @@ class BaseNetwork:
         self.optimiser: optim.Optimizer | None = None
         self.scheduler: optim.lr_scheduler.LRScheduler | None = None
         self.net: nn.Module | Network = net
-        self.in_transform: BaseTransform | None = in_transform
 
         if not isinstance(self.net, Network) and not hasattr(self.net, 'net'):
             self.net.net = nn.ModuleList(self.net._modules.values())
@@ -150,8 +148,10 @@ class BaseNetwork:
         str
             String representation of the network
         """
-        return (f'Architecture: {self.__class__.__name__}\nDescription: {self.description}\n'
-                f'Network: {self.net.name}')
+        return (f'Architecture: {self.__class__.__name__}\n'
+                f'Description: {self.description}\n'
+                f'Network: {self.net.name}\n'
+                f'Epoch: {self._epoch}')
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -170,12 +170,11 @@ class BaseNetwork:
             'save_path': self.save_path,
             'description': self.description,
             'losses': self.losses,
-            'header': self.header,
-            'idxs': self.idxs.tolist(),
+            'transforms': self.transforms,
+            'idxs': None if self.idxs is None else self.idxs.tolist(),
             'optimiser': self.optimiser.state_dict(),
             'scheduler': self.scheduler.state_dict(),
             'net': self.net,
-            'in_transform': self.in_transform,
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -195,12 +194,19 @@ class BaseNetwork:
         self.save_path = state['save_path']
         self.description = state['description']
         self.losses = state['losses']
-        self.header = state['header']
+        self.transforms = state['transforms'] if 'transforms' in state else state['header']
         self.idxs = state['idxs'] if state['idxs'] is None else np.array(state['idxs'])
         self.net = state['net']
-        self.in_transform = state['in_transform']
         self.set_optimiser()
         self.set_scheduler()
+
+        if 'header' in state:
+            warn(
+                'header attribute of BaseNetwork is deprecated, please resave the network '
+                'with the new attribute name using net.save()',
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if isinstance(state['optimiser'], dict):
             self.optimiser.load_state_dict(state['optimiser'])
@@ -208,8 +214,7 @@ class BaseNetwork:
         else:
             warn(
                 'Optimiser & scheduler is saved in old non-weights safe format and is'
-                ' deprecated, please resave the network in the new format using net.save(); '
-                'version=3.5.0',
+                ' deprecated, please resave the network in the new format using net.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -405,9 +410,11 @@ class BaseNetwork:
         data : dict[str, (N,...) ndarray]
             Network predictions to save for dataset of size N
         """
-        if path:
-            with open(path, 'wb') as file:
-                pickle.dump(data, file)
+        if not path:
+            return
+
+        with open(path + '' if '.pkl' in path else '.pkl', 'wb') as file:
+            pickle.dump(data, file)
 
     def set_optimiser(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -522,6 +529,8 @@ class BaseNetwork:
         ----------
         loader : DataLoader
             Data loader to generate predictions for
+        input_ : bool, default = False,
+            If the input data should be returned and saved
         path : str, default = None
             Path as CSV file to save the predictions if they should be saved
 
@@ -531,7 +540,8 @@ class BaseNetwork:
         Returns
         -------
         dict[str, (N,...) ndarray]
-            Prediction IDs, target values and predicted values for dataset of size N
+            Prediction IDs, optional inputs, target values, and predicted values for dataset of
+            size N
         """
         initial_time: float = time()
         key: str
@@ -563,10 +573,15 @@ class BaseNetwork:
                 if self._verbose == 'full':
                     progress_bar(i, len(loader))
 
+        # Transforms all data and saves it to a dictionary
+        transforms = {key: value for key, value in self.transforms.items()
+                      if input_ or key != 'inputs'}
         data_ = {
-            key: np.concatenate(value) if transform is None
-            else transform(np.concatenate(value), back=True)
-            for (key, transform), value in zip(self.header.items(), zip(*data))
+            key: np.concat(value) if transform is None
+            else transform(np.concat(value[0]), back=True, uncertainty=np.concat(value[1]))
+            if isinstance(value, tuple)
+            else transform(np.concat(value), back=True)
+            for (key, transform), value in zip(transforms.items(), zip(*data))
         }
 
         if self._verbose is not None:

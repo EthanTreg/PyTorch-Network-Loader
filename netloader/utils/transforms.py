@@ -15,8 +15,7 @@ from netloader.transforms import (
 
 
 warn(
-    'Importing transforms from utils is deprecated, please use netloader.transforms; '
-    'version=3.5.0',
+    'Importing transforms from utils is deprecated, please use netloader.transforms',
     DeprecationWarning,
     stacklevel=2,
 )

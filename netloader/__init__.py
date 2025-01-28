@@ -6,7 +6,7 @@ import inspect
 import logging
 
 
-__version__ = '3.4.8'
+__version__ = '3.5.0'
 __author__ = 'Ethan Tregidga'
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
 

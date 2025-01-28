@@ -13,8 +13,7 @@ class BaseLayer(base.BaseLayer):
     """
     def __init_subclass__(cls, **kwargs):
         warn(
-            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead; '
-            'version=3.5.0',
+            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead',
             DeprecationWarning,
             stacklevel=2,
         )
@@ -22,8 +21,7 @@ class BaseLayer(base.BaseLayer):
 
     def __init__(self, *args, **kwargs):
         warn(
-            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead; '
-            'version=3.5.0',
+            'BaseLayer is deprecated, use BaseLayer from netloader.layers.base instead',
             DeprecationWarning,
             stacklevel=2,
         )
@@ -36,8 +34,7 @@ class BaseMultiLayer(base.BaseMultiLayer):
     """
     def __init_subclass__(cls, **kwargs):
         warn(
-            'BaseMultiLayer is deprecated, use BaseLayer from netloader.layers.base '
-            'instead; version=3.5.0',
+            'BaseMultiLayer is deprecated, use BaseLayer from netloader.layers.base',
             DeprecationWarning,
             stacklevel=2,
         )
@@ -46,7 +43,7 @@ class BaseMultiLayer(base.BaseMultiLayer):
     def __init__(self, *args, **kwargs):
         warn(
             'BaseMultiLayer is deprecated, use BaseLayer from netloader.layers.base '
-            'instead; version=3.5.0',
+            'instead',
             DeprecationWarning,
             stacklevel=2,
         )

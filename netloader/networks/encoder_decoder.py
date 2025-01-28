@@ -37,7 +37,7 @@ class Autoencoder(BaseNetwork):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current autoencoder training and validation losses
-    header : dict[str, BaseTransform | None], default = {...: None, ...}
+    transforms : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
@@ -49,8 +49,6 @@ class Autoencoder(BaseNetwork):
         Loss function for the reconstruction loss
     latent_func : BaseLoss, default = MSELoss
         Loss function for the latent loss
-    in_transform : BaseTransform, default = None
-        Transformation for the input data
     """
     def __init__(
             self,
@@ -62,8 +60,7 @@ class Autoencoder(BaseNetwork):
             description: str = '',
             verbose: str = 'epoch',
             transform: BaseTransform | None = None,
-            latent_transform: BaseTransform | None = None,
-            in_transform: BaseTransform | None = None):
+            latent_transform: BaseTransform | None = None):
         """
         Parameters
         ----------
@@ -86,8 +83,6 @@ class Autoencoder(BaseNetwork):
             Transformation applied to the input data
         latent_transform : BaseTransform, default = None
             Transformation applied to the latent space
-        in_transform : BaseTransform, default = None
-            Transformation for the input data
         """
         super().__init__(
             save_num,
@@ -98,7 +93,7 @@ class Autoencoder(BaseNetwork):
             description=description,
             verbose=verbose,
             transform=transform,
-            in_transform=in_transform,
+            in_transform=transform,
         )
         self.reconstruct_loss: float = 1
         self.latent_loss: float = 1e-2
@@ -107,9 +102,17 @@ class Autoencoder(BaseNetwork):
         self.reconstruct_func: BaseLoss = MSELoss()
         self.latent_func: BaseLoss = MSELoss()
 
-        self.header['latent'] = latent_transform
-        self.header['targets'] = latent_transform
-        self.header['inputs'] = transform
+        self.transforms['latent'] = latent_transform
+        self.transforms['targets'] = latent_transform
+
+    def __repr__(self) -> str:
+        return (f'{super().__repr__()}\n'
+                f'reconstruct weight: {self.reconstruct_loss}, '
+                f'latent weight: {self.latent_loss}, '
+                f'bound weight: {self.bound_loss}, '
+                f'kl weight: {self.kl_loss}, '
+                f'reconstruct func: {self.reconstruct_func}, '
+                f'latent func: {self.latent_func}')
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
@@ -209,7 +212,7 @@ class Decoder(BaseNetwork):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
-    header : dict[str, BaseTransform | None], default = {...: None, ...}
+    transforms : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
     loss_func : BaseLoss, default = MSELoss
             Loss function for the reconstructions
@@ -219,8 +222,6 @@ class Decoder(BaseNetwork):
         Network optimiser
     scheduler : LRScheduler, default = ReduceLROnPlateau
         Optimiser scheduler
-    in_transform : BaseTransform, default = None
-        Transformation for the input data
     """
     def __init__(
             self,
@@ -268,6 +269,9 @@ class Decoder(BaseNetwork):
             in_transform=in_transform,
         )
         self.loss_func: BaseLoss = MSELoss()
+
+    def __repr__(self) -> str:
+        return f'{super().__repr__()}\nloss func: {self.loss_func}'
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {'loss_func': self.loss_func}
@@ -334,7 +338,7 @@ class Encoder(BaseNetwork):
         Description of the network training
     losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
         Current network training and validation losses
-    header : dict[str, BaseTransform | None], default = {...: None, ...}
+    transforms : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
     idxs: (N) ndarray, default = None
         Data indices for random training & validation datasets
@@ -344,8 +348,6 @@ class Encoder(BaseNetwork):
         Network optimiser
     scheduler : LRScheduler, default = ReduceLROnPlateau
         Optimiser scheduler
-    in_transform : BaseTransform, default = None
-        Transformation for the input data
 
     Methods
     -------
@@ -409,6 +411,9 @@ class Encoder(BaseNetwork):
         else:
             self.classes = classes.to(self._device)
             self._loss_func = CrossEntropyLoss()
+
+    def __repr__(self) -> str:
+        return f'{super().__repr__()}\nloss func: {self._loss_func}'
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {'classes': self.classes}

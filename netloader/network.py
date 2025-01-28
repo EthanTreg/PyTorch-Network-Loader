@@ -149,8 +149,7 @@ class Network(nn.Module):
             if 'net' not in list(state['net'].keys())[0]:
                 warn(
                     'Network state is saved in old non-weights safe format and is '
-                    'deprecated, please resave the network in the new format using net.save(); '
-                    'version=3.5.0',
+                    'deprecated, please resave the network in the new format using net.save()',
                     DeprecationWarning,
                     stacklevel=2,
                 )

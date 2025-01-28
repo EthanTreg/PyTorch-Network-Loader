@@ -34,6 +34,17 @@ class BaseLoss(nn.Module):
         # Adds all loss classes to list of safe PyTorch classes when loading saved networks
         torch.serialization.add_safe_globals([self.__class__])
 
+    def __repr__(self) -> str:
+        """
+        Returns a string representation of the loss function
+
+        Returns
+        -------
+        str
+            String representation of the loss function
+        """
+        return self.__class__.__name__
+
     def __getstate__(self) -> dict[str, Any]:
         """
         Returns a dictionary containing the state of the loss function for pickling

@@ -387,8 +387,7 @@ class MultiTransform(BaseTransform):
 
         if isinstance(args[0], list):
             warn(
-                'List of transforms is deprecated, pass transforms as arguments directly; '
-                'version=3.5.0',
+                'List of transforms is deprecated, pass transforms as arguments directly',
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -424,7 +423,7 @@ class MultiTransform(BaseTransform):
         if isinstance(state['transforms'][0], BaseTransform):
             warn(
                 'Transform is saved in old non-weights safe format and is deprecated, '
-                'please resave the transform in the new format using net.save(); version=3.5.0',
+                'please resave the transform in the new format using net.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
