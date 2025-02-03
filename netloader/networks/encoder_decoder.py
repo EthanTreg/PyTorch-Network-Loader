@@ -481,6 +481,6 @@ class Encoder(BaseNetwork):
         super().to(*args, **kwargs)
 
         if self.classes is not None:
-            self.classes.to(self._device)
+            self.classes = self.classes.to(self._device)
 
         return self

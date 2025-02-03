@@ -18,15 +18,14 @@ class TestDataset(Dataset):
     """
     def __init__(self, in_shape: list[int]):
         self._in_shape: list[int] = in_shape
-        self._device: torch.device = get_device()[1]
         self.transform: transforms.BaseTransform | None = None
 
     def __len__(self) -> int:
         return 600
 
     def __getitem__(self, item: int):
-        target: torch.Tensor = torch.randint(0, 10, size=(1, 1)).to(self._device).float()
-        in_tensor: torch.Tensor = (torch.ones(size=(1, *self._in_shape[1:])).to(self._device) *
+        target: torch.Tensor = torch.randint(0, 10, size=(1, 1)).float()
+        in_tensor: torch.Tensor = (torch.ones(size=(1, *self._in_shape[1:])) *
                                    target[..., None, None])
 
         if self.transform:
@@ -84,7 +83,7 @@ def main():
             learning_rate=1e-4,
             verbose='full',
             classes=torch.arange(10),
-        )
+        ).to(device)
         net.training(1, (loader, loader))
     except NameError:
         pass
@@ -106,9 +105,9 @@ def main():
         learning_rate=1e-4,
         verbose='epoch',
         transform=dataset.transform,
-    )
+    ).to(device)
     net.training(1, (loader, loader))
-    net = nets.load_net(1, states_dir, net.net.name)
+    net = nets.load_net(1, states_dir, net.net.name).to(device)
     net.training(2, (loader, loader))
     net.predict(loader)
 
@@ -126,7 +125,7 @@ def main():
         learning_rate=1e-4,
         verbose='epoch',
         in_transform=dataset.transform,
-    )
+    ).to(device)
     net.training(1, (loader, loader))
     net = nets.load_net(1, states_dir, net.net.name)
     net.training(2, (loader, loader))
