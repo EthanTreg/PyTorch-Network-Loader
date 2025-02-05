@@ -154,10 +154,12 @@ class NormFlowEncoder(Encoder):
         Generates probability distributions for a dataset and can save to a file
     batch_predict(data, num=[1e3]) -> tuple[ndarray | list[None], ndarray | list[None]]
         Generates probability distributions for the given data batch
+    extra_repr() -> str
+        Displays layer parameters when printing the architecture
     """
     def __init__(
             self,
-            save_num: int,
+            save_num: int | str,
             states_dir: str,
             net: torch.nn.Module | Network,
             mix_precision: bool = False,
@@ -172,8 +174,8 @@ class NormFlowEncoder(Encoder):
         """
         Parameters
         ----------
-        save_num : int
-            File number to save the flow
+        save_num : int | str
+            File number or name to save the flow
         states_dir : str
             Directory to save the network and flow
         net : nn.Module | Network
@@ -238,12 +240,6 @@ class NormFlowEncoder(Encoder):
         if learning_rate:
             self.set_optimiser(lr=learning_rate)
             self.set_scheduler(factor=0.5, min_lr=min(learning_rate) * 1e-3)
-
-    def __repr__(self) -> str:
-        return (f'{super().__repr__()}\n'
-                f'train epochs: {self._epochs}, '
-                f'flow weight: {self.flow_loss}, '
-                f'encoder weight: {self.encoder_loss}')
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
@@ -434,3 +430,9 @@ class NormFlowEncoder(Encoder):
 
         assert not isinstance(output, Tensor)
         return output, samples
+
+    def extra_repr(self) -> str:
+        return (f'{super().extra_repr()}, '
+                f'train_epochs: {self._epochs}, '
+                f'flow_weight: {self.flow_loss}, '
+                f'encoder_weight: {self.encoder_loss}')

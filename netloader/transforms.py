@@ -27,6 +27,8 @@ class BaseTransform:
         Forward pass of the transformation and uncertainty propagation
     backward_grad(x, uncertainty) -> ArrayLike
         Backwards pass to invert the transformation and uncertainty propagation
+    extra_repr() -> str
+        Displays layer parameters when printing the transform
     """
     def __init__(self):
         # Adds all transform classes to list of safe PyTorch classes when loading saved networks
@@ -85,18 +87,7 @@ class BaseTransform:
         str
             Representation string
         """
-        return f'{self.__class__.__name__}({self._extra_repr()})'
-
-    def _extra_repr(self) -> str:
-        """
-        Additional representation of the transformation
-
-        Returns
-        -------
-        str
-            Transform specific representation
-        """
-        return ''
+        return f'{self.__class__.__name__}({self.extra_repr()})'
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -193,6 +184,17 @@ class BaseTransform:
         """
         return self(x, back=True), uncertainty
 
+    def extra_repr(self) -> str:
+        """
+        Additional representation of the transformation
+
+        Returns
+        -------
+        str
+            Transform specific representation
+        """
+        return ''
+
 
 class Log(BaseTransform):
     """
@@ -208,6 +210,8 @@ class Log(BaseTransform):
         Forward pass of the transformation and uncertainty propagation
     backward_grad(x, uncertainty) -> ArrayLike
         Backwards pass to invert the transformation and uncertainty propagation
+    extra_repr() -> str
+        Displays layer parameters when printing the transform
     """
     def __init__(self, base: float = 10, idxs: list[int] | None = None):
         """
@@ -221,9 +225,6 @@ class Log(BaseTransform):
         super().__init__()
         self._base: float = base
         self._idxs: list[int] | None = idxs
-
-    def _extra_repr(self) -> str:
-        return f'base: {self._base}, idxs: {self._idxs}'
 
     def __getstate__(self) -> dict[str, Any]:
         return {'base': self._base, 'idxs': self._idxs}
@@ -291,6 +292,9 @@ class Log(BaseTransform):
             uncertainty *= np.log(self._base)
         return x, module.abs(uncertainty)
 
+    def extra_repr(self) -> str:
+        return f'base: {self._base}, idxs: {self._idxs}'
+
 
 class MinClamp(BaseTransform):
     """
@@ -300,6 +304,8 @@ class MinClamp(BaseTransform):
     -------
     forward(x) -> ArrayLike
         Forward pass of the transformation
+    extra_repr() -> str
+        Displays layer parameters when printing the transform
     """
     def __init__(self, dim: int | None = None, idxs: list[int] | None = None):
         """
@@ -313,9 +319,6 @@ class MinClamp(BaseTransform):
         super().__init__()
         self._dim: int | None = dim
         self._idxs: list[int] | None = idxs
-
-    def _extra_repr(self) -> str:
-        return f'dim: {self._dim}, idxs: {self._idxs}'
 
     def __getstate__(self) -> dict[str, Any]:
         return {'dim': self._dim, 'idxs': self._idxs}
@@ -352,6 +355,9 @@ class MinClamp(BaseTransform):
             x[..., self._idxs] = module.maximum(x_clamp, min_count)
         return x
 
+    def extra_repr(self) -> str:
+        return f'dim: {self._dim}, idxs: {self._idxs}'
+
 
 class MultiTransform(BaseTransform):
     """
@@ -374,6 +380,8 @@ class MultiTransform(BaseTransform):
         Backwards pass to invert the transformation and uncertainty propagation
     append(transform)
         Appends a transform to the list of transforms
+    extra_repr() -> str
+        Displays layer parameters when printing the transform
     """
     def __init__(self, *args: BaseTransform):
         """
@@ -400,16 +408,6 @@ class MultiTransform(BaseTransform):
             return self.transforms[item]
 
         return MultiTransform(*self.transforms[item])
-
-    def _extra_repr(self) -> str:
-        transform_repr: str
-        extra_repr: str = ''
-
-        for i, transform in enumerate(self.transforms):
-            transform_repr = repr(transform).replace('\n', '\n\t')
-            extra_repr += f"\n\t({i}): {transform_repr},"
-
-        return f'{extra_repr}\n'
 
     def __getstate__(self) -> dict[str, Any]:
         return {'transforms': [(
@@ -478,6 +476,16 @@ class MultiTransform(BaseTransform):
         """
         self.transforms.append(transform)
 
+    def extra_repr(self) -> str:
+        transform_repr: str
+        extra_repr: str = ''
+
+        for i, transform in enumerate(self.transforms):
+            transform_repr = repr(transform).replace('\n', '\n\t')
+            extra_repr += f"\n\t({i}): {transform_repr},"
+
+        return f'{extra_repr}\n'
+
 
 class Normalise(BaseTransform):
     """
@@ -500,6 +508,8 @@ class Normalise(BaseTransform):
         Forward pass of the transformation and uncertainty propagation
     backward_grad(x, uncertainty) -> ArrayLike
         Backwards pass to invert the transformation and uncertainty propagation
+    extra_repr() -> str
+        Displays layer parameters when printing the transform
     """
     @overload
     def __init__(self, offset: ndarray, scale: ndarray):
@@ -548,16 +558,6 @@ class Normalise(BaseTransform):
             self.offset = np.amin(data, axis=dim, keepdims=True)
             self.scale = np.amax(data, axis=dim, keepdims=True) - self.offset
 
-    def _extra_repr(self) -> str:
-        if 1 < self.offset.size <= 10:
-            return (f"\n\toffset: {np.vectorize(lambda x: f'{x:.2g}')(self.offset)},"
-                    f"\n\tscale: {np.vectorize(lambda x: f'{x:.2g}')(self.scale)},\n")
-
-        if self.offset.size > 1:
-            return f'offset shape: {self.offset.shape}, scale shape: {self.scale.shape}'
-
-        return f'offset: {self.offset.item():.2g}, scale: {self.scale.item():.2g}'
-
     def __getstate__(self) -> dict[str, Any]:
         return {'offset': self.offset.tolist(), 'scale': self.scale.tolist()}
 
@@ -594,6 +594,16 @@ class Normalise(BaseTransform):
         else:
             uncertainty *= self.scale
         return self(x, back=True), uncertainty
+
+    def extra_repr(self) -> str:
+        if 1 < self.offset.size <= 10:
+            return (f"\n\toffset: {np.vectorize(lambda x: f'{x:.2g}')(self.offset)},"
+                    f"\n\tscale: {np.vectorize(lambda x: f'{x:.2g}')(self.scale)},\n")
+
+        if self.offset.size > 1:
+            return f'offset shape: {self.offset.shape}, scale shape: {self.scale.shape}'
+
+        return f'offset: {self.offset.item():.2g}, scale: {self.scale.item():.2g}'
 
 
 class NumpyTensor(BaseTransform):

@@ -58,14 +58,16 @@ class BaseNetwork:
         If save_num is provided, saves the network to the states directory
     predict(loader, path=None, **kwargs) -> dict[str, (N,...) ndarray]
         Generates predictions for a dataset and can save to a file
-    batch_predict(high_dim) -> tuple[(N,...) ndarray]
+    batch_predict(data) -> tuple[(N,...) ndarray]
         Generates predictions for the given data batch
     to(*args, **kwargs) -> Self
         Move and/or cast the parameters and buffers
+    extra_repr() -> str
+        Displays layer parameters when printing the architecture
     """
     def __init__(
             self,
-            save_num: int,
+            save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
             mix_precision: bool = False,
@@ -77,8 +79,8 @@ class BaseNetwork:
         """
         Parameters
         ----------
-        save_num : int
-            File number to save the network
+        save_num : int | str
+            File number or name to save the network
         states_dir : str
             Directory to save the network
         net : Module | Network
@@ -151,7 +153,8 @@ class BaseNetwork:
         return (f'Architecture: {self.__class__.__name__}\n'
                 f'Description: {self.description}\n'
                 f'Network: {self.net.name}\n'
-                f'Epoch: {self._epoch}')
+                f'Epoch: {self._epoch}\n'
+                f'Args: ({self.extra_repr()})')
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -577,9 +580,16 @@ class BaseNetwork:
         transforms = {key: value for key, value in self.transforms.items()
                       if input_ or key != 'inputs'}
         data_ = {
+            # Concatenate if there is no transform
             key: np.concat(value) if transform is None
-            else transform(np.concat(value[0]), back=True, uncertainty=np.concat(value[1]))
-            if isinstance(value, tuple)
+            # If prediction is a tuple, treat second entry as the uncertainty and apply transform
+            else transform(
+                np.concat(np.array(value)[:, 0]),
+                back=True,
+                uncertainty=np.concat(np.array(value)[:, 1]),
+            )
+            if isinstance(value[0], tuple)
+            # Else apply transformation
             else transform(np.concat(value), back=True)
             for (key, transform), value in zip(transforms.items(), zip(*data))
         }
@@ -656,15 +666,30 @@ class BaseNetwork:
         self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)  # pylint: disable=protected-access
         return self
 
+    def extra_repr(self) -> str:
+        """
+        Additional representation of the architecture
 
-def load_net(num: int, states_dir: str, net_name: str, weights_only: bool = True) -> BaseNetwork:
+        Returns
+        -------
+        str
+            Architecture specific representation
+        """
+        return ''
+
+
+def load_net(
+        num: int | str,
+        states_dir: str,
+        net_name: str,
+        weights_only: bool = True) -> BaseNetwork:
     """
     Loads a network from file
 
     Parameters
     ----------
-    num : int
-        File number of the saved state
+    num : int | str
+        File number or name of the saved state
     states_dir : str
         Directory to the save files
     net_name : str

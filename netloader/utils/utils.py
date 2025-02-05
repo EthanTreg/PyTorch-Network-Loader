@@ -170,14 +170,14 @@ def progress_bar(i: int, total: int, text: str = '', **kwargs: Any) -> None:
         print()
 
 
-def save_name(num: int, states_dir: str, name: str) -> str:
+def save_name(num: int | str, states_dir: str, name: str) -> str:
     """
     Standardises the network save file naming
 
     Parameters
     ----------
-    num : int
-        File number
+    num : int | str
+        File number or name
     states_dir : str
         Directory of network saves
     name : str

@@ -49,10 +49,17 @@ class Autoencoder(BaseNetwork):
         Loss function for the reconstruction loss
     latent_func : BaseLoss, default = MSELoss
         Loss function for the latent loss
+
+    Methods
+    -------
+    batch_predict(data) -> Tensor
+        Generates predictions for the given data
+    extra_repr() -> str
+        Displays layer parameters when printing the architecture
     """
     def __init__(
             self,
-            save_num: int,
+            save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
             mix_precision: bool = False,
@@ -64,8 +71,8 @@ class Autoencoder(BaseNetwork):
         """
         Parameters
         ----------
-        save_num : int
-            File number to save the network
+        save_num : int | str
+            File number or name to save the network
         states_dir : str
             Directory to save the network
         net : Module | Network
@@ -104,15 +111,6 @@ class Autoencoder(BaseNetwork):
 
         self.transforms['latent'] = latent_transform
         self.transforms['targets'] = latent_transform
-
-    def __repr__(self) -> str:
-        return (f'{super().__repr__()}\n'
-                f'reconstruct weight: {self.reconstruct_loss}, '
-                f'latent weight: {self.latent_loss}, '
-                f'bound weight: {self.bound_loss}, '
-                f'kl weight: {self.kl_loss}, '
-                f'reconstruct func: {self.reconstruct_func}, '
-                f'latent func: {self.latent_func}')
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
@@ -196,6 +194,14 @@ class Autoencoder(BaseNetwork):
             data.detach().cpu().numpy(),
         )
 
+    def extra_repr(self) -> str:
+        return (f'reconstruct_weight: {self.reconstruct_loss}, '
+                f'latent_weight: {self.latent_loss}, '
+                f'bound_weight: {self.bound_loss}, '
+                f'kl_weight: {self.kl_loss}, '
+                f'reconstruct_func: {self.reconstruct_func}, '
+                f'latent_func: {self.latent_func}')
+
 
 class Decoder(BaseNetwork):
     """
@@ -222,10 +228,15 @@ class Decoder(BaseNetwork):
         Network optimiser
     scheduler : LRScheduler, default = ReduceLROnPlateau
         Optimiser scheduler
+
+    Methods
+    -------
+    extra_repr() -> str
+        Displays layer parameters when printing the architecture
     """
     def __init__(
             self,
-            save_num: int,
+            save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
             mix_precision: bool = False,
@@ -237,8 +248,8 @@ class Decoder(BaseNetwork):
         """
         Parameters
         ----------
-        save_num : int
-            File number to save the network
+        save_num : int | str
+            File number or name to save the network
         states_dir : str
             Directory to save the network
         net : Module | Network
@@ -269,9 +280,6 @@ class Decoder(BaseNetwork):
             in_transform=in_transform,
         )
         self.loss_func: BaseLoss = MSELoss()
-
-    def __repr__(self) -> str:
-        return f'{super().__repr__()}\nloss func: {self.loss_func}'
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {'loss_func': self.loss_func}
@@ -322,6 +330,9 @@ class Decoder(BaseNetwork):
         self._update(loss)
         return loss.item()
 
+    def extra_repr(self) -> str:
+        return f'loss_func: {self.loss_func}'
+
 
 class Encoder(BaseNetwork):
     """
@@ -351,12 +362,14 @@ class Encoder(BaseNetwork):
 
     Methods
     -------
-    batch_predict(high_dim) -> Tensor
+    batch_predict(data) -> Tensor
         Generates predictions for the given data
+    extra_repr() -> str
+        Displays layer parameters when printing the architecture
     """
     def __init__(
             self,
-            save_num: int,
+            save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
             mix_precision: bool = False,
@@ -369,8 +382,8 @@ class Encoder(BaseNetwork):
         """
         Parameters
         ----------
-        save_num : int
-            File number to save the network
+        save_num : int | str
+            File number or name to save the network
         states_dir : str
             Directory to save the network
         net : nn.Module | Network
@@ -411,9 +424,6 @@ class Encoder(BaseNetwork):
         else:
             self.classes = classes.to(self._device)
             self._loss_func = CrossEntropyLoss()
-
-    def __repr__(self) -> str:
-        return f'{super().__repr__()}\nloss func: {self._loss_func}'
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {'classes': self.classes}
@@ -484,3 +494,6 @@ class Encoder(BaseNetwork):
             self.classes = self.classes.to(self._device)
 
         return self
+
+    def extra_repr(self) -> str:
+        return f'loss_func: {self._loss_func}'
