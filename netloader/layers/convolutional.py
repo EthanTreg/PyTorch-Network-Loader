@@ -37,7 +37,7 @@ class Conv(BaseLayer):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: str | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -170,7 +170,7 @@ class ConvDepth(Conv):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: str | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -235,7 +235,7 @@ class ConvDepthDownscale(Conv):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: str | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -288,7 +288,7 @@ class ConvDownscale(Conv):
                  dropout: float = 0,
                  activation: str | None = 'ELU',
                  norm: str | None = None,
-                 **kwargs: Any):
+                 **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -363,7 +363,7 @@ class ConvTranspose(BaseLayer):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: str | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -486,7 +486,7 @@ class ConvTranspose(BaseLayer):
             raise ValueError(f'Output padding ({out_padding}) must be smaller than either stride '
                              f'({stride}) or dilation ({dilation})')
 
-    def forward(self, x: Tensor, **kwargs: Any) -> Tensor:
+    def forward(self, x: Tensor, *args: Any, **kwargs: Any) -> Tensor:
         """
         Forward pass of the transposed convolutional layer
 
@@ -495,15 +495,17 @@ class ConvTranspose(BaseLayer):
         x : (N,...) Tensor
             Input tensor with batch size N
 
+        *args
+            Optional arguments to pass to the parent forward method
         **kwargs
-            Arguments to be passed to the parent forward method
+            Optional keyword arguments to pass to the parent forward method
 
         Returns
         -------
         (N,...) Tensor
             Output tensor with batch size N
         """
-        x = super().forward(x, **kwargs)
+        x = super().forward(x, *args, **kwargs)
         return x[..., *self._slice]
 
 
@@ -530,7 +532,7 @@ class ConvTransposeUpscale(ConvTranspose):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: str | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -604,7 +606,7 @@ class ConvUpscale(Conv):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: str | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -681,7 +683,7 @@ class PixelShuffle(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, scale: int, shapes: list[list[int]] | None = None, **kwargs: Any):
+    def __init__(self, scale: int, shapes: list[list[int]] | None = None, **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -724,7 +726,7 @@ class PixelShuffle(BaseLayer):
             raise ValueError(f'Channels ({shape}) must be an integer multiple of '
                              f'{filters_scale}')
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         r"""
         Forward pass of pixel shuffle
 

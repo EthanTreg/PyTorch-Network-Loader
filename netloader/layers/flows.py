@@ -35,7 +35,7 @@ class SplineFlow(BaseLayer):
             context: bool = False,
             features: int | None = None,
             factor: float | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Generates a neural spline flow (NSF) for use in BaseNetwork
 
@@ -88,7 +88,7 @@ class SplineFlow(BaseLayer):
 
         shapes.append(shape)
 
-    def forward(self, x: Tensor, **_: Any) -> NormalizingFlow:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> NormalizingFlow:
         """
         Forward pass of the neural spline flow layer
 

@@ -32,7 +32,7 @@ class AdaptivePool(BaseLayer):
             shapes: list[list[int]],
             channels: bool = True,
             mode: str = 'average',
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -139,7 +139,7 @@ class Pool(BaseLayer):
             stride: int | list[int] = 2,
             padding: int | str | list[int] = 0,
             mode: str = 'max',
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -208,7 +208,7 @@ class Pool(BaseLayer):
         ))
         shapes.append(shape)
 
-    def forward(self, x: Tensor, **kwargs: Any) -> Tensor:
+    def forward(self, x: Tensor, *args: Any, **kwargs: Any) -> Tensor:
         """
         Forward pass of the pool layer
 
@@ -217,8 +217,10 @@ class Pool(BaseLayer):
         x : (N,...) Tensor
             Input tensor with batch size N
 
+        *args
+            Optional arguments to pass to the parent forward method
         **kwargs
-            Arguments to be passed to parent forward method
+            Optional keyword arguments to pass to the parent forward method
 
         Returns
         -------
@@ -226,7 +228,7 @@ class Pool(BaseLayer):
             Output tensor with batch size N
         """
         x = nn.functional.pad(x, tuple(self._pad))
-        return super().forward(x, **kwargs)
+        return super().forward(x, *args, **kwargs)
 
 
 class PoolDownscale(Pool):
@@ -240,7 +242,12 @@ class PoolDownscale(Pool):
     layers : Sequential
         Layers to loop through in the forward pass
     """
-    def __init__(self, scale: int, shapes: list[list[int]], mode: str = 'max', **kwargs: Any):
+    def __init__(
+            self,
+            scale: int,
+            shapes: list[list[int]],
+            mode: str = 'max',
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------

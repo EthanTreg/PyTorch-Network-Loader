@@ -6,7 +6,7 @@ import pickle
 import logging as log
 from time import time
 from warnings import warn
-from typing import Any, Self, Union
+from typing import Any, Self, Union, Iterable
 
 import torch
 import numpy as np
@@ -46,9 +46,9 @@ class BaseNetwork:
 
     Methods
     -------
-    set_optimiser(*args, **kwargs)
+    set_optimiser(parameters, **kwargs) -> Optimizer
         Sets the optimiser for the network
-    set_scheduler(*args, **kwargs)
+    set_scheduler(optimiser, **kwargs) -> LRScheduler
         Sets the scheduler for the network
     train(train)
         Flips the train/eval state of the network
@@ -75,7 +75,9 @@ class BaseNetwork:
             description: str = '',
             verbose: str = 'epoch',
             transform: BaseTransform | None = None,
-            in_transform: BaseTransform | None = None):
+            in_transform: BaseTransform | None = None,
+            optimiser_kwargs: dict[str, Any] | None = None,
+            scheduler_kwargs: dict[str, Any] | None = None) -> None:
         """
         Parameters
         ----------
@@ -88,7 +90,7 @@ class BaseNetwork:
         mix_precision: bool, default = False
             If mixed precision should be used
         learning_rate : float, default = 1e-3
-            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
+            Optimiser initial learning rate
         description : str, default = ''
             Description of the network
         verbose : {'epoch', 'full', 'progress', None}
@@ -98,6 +100,10 @@ class BaseNetwork:
             Transformation of the network's output
         in_transform : BaseTransform, default = None
             Transformation for the input data
+        optimiser_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_optimiser
+        scheduler_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_scheduler
         """
         self._train_state: bool = True
         self._half: bool = mix_precision
@@ -114,8 +120,8 @@ class BaseNetwork:
             'preds': transform,
         }
         self.idxs: ndarray | None = None
-        self.optimiser: optim.Optimizer | None = None
-        self.scheduler: optim.lr_scheduler.LRScheduler | None = None
+        self.optimiser: optim.Optimizer
+        self.scheduler: optim.lr_scheduler.LRScheduler
         self.net: nn.Module | Network = net
 
         if not isinstance(self.net, Network) and not hasattr(self.net, 'net'):
@@ -134,9 +140,17 @@ class BaseNetwork:
                 log.getLogger(__name__).warning(f'{self.save_path} already exists and will be '
                                                 f'overwritten if training continues')
 
-        if learning_rate:
-            self.set_optimiser(lr=learning_rate)
-            self.set_scheduler(factor=0.5, min_lr=learning_rate * 1e-3)
+        self.optimiser = self.set_optimiser(
+            self.net.parameters(),
+            lr=learning_rate,
+            **optimiser_kwargs or {},
+        )
+        self.scheduler = self.set_scheduler(self.optimiser, **scheduler_kwargs or {})
+
+        if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            self.scheduler.load_state_dict(
+                {'factor': 0.5, 'min_lr': learning_rate * 1e-3} | (scheduler_kwargs or {}),
+            )
 
         # Adds all network classes to list of safe PyTorch classes when loading saved networks
         torch.serialization.add_safe_globals([self.__class__])
@@ -154,6 +168,8 @@ class BaseNetwork:
                 f'Description: {self.description}\n'
                 f'Network: {self.net.name}\n'
                 f'Epoch: {self._epoch}\n'
+                f'Optimiser: {self.optimiser.__class__.__name__}\n'
+                f'Scheduler: {self.scheduler.__class__.__name__ if self.scheduler else None}\n'
                 f'Args: ({self.extra_repr()})')
 
     def __getstate__(self) -> dict[str, Any]:
@@ -200,8 +216,8 @@ class BaseNetwork:
         self.transforms = state['transforms'] if 'transforms' in state else state['header']
         self.idxs = state['idxs'] if state['idxs'] is None else np.array(state['idxs'])
         self.net = state['net']
-        self.set_optimiser()
-        self.set_scheduler()
+        self.optimiser = self.set_optimiser(self.net.parameters())
+        self.scheduler = self.set_scheduler(self.optimiser)
 
         if 'header' in state:
             warn(
@@ -298,6 +314,7 @@ class BaseNetwork:
         float
             Loss
         """
+        raise NotImplementedError
 
     def _param_device(self, params: Param, *args: Any, **kwargs: Any) -> None:
         r"""
@@ -417,33 +434,48 @@ class BaseNetwork:
             return
 
         with open(path + '' if '.pkl' in path else '.pkl', 'wb') as file:
-            pickle.dump(data, file)
+            pickle.dump(data, file)  # type: ignore
 
-    def set_optimiser(self, *args: Any, **kwargs: Any) -> None:
+    @staticmethod
+    def set_optimiser(
+            parameters: list[dict[str, Iterable[nn.Parameter]]] | Iterable[nn.Parameter],
+            **kwargs: Any) -> optim.Optimizer:
         """
-        Sets the optimiser for the network
+        Sets the optimiser for the network, by default it is AdamW
 
         Parameters
         ----------
-        *args
-            Optional arguments to pass to the optimiser
+        parameters : list[dict[str, Iterable[nn.Parameter]]] | Iterable[nn.Parameter]
+            Network parameters to optimise
+
         **kwargs
             Optional keyword arguments to pass to the optimiser
-        """
-        self.optimiser = optim.AdamW(self.net.parameters(), *args, **kwargs)
 
-    def set_scheduler(self, *args: Any, **kwargs: Any) -> None:
+        Returns
+        -------
+        optim.Optimizer
+            Network optimiser
         """
-        Sets the scheduler for the network
+        return optim.AdamW(parameters, **kwargs)
+
+    @staticmethod
+    def set_scheduler(optimiser: optim.Optimizer, **kwargs: Any) -> optim.lr_scheduler.LRScheduler:
+        """
+        Sets the scheduler for the network, by default it is ReduceLROnPlateau
 
         Parameters
         ----------
-        *args
-            Optional arguments to pass to the scheduler
+        optimiser : optim.Optimizer
+            Network optimiser
         **kwargs
             Optional keyword arguments to pass to the scheduler
+
+        Returns
+        -------
+        optim.lr_scheduler.LRScheduler
+            Optimiser scheduler
         """
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimiser, *args, **kwargs)
+        return optim.lr_scheduler.ReduceLROnPlateau(optimiser, **kwargs)
 
     def train(self, train: bool) -> None:
         """
@@ -568,7 +600,7 @@ class BaseNetwork:
                 in_data, target = self._data_loader_translation(low_dim, high_dim)
                 data.append([
                     ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
-                    *([in_data] if input_ else []),
+                    *([in_data.numpy()] if input_ else []),
                     target.numpy(),
                     *self.batch_predict(in_data.to(self._device), **kwargs),
                 ])

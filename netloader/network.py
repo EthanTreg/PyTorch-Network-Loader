@@ -55,7 +55,7 @@ class Network(nn.Module):
             in_shape: list[int] | list[list[int]],
             out_shape: list[int],
             suppress_warning: bool = False,
-            defaults: dict[str, Any] | None = None):
+            defaults: dict[str, Any] | None = None) -> None:
         """
         Parameters
         ----------
@@ -238,7 +238,7 @@ class Composite(BaseLayer):
             shape: list[int] | None = None,
             config: dict[str, Any] | None = None,
             defaults: dict[str, Any] | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -294,7 +294,7 @@ class Composite(BaseLayer):
         )
         shapes[-1] = self.net.shapes[-1]
 
-    def forward(self, x: list[Tensor] | Tensor, **_: Any) -> Tensor:
+    def forward(self, x: list[Tensor] | Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass for the Composite layer
 

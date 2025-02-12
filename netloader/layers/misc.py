@@ -26,7 +26,11 @@ class Checkpoint(BaseLayer):
     forward(x, checkpoints, **_) -> Tensor
         Forward pass of the checkpoint layer
     """
-    def __init__(self, shapes: list[list[int]], check_shapes: list[list[int]], **kwargs: Any):
+    def __init__(
+            self,
+            shapes: list[list[int]],
+            check_shapes: list[list[int]],
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -43,7 +47,7 @@ class Checkpoint(BaseLayer):
         shapes.append(shapes[-1].copy())
         check_shapes.append(shapes[-1].copy())
 
-    def forward(self, x: Tensor, checkpoints: list[Tensor], **_: Any) -> Tensor:
+    def forward(self, x: Tensor, checkpoints: list[Tensor], *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the checkpoint layer
 
@@ -98,7 +102,7 @@ class Concatenate(BaseMultiLayer):
             check_shapes: list[list[int]],
             checkpoint: bool = False,
             dim: int = 0,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -157,7 +161,8 @@ class Concatenate(BaseMultiLayer):
             x: Tensor,
             outputs: list[Tensor],
             checkpoints: list[Tensor],
-            **_: Any) -> Tensor:
+            *_: Any,
+            **__: Any) -> Tensor:
         """
         Forward pass of the concatenation layer
 
@@ -216,7 +221,7 @@ class DropPath(BaseLayer):
     forward(x, **_) -> Tensor
         Forward pass of the drop path layer
     """
-    def __init__(self, prob: float, shapes: list[list[int]] | None = None, **kwargs: Any):
+    def __init__(self, prob: float, shapes: list[list[int]] | None = None, **kwargs: Any) -> None:
         """
 
         Parameters
@@ -239,7 +244,7 @@ class DropPath(BaseLayer):
 
         shapes.append(shapes[-1].copy())
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the drop path layer
 
@@ -282,7 +287,7 @@ class Index(BaseLayer):
             number: int,
             shapes: list[list[int]] | None = None,
             greater: bool = True,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -313,7 +318,7 @@ class Index(BaseLayer):
         else:
             shapes[-1][-1] = shapes[-1][-1] - abs(number)
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the indexing layer
 
@@ -365,7 +370,7 @@ class LayerNorm(BaseLayer):
             dims: int | None = None,
             shape: list[int] | None = None,
             shapes: list[list[int]] | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -398,7 +403,7 @@ class LayerNorm(BaseLayer):
 
         shapes.append(shapes[-1].copy())
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the layer normalisation layer
 
@@ -440,7 +445,7 @@ class Reshape(BaseLayer):
             net_out: list[int] | None = None,
             shapes: list[list[int]] | None = None,
             factor: bool = False,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -510,7 +515,7 @@ class Reshape(BaseLayer):
             raise ValueError(f'Input size does not match output size for input shape {in_shape} '
                              f'& output shape {out_shape}')
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of reshaping tensors
 
@@ -558,7 +563,7 @@ class Scale(BaseLayer):
             scale: float,
             shapes: list[list[int]],
             first: bool = True,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -589,7 +594,7 @@ class Scale(BaseLayer):
 
         shapes.append(shapes[-1].copy())
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the scale layer
 
@@ -635,7 +640,7 @@ class Shortcut(BaseMultiLayer):
             shapes: list[list[int]],
             check_shapes: list[list[int]],
             checkpoint: bool = False,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -701,7 +706,8 @@ class Shortcut(BaseMultiLayer):
             x: Tensor,
             outputs: list[Tensor],
             checkpoints: list[Tensor],
-            **_: Any) -> Tensor:
+            *_: Any,
+            **__: Any) -> Tensor:
         """
         Forward pass of the shortcut layer
 
@@ -746,7 +752,7 @@ class Skip(BaseMultiLayer):
             shapes: list[list[int]],
             check_shapes: list[list[int]],
             checkpoint: bool = False,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -780,7 +786,8 @@ class Skip(BaseMultiLayer):
             x: Tensor,
             outputs: list[Tensor],
             checkpoints: list[Tensor],
-            **_: Any) -> Tensor:
+            *_: Any,
+            **__: Any) -> Tensor:
         """
         Forward pass of the skip layer
 
@@ -820,7 +827,7 @@ class Unpack(BaseLayer):
             self,
             index: int,
             shapes: list[list[int] | list[list[int]]],
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -841,7 +848,7 @@ class Unpack(BaseLayer):
 
         shapes.append(shapes[0][self._idx])
 
-    def forward(self, _: Any, outputs: list[list[Tensor] | Tensor], **__: Any) -> Tensor:
+    def forward(self, *_: Any, outputs: list[list[Tensor] | Tensor], **__: Any) -> Tensor:
         """
         Forward pass of the skip layer
 

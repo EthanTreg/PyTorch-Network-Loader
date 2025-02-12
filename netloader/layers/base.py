@@ -27,7 +27,7 @@ class BaseLayer(nn.Module):
     forward(x, **_) -> Tensor
         Forward pass for a generic layer
     """
-    def __init__(self, idx: int, **kwargs: Any):
+    def __init__(self, idx: int, **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -144,7 +144,7 @@ class BaseLayer(nn.Module):
         if isinstance(self.layers, list) and self.layers:
             self.layers = nn.Sequential(*self.layers)
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass for a generic layer
 
@@ -187,7 +187,7 @@ class BaseMultiLayer(BaseLayer):
             shapes: list[list[int]],
             check_shapes: list[list[int]],
             checkpoint: bool = False,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------

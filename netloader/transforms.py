@@ -30,7 +30,7 @@ class BaseTransform:
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self):
+    def __init__(self) -> None:
         # Adds all transform classes to list of safe PyTorch classes when loading saved networks
         torch.serialization.add_safe_globals([self.__class__])
 
@@ -213,7 +213,7 @@ class Log(BaseTransform):
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self, base: float = 10, idxs: list[int] | None = None):
+    def __init__(self, base: float = 10, idxs: list[int] | None = None) -> None:
         """
         Parameters
         ----------
@@ -307,7 +307,7 @@ class MinClamp(BaseTransform):
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self, dim: int | None = None, idxs: list[int] | None = None):
+    def __init__(self, dim: int | None = None, idxs: list[int] | None = None) -> None:
         """
         Parameters
         ----------
@@ -383,7 +383,7 @@ class MultiTransform(BaseTransform):
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self, *args: BaseTransform):
+    def __init__(self, *args: BaseTransform) -> None:
         """
         Parameters
         ----------
@@ -512,11 +512,16 @@ class Normalise(BaseTransform):
         Displays layer parameters when printing the transform
     """
     @overload
-    def __init__(self, offset: ndarray, scale: ndarray):
+    def __init__(self, *, offset: ndarray, scale: ndarray) -> None:
         ...
 
     @overload
-    def __init__(self, data: ArrayLike, mean: bool = ..., dim: int | tuple[int, ...] | None = ...):
+    def __init__(
+            self,
+            *
+            data: ArrayLike,
+            mean: bool = ...,
+            dim: int | tuple[int, ...] | None = ...) -> None:
         ...
 
     def __init__(
@@ -525,7 +530,7 @@ class Normalise(BaseTransform):
             dim: int | tuple[int, ...] | None = None,
             offset: ndarray | None = None,
             scale: ndarray | None = None,
-            data: ArrayLike | None = None):
+            data: ArrayLike | None = None) -> None:
         """
         Parameters
         ----------
@@ -626,7 +631,7 @@ class NumpyTensor(BaseTransform):
     backward_grad(x, uncertainty) -> ArrayLike
         Backwards pass to invert the transformation and uncertainty propagation
     """
-    def __init__(self, dtype: torch.dtype = torch.float32):
+    def __init__(self, dtype: torch.dtype = torch.float32) -> None:
         """
         Parameters
         ----------

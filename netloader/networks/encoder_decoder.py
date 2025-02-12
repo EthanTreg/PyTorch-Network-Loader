@@ -67,7 +67,9 @@ class Autoencoder(BaseNetwork):
             description: str = '',
             verbose: str = 'epoch',
             transform: BaseTransform | None = None,
-            latent_transform: BaseTransform | None = None):
+            latent_transform: BaseTransform | None = None,
+            optimiser_kwargs: dict[str, Any] | None = None,
+            scheduler_kwargs: dict[str, Any] | None = None) -> None:
         """
         Parameters
         ----------
@@ -80,7 +82,7 @@ class Autoencoder(BaseNetwork):
         mix_precision: bool, default = False
             If mixed precision should be used
         learning_rate : float, default = 1e-3
-            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
+            Optimiser initial learning rate
         description : str, default = ''
             Description of the network training
         verbose : {'full', 'progress', None}
@@ -90,6 +92,10 @@ class Autoencoder(BaseNetwork):
             Transformation applied to the input data
         latent_transform : BaseTransform, default = None
             Transformation applied to the latent space
+        optimiser_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_optimiser
+        scheduler_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_scheduler
         """
         super().__init__(
             save_num,
@@ -101,6 +107,8 @@ class Autoencoder(BaseNetwork):
             verbose=verbose,
             transform=transform,
             in_transform=transform,
+            optimiser_kwargs=optimiser_kwargs,
+            scheduler_kwargs=scheduler_kwargs,
         )
         self.reconstruct_loss: float = 1
         self.latent_loss: float = 1e-2
@@ -195,6 +203,14 @@ class Autoencoder(BaseNetwork):
         )
 
     def extra_repr(self) -> str:
+        """
+        Displays architecture parameters when printing the network
+
+        Returns
+        -------
+        str
+            Architecture parameters
+        """
         return (f'reconstruct_weight: {self.reconstruct_loss}, '
                 f'latent_weight: {self.latent_loss}, '
                 f'bound_weight: {self.bound_loss}, '
@@ -244,7 +260,9 @@ class Decoder(BaseNetwork):
             description: str = '',
             verbose: str = 'epoch',
             transform: BaseTransform | None = None,
-            in_transform: BaseTransform | None = None):
+            in_transform: BaseTransform | None = None,
+            optimiser_kwargs: dict[str, Any] | None = None,
+            scheduler_kwargs: dict[str, Any] | None = None) -> None:
         """
         Parameters
         ----------
@@ -267,6 +285,10 @@ class Decoder(BaseNetwork):
             Transformation of the network's output
         in_transform : BaseTransform, default = None
             Transformation for the input data
+        optimiser_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_optimiser
+        scheduler_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_scheduler
         """
         super().__init__(
             save_num,
@@ -278,6 +300,8 @@ class Decoder(BaseNetwork):
             verbose=verbose,
             transform=transform,
             in_transform=in_transform,
+            optimiser_kwargs=optimiser_kwargs,
+            scheduler_kwargs=scheduler_kwargs,
         )
         self.loss_func: BaseLoss = MSELoss()
 
@@ -331,6 +355,14 @@ class Decoder(BaseNetwork):
         return loss.item()
 
     def extra_repr(self) -> str:
+        """
+        Displays architecture parameters when printing the network
+
+        Returns
+        -------
+        str
+            Architecture parameters
+        """
         return f'loss_func: {self.loss_func}'
 
 
@@ -378,7 +410,9 @@ class Encoder(BaseNetwork):
             verbose: str = 'epoch',
             classes: Tensor | None = None,
             transform: BaseTransform | None = None,
-            in_transform: BaseTransform | None = None):
+            in_transform: BaseTransform | None = None,
+            optimiser_kwargs: dict[str, Any] | None = None,
+            scheduler_kwargs: dict[str, Any] | None = None) -> None:
         """
         Parameters
         ----------
@@ -403,6 +437,10 @@ class Encoder(BaseNetwork):
             Transformation of the low-dimensional data
         in_transform : BaseTransform, default = None
             Transformation for the input data
+        optimiser_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_optimiser
+        scheduler_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_scheduler
         """
         super().__init__(
             save_num,
@@ -414,6 +452,8 @@ class Encoder(BaseNetwork):
             verbose=verbose,
             transform=transform,
             in_transform=in_transform,
+            optimiser_kwargs=optimiser_kwargs,
+            scheduler_kwargs=scheduler_kwargs,
         )
         self._loss_func: MSELoss | CrossEntropyLoss
         self.classes: Tensor | None
@@ -496,4 +536,12 @@ class Encoder(BaseNetwork):
         return self
 
     def extra_repr(self) -> str:
+        """
+        Displays architecture parameters when printing the network
+
+        Returns
+        -------
+        str
+            Architecture parameters
+        """
         return f'loss_func: {self._loss_func}'

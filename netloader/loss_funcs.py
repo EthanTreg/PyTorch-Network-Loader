@@ -14,7 +14,7 @@ class BaseLoss(nn.Module):
     This class is used to add all loss function classes to the list of safe PyTorch classes when
     loading saved networks.
     """
-    def __init__(self, loss_func: Callable, *args: Any, **kwargs: Any):
+    def __init__(self, loss_func: Callable, *args: Any, **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -92,7 +92,7 @@ class MSELoss(BaseLoss):
     """
     Mean Squared Error (MSE) loss function
     """
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -112,7 +112,7 @@ class CrossEntropyLoss(BaseLoss):
     """
     Cross entropy loss function
     """
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
         Parameters
         ----------

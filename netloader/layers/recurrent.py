@@ -38,7 +38,7 @@ class Recurrent(BaseLayer):
             mode: str = 'gru',
             activation: str | None = 'ELU',
             bidirectional: str | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -104,7 +104,7 @@ class Recurrent(BaseLayer):
 
         shapes.append(shape)
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         r"""
         Forward pass of the recurrent layer
 

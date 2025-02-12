@@ -85,7 +85,12 @@ class NormFlow(BaseNetwork):
         self._update(loss)
         return loss.item()
 
-    def predict(self, path: str | None = None, num: list[int] | None = None) -> dict[str, ndarray]:
+    def predict(
+            self,
+            *_: Any,
+            path: str | None = None,
+            num: list[int] | None = None,
+            **__: Any) -> dict[str, ndarray]:
         """
         Generates probability distributions for a dataset and can save to a file
 
@@ -170,7 +175,9 @@ class NormFlowEncoder(Encoder):
             learning_rate: tuple[float, float] = (1e-3,) * 2,
             classes: Tensor | None = None,
             transform: BaseTransform | None = None,
-            in_transform: BaseTransform | None = None):
+            in_transform: BaseTransform | None = None,
+            optimiser_kwargs: dict[str, Any] | None = None,
+            scheduler_kwargs: dict[str, Any] | None = None) -> None:
         """
         Parameters
         ----------
@@ -202,6 +209,10 @@ class NormFlowEncoder(Encoder):
             Unique classes of size C if using class classification
         in_transform : BaseTransform, default = None
             Transformation for the input data
+        optimiser_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_optimiser
+        scheduler_kwargs : dict[str, Any] | None, default = None
+            Optional keyword arguments to pass to set_scheduler
         """
         super().__init__(
             save_num,
@@ -214,6 +225,8 @@ class NormFlowEncoder(Encoder):
             classes=classes,
             transform=transform,
             in_transform=in_transform,
+            optimiser_kwargs=optimiser_kwargs,
+            scheduler_kwargs=scheduler_kwargs,
         )
         self._train_flow: bool
         self._train_encoder: bool
@@ -231,15 +244,22 @@ class NormFlowEncoder(Encoder):
             'meds': transform,
         }
 
-        if not self._train_flow:
-            self.net.net[-1].requires_grad_(False)
-
         if not self._train_encoder:
             self.net.net[:-1].requires_grad_(False)
 
-        if learning_rate:
-            self.set_optimiser(lr=learning_rate)
-            self.set_scheduler(factor=0.5, min_lr=min(learning_rate) * 1e-3)
+        if not self._train_flow:
+            self.net.net[-1].requires_grad_(False)
+
+        self.optimiser = self.set_optimiser([
+            {'encoder_params': self.net.net[:-1].parameters(), 'lr': learning_rate[0]},
+            {'flow_params': self.net.net[-1].parameters(), 'lr': learning_rate[1]},
+        ], **optimiser_kwargs or {})
+        self.scheduler = self.set_scheduler(self.optimiser, **scheduler_kwargs or {})
+
+        if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            self.scheduler.load_state_dict(
+                {'factor': 0.5, 'min_lr': min(learning_rate) * 1e-3} | (scheduler_kwargs or {}),
+            )
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
@@ -314,31 +334,14 @@ class NormFlowEncoder(Encoder):
             self._train_encoder = False
             self.net.net[:-1].requires_grad_(False)
 
-    def set_optimiser(self, lr: tuple[float, float], *args: Any, **kwargs: Any) -> None:
-        """
-        Sets the optimiser for the network
-
-        Parameters
-        ----------
-        lr : tuple[float, float]
-            Optimiser initial learning rate for encoder and normalizing flow
-        *args
-            Optional arguments to pass to the optimiser
-        **kwargs
-            Optional keyword arguments to pass to the optimiser
-        """
-        self.optimiser = optim.AdamW([
-            {'params': self.net.net[:-1].parameters(), 'lr': lr[0]},
-            {'params': self.net.net[-1].parameters(), 'lr': lr[1]},
-        ], *args, **kwargs)
-
     def predict(
             self,
             loader: DataLoader,
             input_: bool = False,
             bin_num: int = 100,
             path: str | None = None,
-            num: list[int] | None = None) -> dict[str, ndarray]:
+            num: list[int] | None = None,
+            **_: Any) -> dict[str, ndarray]:
         """
         Generates probability distributions for a dataset and can save to a file
 
@@ -391,7 +394,8 @@ class NormFlowEncoder(Encoder):
     def batch_predict(
             self,
             data: Tensor,
-            num: list[int] | None = None) -> tuple[ndarray | list[None], ndarray | list[None]]:
+            num: list[int] | None = None,
+            **_: Any) -> tuple[ndarray | list[None], ndarray | list[None]]:
         """
         Generates probability distributions for the data batch
 
@@ -432,6 +436,14 @@ class NormFlowEncoder(Encoder):
         return output, samples
 
     def extra_repr(self) -> str:
+        """
+        Displays architecture parameters when printing the network
+
+        Returns
+        -------
+        str
+            Architecture parameters
+        """
         return (f'{super().extra_repr()}, '
                 f'train_epochs: {self._epochs}, '
                 f'flow_weight: {self.flow_loss}, '

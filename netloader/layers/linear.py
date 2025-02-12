@@ -28,7 +28,7 @@ class Activation(BaseLayer):
             self,
             activation: str = 'ELU',
             shapes: list[list[int]] | None = None,
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -76,7 +76,7 @@ class Linear(BaseLayer):
             flatten_target: bool = False,
             dropout: float = 0,
             activation: str | None = 'SELU',
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -157,7 +157,7 @@ class OrderedBottleneck(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, shapes: list[list[int]], min_size: int = 0, **kwargs: Any):
+    def __init__(self, shapes: list[list[int]], min_size: int = 0, **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -172,7 +172,7 @@ class OrderedBottleneck(BaseLayer):
         self.min_size: int = min_size
         shapes.append(shapes[-1].copy())
 
-    def forward(self, x: Tensor, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the information-ordered bottleneck layer
 
@@ -224,7 +224,7 @@ class Sample(BaseLayer):
     forward(x, net) -> Tensor
         Forward pass of the sampling layer
     """
-    def __init__(self, idx: int, shapes: list[list[int]], **kwargs: Any):
+    def __init__(self, idx: int, shapes: list[list[int]], **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -248,7 +248,7 @@ class Sample(BaseLayer):
         shapes.append(shapes[-1].copy())
         shapes[-1][0] = shapes[-1][0] // 2
 
-    def forward(self, x: Tensor, net: Network, **_: Any) -> Tensor:
+    def forward(self, x: Tensor, net: Network, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the sampling layer for a variational autoencoder
 
@@ -303,7 +303,7 @@ class Upsample(BaseLayer):
             shape: list[int] | None = None,
             scale: float | tuple[float, ...] = 2,
             mode: str = 'nearest',
-            **kwargs: Any):
+            **kwargs: Any) -> None:
         """
         Parameters
         ----------
