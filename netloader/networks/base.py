@@ -226,6 +226,7 @@ class BaseNetwork:
                 DeprecationWarning,
                 stacklevel=2,
             )
+            self.transforms['inputs'] = state['in_transform']
 
         if isinstance(state['optimiser'], dict):
             self.optimiser.load_state_dict(state['optimiser'])

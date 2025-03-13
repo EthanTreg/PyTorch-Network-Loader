@@ -196,6 +196,60 @@ class BaseTransform:
         return ''
 
 
+class Index(BaseTransform):
+    """
+    Slices the input along a given dimension assuming the input meets the required shape
+
+    Methods
+    -------
+    forward(x) -> ArrayLike
+        Forward pass of the transformation
+    forward_grad(x, uncertainty) -> ArrayLike
+        Forward pass of the transformation and uncertainty propagation
+    extra_repr() -> str
+        Displays layer parameters when printing the transform
+    """
+    def __init__(self, dim: int, in_shape: tuple[int, ...], slice_: slice) -> None:
+        """
+        Parameters
+        ----------
+        dim : int
+            Dimension to slice over
+        in_shape : tuple[int, ...]
+            Target shape ignoring batch size so that the slice only occurs if the input has the
+            same shape to prevent repeated slicing
+        slice_ : slice
+            Slicing object
+        """
+        super().__init__()
+        self._shape: tuple[int, ...] = tuple(in_shape)
+        self._slice: list[slice] = [slice(None)] * len(self._shape)
+        self._slice[dim] = slice_
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {'in_shape': self._shape, 'slice': self._slice}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._shape = state['in_shape']
+        self._slice = state['slice']
+
+    def forward(self, x: ArrayLike) -> ArrayLike:
+        if x.shape[1:] != self._shape:
+            return super().forward(x)
+        return x[:, *self._slice]
+
+    def forward_grad(
+            self,
+            x: ArrayLike,
+            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+        if uncertainty.shape[1:] != self._shape:
+            return super().forward_grad(x, uncertainty)
+        return self(x), self(uncertainty)
+
+    def extra_repr(self) -> str:
+        return f'in_shape: {self._shape}, slice: {self._slice}'
+
+
 class Log(BaseTransform):
     """
     Logarithm transform
@@ -236,6 +290,8 @@ class Log(BaseTransform):
         except KeyError:
             self._base = state['_base']
             self._idxs = state['_idxs']
+            warn(f'{self.__class__.__name__} transform is saved in an old format and is '
+                 f'deprecated, please resave the transform', DeprecationWarning, stacklevel=2)
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         module: ModuleType = torch if isinstance(x, Tensor) else np
@@ -330,6 +386,8 @@ class MinClamp(BaseTransform):
         except KeyError:
             self._dim = state['_dim']
             self._idxs = state['_idxs']
+            warn(f'{self.__class__.__name__} transform is saved in an old format and is '
+                 f'deprecated, please resave the transform', DeprecationWarning, stacklevel=2)
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         kwargs: dict[str, Any]
@@ -671,3 +729,58 @@ class NumpyTensor(BaseTransform):
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
         return self(x, back=True), self(uncertainty, back=True)
+
+
+class Reshape(BaseTransform):
+    """
+    Reshapes the data
+
+    Methods
+    -------
+    forward(x) -> ArrayLike
+        Forward pass of the transformation
+    backward(x) -> ArrayLike
+        Backwards pass to invert the transformation
+    forward_grad(x, uncertainty) -> ArrayLike
+        Forward pass of the transformation and uncertainty propagation
+    backward_grad(x, uncertainty) -> ArrayLike
+        Backwards pass to invert the transformation and uncertainty propagation
+    extra_repr() -> str
+        Displays layer parameters when printing the transform
+    """
+    def __init__(self, in_shape: list[int], out_shape: list[int]) -> None:
+        super().__init__()
+        self._in_shape: list[int] = in_shape
+        self._out_shape: list[int] = out_shape
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {'in_shape': self._in_shape, 'out_shape': self._out_shape}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._in_shape = state['in_shape']
+        self._out_shape = state['out_shape']
+
+    def forward(self, x: ArrayLike) -> ArrayLike:
+        if isinstance(x, ndarray):
+            return x.reshape(len(x), *self._out_shape)
+        return x.view(len(x), *self._out_shape)
+
+    def backward(self, x: ArrayLike) -> ArrayLike:
+        if isinstance(x, ndarray):
+            return x.reshape(len(x), *self._in_shape)
+        return x.view(len(x), *self._in_shape)
+
+    def forward_grad(
+            self,
+            x: ArrayLike,
+            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+        return self(x), self(uncertainty)
+
+    def backward_grad(
+            self,
+            x: ArrayLike,
+            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+        return self(x, back=True), self(uncertainty, back=True)
+
+    def extra_repr(self) -> str:
+        return f'in_shape: {self._in_shape}, out_shape: {self._out_shape}'
