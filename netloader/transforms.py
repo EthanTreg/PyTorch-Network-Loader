@@ -209,20 +209,24 @@ class Index(BaseTransform):
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self, dim: int, in_shape: tuple[int, ...], slice_: slice) -> None:
+    def __init__(
+            self,
+            dim: int = -1,
+            in_shape: tuple[int, ...] | None = None,
+            slice_: slice = slice(None)) -> None:
         """
         Parameters
         ----------
-        dim : int
+        dim : int, default = -1
             Dimension to slice over
-        in_shape : tuple[int, ...]
+        in_shape : tuple[int, ...] | None, default = None
             Target shape ignoring batch size so that the slice only occurs if the input has the
             same shape to prevent repeated slicing
-        slice_ : slice
+        slice_ : slice, default = slice(None)
             Slicing object
         """
         super().__init__()
-        self._shape: tuple[int, ...] = tuple(in_shape)
+        self._shape: tuple[int, ...] | None = tuple(in_shape)
         self._slice: list[slice] = [slice(None)] * len(self._shape)
         self._slice[dim] = slice_
 
@@ -234,7 +238,7 @@ class Index(BaseTransform):
         self._slice = state['slice']
 
     def forward(self, x: ArrayLike) -> ArrayLike:
-        if x.shape[1:] != self._shape:
+        if self._shape is None or x.shape[1:] != self._shape:
             return super().forward(x)
         return x[:, *self._slice]
 
@@ -576,7 +580,7 @@ class Normalise(BaseTransform):
     @overload
     def __init__(
             self,
-            *
+            *,
             data: ArrayLike,
             mean: bool = ...,
             dim: int | tuple[int, ...] | None = ...) -> None:
@@ -748,10 +752,13 @@ class Reshape(BaseTransform):
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self, in_shape: list[int], out_shape: list[int]) -> None:
+    def __init__(
+            self,
+            in_shape: list[int] | None = None,
+            out_shape: list[int] | None = None) -> None:
         super().__init__()
-        self._in_shape: list[int] = in_shape
-        self._out_shape: list[int] = out_shape
+        self._in_shape: list[int] | None = in_shape
+        self._out_shape: list[int] | None = out_shape
 
     def __getstate__(self) -> dict[str, Any]:
         return {'in_shape': self._in_shape, 'out_shape': self._out_shape}
@@ -761,11 +768,15 @@ class Reshape(BaseTransform):
         self._out_shape = state['out_shape']
 
     def forward(self, x: ArrayLike) -> ArrayLike:
+        if self._out_shape is None:
+            return super().forward(x)
         if isinstance(x, ndarray):
             return x.reshape(len(x), *self._out_shape)
         return x.view(len(x), *self._out_shape)
 
     def backward(self, x: ArrayLike) -> ArrayLike:
+        if self._in_shape is None:
+            return super().backward(x)
         if isinstance(x, ndarray):
             return x.reshape(len(x), *self._in_shape)
         return x.view(len(x), *self._in_shape)
