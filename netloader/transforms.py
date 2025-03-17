@@ -226,8 +226,8 @@ class Index(BaseTransform):
             Slicing object
         """
         super().__init__()
-        self._shape: tuple[int, ...] | None = tuple(in_shape)
-        self._slice: list[slice] = [slice(None)] * len(self._shape)
+        self._shape: tuple[int, ...] = tuple(in_shape or ())
+        self._slice: list[slice] = [slice(None)] * (len(self._shape) or 1)
         self._slice[dim] = slice_
 
     def __getstate__(self) -> dict[str, Any]:
@@ -238,7 +238,7 @@ class Index(BaseTransform):
         self._slice = state['slice']
 
     def forward(self, x: ArrayLike) -> ArrayLike:
-        if self._shape is None or x.shape[1:] != self._shape:
+        if x.shape[1:] != self._shape:
             return super().forward(x)
         return x[:, *self._slice]
 
