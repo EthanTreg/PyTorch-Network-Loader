@@ -108,7 +108,7 @@ def main():
     ).to(device)
     net.training(1, (loader, loader))
     net = nets.load_net(1, states_dir, net.net.name).to(device)
-    net.training(2, (loader, loader))
+    net.training(10, (loader, loader))
     net.predict(loader)
 
     # Test architectures
