@@ -337,7 +337,7 @@ class NormFlowEncoder(Encoder):
     def predict(
             self,
             loader: DataLoader,
-            input_: bool = False,
+            inputs: bool = False,
             bin_num: int = 100,
             path: str | None = None,
             num: list[int] | None = None,
@@ -349,7 +349,7 @@ class NormFlowEncoder(Encoder):
         ----------
         loader : DataLoader
             Dataset to generate predictions for
-        input_ : bool, default = False,
+        inputs : bool, default = False,
             If the input data should be returned and saved
         bin_num : int, default = 100
             Number of bins for calculating the probability of the target and maximum of the
@@ -372,7 +372,7 @@ class NormFlowEncoder(Encoder):
         bins: ndarray
         prob: ndarray
 
-        data = super().predict(loader, input_=input_, num=num)
+        data = super().predict(loader, inputs=inputs, num=num)
 
         if data['distributions'] is None:
             self._save_predictions(path, data)

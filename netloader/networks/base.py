@@ -46,6 +46,8 @@ class BaseNetwork:
 
     Methods
     -------
+    get_device() -> device
+        Gets the device of the network
     set_optimiser(parameters, **kwargs) -> Optimizer
         Sets the optimiser for the network
     set_scheduler(optimiser, **kwargs) -> LRScheduler
@@ -478,6 +480,17 @@ class BaseNetwork:
         """
         return optim.lr_scheduler.ReduceLROnPlateau(optimiser, **kwargs)
 
+    def get_device(self) -> torch.device:
+        """
+        Gets the device of the network
+
+        Returns
+        -------
+        device
+            Device of the network
+        """
+        return self._device
+
     def train(self, train: bool) -> None:
         """
         Flips the train/eval state of the network
@@ -555,7 +568,7 @@ class BaseNetwork:
     def predict(
             self,
             loader: DataLoader,
-            input_: bool = False,
+            inputs: bool = False,
             path: str | None = None,
             **kwargs: Any) -> dict[str, ndarray]:
         """
@@ -565,7 +578,7 @@ class BaseNetwork:
         ----------
         loader : DataLoader
             Data loader to generate predictions for
-        input_ : bool, default = False,
+        inputs : bool, default = False,
             If the input data should be returned and saved
         path : str, default = None
             Path as CSV file to save the predictions if they should be saved
@@ -592,6 +605,14 @@ class BaseNetwork:
         transform: BaseTransform | None
         self.train(False)
 
+        if 'input_' in kwargs:
+            warn(
+                'input_ keyword argument is deprecated, please use inputs instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            inputs = kwargs.pop('input_')
+
         # Generate predictions
         with torch.no_grad(), torch.autocast(
                 enabled=self._half,
@@ -601,7 +622,7 @@ class BaseNetwork:
                 in_data, target = self._data_loader_translation(low_dim, high_dim)
                 data.append([
                     ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
-                    *([in_data.numpy()] if input_ else []),
+                    *([in_data.numpy()] if inputs else []),
                     target.numpy(),
                     *self.batch_predict(in_data.to(self._device), **kwargs),
                 ])
@@ -611,7 +632,7 @@ class BaseNetwork:
 
         # Transforms all data and saves it to a dictionary
         transforms = {key: value for key, value in self.transforms.items()
-                      if input_ or key != 'inputs'}
+                      if inputs or key != 'inputs'}
         data_ = {
             # Concatenate if there is no transform
             key: np.concat(value) if transform is None
