@@ -111,11 +111,9 @@ class Network(nn.Module):
             Dictionary containing the state of the network
         """
         return {
-            'checkpoints': self._checkpoints,
             'group': self.group,
             'layer_num': self.layer_num,
             'name': self.name,
-            'check_shapes': self.check_shapes,
             'shapes': self.shapes,
             'config': self.config,
             'net': self.cpu().state_dict(),
@@ -134,6 +132,7 @@ class Network(nn.Module):
         self.group = state['group']
         self.layer_num = state['layer_num']
         self.name = state['name']
+        self.checkpoints = []
         self.kl_loss = torch.tensor(0.)
 
         self._checkpoints, self.shapes, self.check_shapes, self.config, self.net = _create_network(
@@ -199,10 +198,16 @@ class Network(nn.Module):
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
+        i: int
+        checkpoint: Tensor
+        layer: BaseLayer
         self.kl_loss = self.kl_loss.to(*args, **kwargs)
 
         for layer in self.net:
             layer.to(*args, **kwargs)
+
+        for i, checkpoint in enumerate(self.checkpoints):
+            self.checkpoints[i] = checkpoint.to(*args, **kwargs)
 
         return self
 
