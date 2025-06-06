@@ -52,7 +52,7 @@ class Network(nn.Module):
             self,
             name: str,
             config: str | dict[str, Any],
-            in_shape: list[int] | list[list[int]],
+            in_shape: list[int] | list[list[int]] | tuple[int, ...],
             out_shape: list[int],
             suppress_warning: bool = False,
             defaults: dict[str, Any] | None = None) -> None:
@@ -63,7 +63,7 @@ class Network(nn.Module):
             Name of the network configuration file
         config : str | dict[str, Any]
             Path to the network config directory or configuration dictionary
-        in_shape : list[int] | list[list[int]],
+        in_shape : list[int] | list[list[int]] | tuple[int, ...]
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
             shape of the output tensor, excluding batch size
@@ -90,8 +90,8 @@ class Network(nn.Module):
         # Construct layers in network
         self._checkpoints, self.shapes, self.check_shapes, self.config, self.net = _create_network(
             os.path.join(config, self.name) if isinstance(config, str) else config,
-            in_shape,
-            out_shape,
+            list(in_shape),
+            list(out_shape),
             suppress_warning=suppress_warning,
             defaults=defaults,
         )

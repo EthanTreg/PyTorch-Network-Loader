@@ -167,6 +167,7 @@ class NormFlowEncoder(Encoder):
             save_num: int | str,
             states_dir: str,
             net: torch.nn.Module | Network,
+            overwrite: bool = False,
             mix_precision: bool = False,
             net_checkpoint: int | None = None,
             description: str = '',
@@ -187,6 +188,9 @@ class NormFlowEncoder(Encoder):
             Directory to save the network and flow
         net : nn.Module | Network
             normalizing flow to predict low-dimensional data distribution
+        overwrite : bool, default = False
+            If saving can overwrite an existing save file, if True and file with the same name
+            exists, an error will be raised
         mix_precision: bool, default = False
             If mixed precision should be used
         net_checkpoint : int, default = None
@@ -218,6 +222,7 @@ class NormFlowEncoder(Encoder):
             save_num,
             states_dir,
             net,
+            overwrite=overwrite,
             mix_precision=mix_precision,
             learning_rate=0,
             description=description,

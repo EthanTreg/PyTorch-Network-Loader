@@ -62,6 +62,7 @@ class Autoencoder(BaseNetwork):
             save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
+            overwrite: bool = False,
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
@@ -79,6 +80,9 @@ class Autoencoder(BaseNetwork):
             Directory to save the network
         net : Module | Network
             Network to predict low-dimensional data
+        overwrite : bool, default = False
+            If saving can overwrite an existing save file, if True and file with the same name
+            exists, an error will be raised
         mix_precision: bool, default = False
             If mixed precision should be used
         learning_rate : float, default = 1e-3
@@ -101,6 +105,7 @@ class Autoencoder(BaseNetwork):
             save_num,
             states_dir,
             net,
+            overwrite=overwrite,
             mix_precision=mix_precision,
             learning_rate=learning_rate,
             description=description,
@@ -255,6 +260,7 @@ class Decoder(BaseNetwork):
             save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
+            overwrite: bool = False,
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
@@ -272,6 +278,9 @@ class Decoder(BaseNetwork):
             Directory to save the network
         net : Module | Network
             Network to predict low-dimensional data
+        overwrite : bool, default = False
+            If saving can overwrite an existing save file, if True and file with the same name
+            exists, an error will be raised
         mix_precision: bool, default = False
             If mixed precision should be used
         learning_rate : float, default = 1e-3
@@ -294,6 +303,7 @@ class Decoder(BaseNetwork):
             save_num,
             states_dir,
             net,
+            overwrite=overwrite,
             mix_precision=mix_precision,
             learning_rate=learning_rate,
             description=description,
@@ -404,6 +414,7 @@ class Encoder(BaseNetwork):
             save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
+            overwrite: bool = False,
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
@@ -422,6 +433,9 @@ class Encoder(BaseNetwork):
             Directory to save the network
         net : nn.Module | Network
             Network to predict low-dimensional data
+        overwrite : bool, default = False
+            If saving can overwrite an existing save file, if True and file with the same name
+            exists, an error will be raised
         mix_precision: bool, default = False
             If mixed precision should be used
         learning_rate : float, default = 1e-3
@@ -446,6 +460,7 @@ class Encoder(BaseNetwork):
             save_num,
             states_dir,
             net,
+            overwrite=overwrite,
             mix_precision=mix_precision,
             learning_rate=learning_rate,
             description=description,

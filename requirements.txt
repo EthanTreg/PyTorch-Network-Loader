@@ -1,5 +1,7 @@
 zuko~=1.4.0
-numpy~=2.2.5
+numpy~=2.2.6
+jupyterlab~=4.4.3
+matplotlib~=3.10.3
 
 --find-links https://download.pytorch.org/whl/cu121; sys_platform == "Windows"
-torch~=2.6.0
+torch~=2.7.0

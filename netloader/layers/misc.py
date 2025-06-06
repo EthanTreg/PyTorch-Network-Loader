@@ -235,7 +235,7 @@ class DropPath(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(**({'idx': 0} | kwargs))
+        super().__init__(**{'idx': 0} | kwargs)
         self._prob: float = 1 - prob
 
         # If not used as a layer in a network
@@ -302,7 +302,7 @@ class Index(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(**({'idx': 0} | kwargs))
+        super().__init__(**{'idx': 0} | kwargs)
         self._greater: bool = greater
         self._number: int = number
 
@@ -387,7 +387,7 @@ class LayerNorm(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(**({'idx': 0} | kwargs))
+        super().__init__(**{'idx': 0} | kwargs)
         self._layer: nn.LayerNorm
 
         if not shape and dims and shapes:
@@ -466,7 +466,7 @@ class Reshape(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(**({'idx': 0} | kwargs))
+        super().__init__(**{'idx': 0} | kwargs)
         self._shape: list[int] = shape
         prod: int
         elm: int
@@ -580,7 +580,7 @@ class Scale(BaseLayer):
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
-        super().__init__(**({'idx': 0} | kwargs))
+        super().__init__(**{'idx': 0} | kwargs)
         self._first: bool = first
         self._scale: Tensor
         shape: list[int]

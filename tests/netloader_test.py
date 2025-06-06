@@ -4,34 +4,23 @@ Test to check that NetLoader is working properly
 import os
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+import numpy as np
 
 import netloader.networks as nets
 from netloader import transforms
 from netloader.network import Network
 from netloader.utils.utils import get_device
+from netloader.data import BaseDataset, loader_init
 
 
-class TestDataset(Dataset):
+class Dataset(BaseDataset):
     """
-    Fake dataset to test netloader.networks
+    Mock dataset with input values equal to target label
     """
-    def __init__(self, in_shape: list[int]):
-        self._in_shape: list[int] = in_shape
-        self.transform: transforms.BaseTransform | None = None
-
-    def __len__(self) -> int:
-        return 600
-
-    def __getitem__(self, item: int):
-        target: torch.Tensor = torch.randint(0, 10, size=(1, 1)).float()
-        in_tensor: torch.Tensor = (torch.ones(size=(1, *self._in_shape[1:])) *
-                                   target[..., None, None])
-
-        if self.transform:
-            target = self.transform(target)
-
-        return 0, target[0], in_tensor[0]
+    def __init__(self, samples: int, shape: list[int]) -> None:
+        super().__init__()
+        self.low_dim = np.random.random((samples, 1))
+        self.high_dim = np.ones((samples, *shape)) * self.low_dim[:, 0, *[np.newaxis] * len(shape)]
 
 
 def main():
@@ -71,9 +60,21 @@ def main():
         loss = torch.nn.MSELoss()(out_tensor, target)
         loss.backward()
 
+    # Initialise datasets
+    dataset = Dataset(1000, [1, 100, 100])
+    high_transform = transforms.MultiTransform(
+        transforms.Normalise(data=dataset.high_dim),
+        transforms.NumpyTensor(),
+    )
+    low_transform = transforms.MultiTransform(
+        transforms.Normalise(data=dataset.low_dim, mean=False),
+        transforms.NumpyTensor(),
+    )
+    dataset.high_dim = high_transform(dataset.high_dim)
+    dataset.low_dim = low_transform(dataset.low_dim)
+    loaders = loader_init(dataset, ratios=(0.8, 0.2))
+
     # Test Networks
-    dataset = TestDataset(in_shape)
-    loader = DataLoader(dataset, batch_size=60, shuffle=False)
     try:
         print(f'Testing {net_name} training...')
         net = nets.Encoder(
@@ -84,7 +85,7 @@ def main():
             verbose='full',
             classes=torch.arange(10),
         ).to(device)
-        net.training(1, (loader, loader))
+        net.training(1, loaders)
     except NameError:
         pass
 
@@ -96,20 +97,21 @@ def main():
         in_shape[1:],
         [1],
     ).to(device)
-    dataset.transform = transforms.Normalise(next(iter(loader))[1])
 
     net = nets.Encoder(
         1,
         states_dir,
         network,
+        overwrite=True,
         learning_rate=1e-4,
         verbose='epoch',
-        transform=dataset.transform,
+        transform=low_transform,
+        in_transform=high_transform,
     ).to(device)
-    net.training(1, (loader, loader))
+    net.training(1, loaders)
     net = nets.load_net(1, states_dir, net.net.name).to(device)
-    net.training(10, (loader, loader))
-    net.predict(loader)
+    net.training(10, loaders)
+    net.predict(loaders[1])
 
     # Test architectures
     network = Network(
@@ -122,14 +124,18 @@ def main():
         1,
         states_dir,
         network,
+        overwrite=True,
         learning_rate=1e-4,
         verbose='epoch',
-        in_transform=dataset.transform,
+        transform=low_transform,
+        in_transform=high_transform,
     ).to(device)
-    net.training(1, (loader, loader))
+    net.training(1, loaders)
     net = nets.load_net(1, states_dir, net.net.name)
-    net.training(2, (loader, loader))
-    net.predict(loader)
+    net.training(2, loaders)
+    net.predict(loaders[1])
+
+    print('TEST COMPLETE')
 
 
 if __name__ == '__main__':

@@ -238,7 +238,9 @@ class Index(BaseTransform):
         self._slice = state['slice']
 
     def forward(self, x: ArrayLike) -> ArrayLike:
-        if x.shape[1:] != self._shape:
+        idxs: ndarray = np.array(np.array(self._shape) != -1)
+
+        if np.array(np.array(x.shape[1:])[idxs] != np.array(self._shape)[idxs]).any():
             return super().forward(x)
         return x[:, *self._slice]
 
@@ -246,8 +248,6 @@ class Index(BaseTransform):
             self,
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
-        if uncertainty.shape[1:] != self._shape:
-            return super().forward_grad(x, uncertainty)
         return self(x), self(uncertainty)
 
     def extra_repr(self) -> str:

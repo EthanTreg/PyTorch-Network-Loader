@@ -46,12 +46,14 @@ class BaseNetwork:
 
     Methods
     -------
-    get_device() -> device
-        Gets the device of the network
     set_optimiser(parameters, **kwargs) -> Optimizer
         Sets the optimiser for the network
     set_scheduler(optimiser, **kwargs) -> LRScheduler
         Sets the scheduler for the network
+    get_device() -> device
+        Gets the device of the network
+    get_epochs() -> int
+        Returns the number of epochs the network has been trained for
     train(train)
         Flips the train/eval state of the network
     training(epoch, training)
@@ -72,6 +74,7 @@ class BaseNetwork:
             save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
+            overwrite: bool = False,
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
@@ -89,6 +92,9 @@ class BaseNetwork:
             Directory to save the network
         net : Module | Network
             Network to predict low-dimensional data
+        overwrite : bool, default = False
+            If saving can overwrite an existing save file, if True and file with the same name
+            exists, an error will be raised
         mix_precision: bool, default = False
             If mixed precision should be used
         learning_rate : float, default = 1e-3
@@ -138,9 +144,11 @@ class BaseNetwork:
         if save_num:
             self.save_path = save_name(save_num, states_dir, self.net.name)
 
-            if os.path.exists(self.save_path):
+            if os.path.exists(self.save_path) and overwrite:
                 log.getLogger(__name__).warning(f'{self.save_path} already exists and will be '
                                                 f'overwritten if training continues')
+            elif os.path.exists(self.save_path):
+                raise FileExistsError(f'{self.save_path} already exists and overwrite is False')
 
         self.optimiser = self.set_optimiser(
             self.net.parameters(),
@@ -490,6 +498,17 @@ class BaseNetwork:
             Device of the network
         """
         return self._device
+
+    def get_epochs(self) -> int:
+        """
+        Returns the number of epochs the network has been trained for
+
+        Returns
+        -------
+        int
+            Number of epochs
+        """
+        return self._epoch
 
     def train(self, train: bool) -> None:
         """
