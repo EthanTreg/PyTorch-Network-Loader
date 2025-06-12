@@ -58,17 +58,19 @@ class BaseTransform:
 
         Parameters
         ----------
-        x : (N,...) ArrayLike
-            Input array or tensor
+        x : ArrayLike
+            Input array or tensor of shape (N,...), where N is the number of elements
         back : bool, default = False
             If the inverse transformation should be applied
         uncertainty : ArrayLike, default = None
-            Corresponding uncertainties for the input data for uncertainty propagation
+            Corresponding uncertainties for the input data for uncertainty propagation of shape
+            (N,...)
 
         Returns
         -------
-        (N,...) ArrayLike | tuple[(N,...) ArrayLike, (N,...) ArrayLike]
-            Transformed array or tensor and propagated uncertainties if provided
+        ArrayLike | tuple[ArrayLike, ArrayLike]
+            Transformed array or tensor of shape (N,...) and propagated uncertainties of shape
+            (N,...)  if provided
         """
         if back and uncertainty is not None:
             return self.backward_grad(x, uncertainty)
@@ -116,13 +118,13 @@ class BaseTransform:
 
         Parameters
         ----------
-        x : (N,...) ArrayLike
-            Input array or tensor
+        x : ArrayLike
+            Input array or tensor of shape (N,...), where N is the number of elements
 
         Returns
         -------
-        (N,...) ArrayLike
-            Transformed array or tensor
+        ArrayLike
+            Transformed array or tensor of shape (N,...)
         """
         return x
 
@@ -132,13 +134,13 @@ class BaseTransform:
 
         Parameters
         ----------
-        x : (N,...) ArrayLike
-            Input array or tensor
+        x : ArrayLike
+            Input array or tensor of shape (N,...), where N is the number of elements
 
         Returns
         -------
-        (N,...) ArrayLike
-            Untransformed array or tensor
+        ArrayLike
+            Untransformed array or tensor of shape (N,...)
         """
         return x
 
@@ -151,15 +153,16 @@ class BaseTransform:
 
         Parameters
         ----------
-        x : (N,...) ArrayLike
-            Input array or tensor
-        uncertainty : (N,...) ArrayLike
-            Uncertainty of the input array or tensor
+        x : ArrayLike
+            Input array or tensor of shape (N,...), where N is the number of elements
+        uncertainty : ArrayLike
+            Uncertainty of the input array or tensor of shape (N,...)
 
         Returns
         -------
-        tuple[(N,...) ArrayLike, (N,...) ArrayLike]
-            Transformed array or tensor and transformed uncertainty
+        tuple[ArrayLike, ArrayLike]
+            Transformed array or tensor of shape (N,...) and transformed uncertainty of shape
+            (N,...)
         """
         return self(x), uncertainty
 
@@ -172,15 +175,16 @@ class BaseTransform:
 
         Parameters
         ----------
-        x : (N,...) ArrayLike
-            Input array or tensor
-        uncertainty : (N,...) ArrayLike
-            Uncertainty of the input array or tensor
+        x : ArrayLike
+            Input array or tensor of shape (N,...), where N is the number of elements
+        uncertainty : ArrayLike
+            Uncertainty of the input array or tensor of shape (N,...)
 
         Returns
         -------
-        (N,...) ArrayLike
-            Untransformed array or tensor and untransformed uncertainty
+        tuple[ArrayLike, ArrayLike]
+            Untransformed array or tensor of shape (N,...) and untransformed uncertainty of shape
+            (N,...)
         """
         return self(x, back=True), uncertainty
 
@@ -221,7 +225,8 @@ class Index(BaseTransform):
             Dimension to slice over
         in_shape : tuple[int, ...] | None, default = None
             Target shape ignoring batch size so that the slice only occurs if the input has the
-            same shape to prevent repeated slicing
+            same shape to prevent repeated slicing, if any dimension has a shape of -1, then the
+            size of the dimension will be ignored
         slice_ : slice, default = slice(None)
             Slicing object
         """
@@ -600,12 +605,12 @@ class Normalise(BaseTransform):
             If data should be normalised to zero mean and unit variance, or between 0 and 1
         dim : int | tuple[int, ...] | None, default = None
             Dimensions to normalise over, if None, all dimensions will be normalised over
-        offset : ndarray | None = None
+        offset : ndarray | None, default = None
             Offset to subtract from the data if data argument is None
-        scale : ndarray | None = None
+        scale : ndarray | None, default = None
             Scale to divide the data if data argument is None
-        data : (N,...) ArrayLike | None, default = None
-            Data to normalise
+        data : ArrayLike | None, default = None
+            Data to normalise with shape (N,...), where N is the number of elements
         """
         super().__init__()
         self.offset: ndarray
@@ -756,6 +761,14 @@ class Reshape(BaseTransform):
             self,
             in_shape: list[int] | None = None,
             out_shape: list[int] | None = None) -> None:
+        """
+        Parameters
+        ----------
+        in_shape : list[int] | None, default = None
+            Original shape of the data
+        out_shape : list[int] | None, default = None
+            Output shape of the data
+        """
         super().__init__()
         self._in_shape: list[int] | None = in_shape
         self._out_shape: list[int] | None = out_shape

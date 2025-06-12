@@ -37,8 +37,9 @@ class BaseNetwork:
         Network training and validation losses
     transforms : dict[str, BaseTransform | None], default = {...: None, ...}
         Keys for the output data from predict and corresponding transforms
-    idxs: (N) ndarray, default = None
-        Data indices for random training & validation datasets
+    idxs: ndarray, default = None
+        Data indices with shape (N), where N is the number of elements in the dataset for random
+        training & validation datasets
     optimiser : Optimizer | None, default = None
         Network optimiser, if learning rate is provided AdamW will be used
     scheduler : LRScheduler, default = None
@@ -47,9 +48,9 @@ class BaseNetwork:
     Methods
     -------
     set_optimiser(parameters, **kwargs) -> Optimizer
-        Sets the optimiser for the network
+        Sets the optimiser for the network, by default it is AdamW
     set_scheduler(optimiser, **kwargs) -> LRScheduler
-        Sets the scheduler for the network
+        Sets the scheduler for the network, by default it is ReduceLROnPlateau
     get_device() -> device
         Gets the device of the network
     get_epochs() -> int
@@ -60,9 +61,9 @@ class BaseNetwork:
         Trains & validates the network for each epoch
     save()
         If save_num is provided, saves the network to the states directory
-    predict(loader, path=None, **kwargs) -> dict[str, (N,...) ndarray]
+    predict(loader, path=None, **kwargs) -> dict[str, ndarray]
         Generates predictions for a dataset and can save to a file
-    batch_predict(data) -> tuple[(N,...) ndarray]
+    batch_predict(data) -> tuple[ndarray]
         Generates predictions for the given data batch
     to(*args, **kwargs) -> Self
         Move and/or cast the parameters and buffers

@@ -14,12 +14,12 @@ class BaseLoss(nn.Module):
     This class is used to add all loss function classes to the list of safe PyTorch classes when
     loading saved networks.
     """
-    def __init__(self, loss_func: Callable, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, loss_func: type, *args: Any, **kwargs: Any) -> None:
         """
         Parameters
         ----------
-        loss_func : Callable
-            Loss function to be used
+        loss_func : type
+            Loss function class to be used
 
         *args
             Optional arguments to be passed to loss_func
@@ -75,15 +75,16 @@ class BaseLoss(nn.Module):
 
         Parameters
         ----------
-        output : (N,...) Tensor
+        output : Tensor
+            Output from the network with shape (N,...), where N is the number of elements
             N predictions from the network
-        target : (N,...) Tensor
-            N target values
+        target : Tensor
+            Target values with shape (N,...)
 
         Returns
         -------
-        (1) Tensor
-            Mean squared error loss
+        Tensor
+            Loss value with shape (1)
         """
         return self._loss_func(output, target)
 

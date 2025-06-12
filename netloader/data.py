@@ -103,7 +103,7 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
         tuple[int, ndarray | Tensor, ndarray | Tensor, Any]
             Sample index, low dimensional data, high dimensional data, and extra data
         """
-        return self.idxs[idx], self.get_low_dim(idx), self.high_dim[idx], self.get_extra(idx)
+        return self.idxs[idx], self.get_low_dim(idx), self.get_high_dim(idx), self.get_extra(idx)
 
     def get_low_dim(self, idx: int) -> ndarray | Tensor:
         """
@@ -160,7 +160,7 @@ def loader_init(
         dataset: BaseDataset,
         batch_size: int = 64,
         ratios: tuple[float] = ...,
-        idxs: ndarray = None,
+        idxs: ndarray = ...,
         **kwargs: Any) -> tuple[DataLoader]: ...
 
 @overload
@@ -168,7 +168,7 @@ def loader_init(
         dataset: BaseDataset,
         batch_size: int = 64,
         ratios: tuple[float, float] = ...,
-        idxs: ndarray = None,
+        idxs: ndarray = ...,
         **kwargs: Any) -> tuple[DataLoader, DataLoader]: ...
 
 @overload
@@ -176,7 +176,7 @@ def loader_init(
         dataset: BaseDataset,
         batch_size: int = 64,
         ratios: tuple[float, float, float] = ...,
-        idxs: ndarray = None,
+        idxs: ndarray = ...,
         **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
 
 def loader_init(
