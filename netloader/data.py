@@ -279,10 +279,10 @@ def loader_init(
         if not np.isin(data_idxs, slice_).any():
             continue
 
-        data_idxs = np.delete(data_idxs, np.isin(data_idxs, slice_))
         loaders.append(DataLoader(
             Subset(dataset, data_idxs[np.isin(data_idxs, slice_)].tolist()),
             batch_size=batch_size,
             **{'shuffle': True} | kwargs,
         ))
+        data_idxs = np.delete(data_idxs, np.isin(data_idxs, slice_))
     return tuple(loaders)
