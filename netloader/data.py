@@ -138,7 +138,7 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
         assert isinstance(self.high_dim, (ndarray, Tensor))
         return self.high_dim[idx]
 
-    def get_extra(self, idx: int) -> ndarray | Tensor:
+    def get_extra(self, idx: int) -> Any:
         """
         Gets extra data for the sample of the given index
 
@@ -160,7 +160,15 @@ def loader_init(
         dataset: BaseDataset,
         batch_size: int = 64,
         ratios: tuple[float] = ...,
-        idxs: ndarray = ...,
+        idxs: None = ...,
+        **kwargs: Any) -> tuple[DataLoader]: ...
+
+@overload
+def loader_init(
+        dataset: BaseDataset,
+        batch_size: int = 64,
+        ratios: None = ...,
+        idxs: tuple[ndarray] = ...,
         **kwargs: Any) -> tuple[DataLoader]: ...
 
 @overload
@@ -168,7 +176,23 @@ def loader_init(
         dataset: BaseDataset,
         batch_size: int = 64,
         ratios: tuple[float, float] = ...,
-        idxs: ndarray = ...,
+        idxs: None = ...,
+        **kwargs: Any) -> tuple[DataLoader, DataLoader]: ...
+
+@overload
+def loader_init(
+        dataset: BaseDataset,
+        batch_size: int = 64,
+        ratios: tuple[float] = ...,
+        idxs: tuple[ndarray] = ...,
+        **kwargs: Any) -> tuple[DataLoader, DataLoader]: ...
+
+@overload
+def loader_init(
+        dataset: BaseDataset,
+        batch_size: int = 64,
+        ratios: None = ...,
+        idxs: tuple[ndarray, ndarray] = ...,
         **kwargs: Any) -> tuple[DataLoader, DataLoader]: ...
 
 @overload
@@ -176,14 +200,38 @@ def loader_init(
         dataset: BaseDataset,
         batch_size: int = 64,
         ratios: tuple[float, float, float] = ...,
-        idxs: ndarray = ...,
+        idxs: None = ...,
+        **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
+
+@overload
+def loader_init(
+        dataset: BaseDataset,
+        batch_size: int = 64,
+        ratios: tuple[float, float] = ...,
+        idxs: tuple[ndarray] = ...,
+        **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
+
+@overload
+def loader_init(
+        dataset: BaseDataset,
+        batch_size: int = 64,
+        ratios: tuple[float] = ...,
+        idxs: tuple[ndarray, ndarray] = ...,
+        **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
+
+@overload
+def loader_init(
+        dataset: BaseDataset,
+        batch_size: int = 64,
+        ratios: None = ...,
+        idxs: tuple[ndarray, ndarray, ndarray] = ...,
         **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
 
 def loader_init(
         dataset: Dataset,
         batch_size: int = 64,
         ratios: tuple[float, ...] | None = None,
-        idxs: ndarray | None = None,
+        idxs: tuple[ndarray, ...] | ndarray | None = None,
         **kwargs: Any) -> tuple[DataLoader, ...]:
     """
     Initialises data loaders from a subset of the dataset with the given ratios.
@@ -195,10 +243,11 @@ def loader_init(
     batch_size : int, default = 64
         Batch size when sampling from the data loaders
     ratios : tuple[float, ...] | None, default = (0.8, 0.2)
-        Ratios to split up the dataset into sub-datasets
-    idxs : ndarray | None, default = None
-        Dataset indexes for creating the subsets, if the length of idxs does not equal the length of
-        the dataset, then the unaccounted for indexes will be assigned to the last subset
+        Ratios of length M to split up the dataset into subsets, if idxs is provided, dataset will
+        first be split up using idxs and ratios will be used on the remaining samples
+    idxs : tuple[ndarray, ...] | ndarray | None, default = None
+        Dataset indexes for creating the subsets with shape (N,S), where N is the number of subsets
+        and S is the number of samples in each subset
 
     **kwargs : Any
         Optional keyword arguments to pass to DataLoader
@@ -206,31 +255,34 @@ def loader_init(
     Returns
     -------
     tuple[DataLoader, ...]
-        Data loaders for each subset given by the number of ratios
+        Data loaders for each subset of length N + M
     """
     num: int
-    current_num: int = 0
-    ratio: float
+    slice_: float | ndarray
     loaders: list[DataLoader] = []
+    data_idxs: ndarray = np.arange(len(dataset))
+    idxs = list(idxs) if isinstance(idxs, list) or np.ndim(idxs) > 1 else \
+        [] if idxs is None else [idxs]
+    ratios = ratios or (0.8, 0.2)
+    np.random.shuffle(data_idxs)
 
-    if ratios is None:
-        ratios = (0.8, 0.2)
+    if len(ratios) > len(idxs):
+        ratios = tuple(np.cumsum(np.array(ratios) / np.sum(ratios)))
+    else:
+        ratios = ()
 
-    ratios = tuple(np.array(ratios) / np.sum(ratios))
+    for slice_ in idxs + list(ratios):
+        if isinstance(slice_, float):
+            num = max(int(len(data_idxs) * slice_), 1)
+            slice_ = data_idxs[:num]
 
-    if idxs is None:
-        idxs = np.arange(len(dataset))
-        np.random.shuffle(idxs)
-    elif len(idxs) != len(dataset):
-        idxs = np.concat((idxs, np.arange(len(dataset))[~np.isin(np.arange(len(dataset)), idxs)]))
+        if not np.isin(data_idxs, slice_).any():
+            continue
 
-    for i, ratio in enumerate(ratios):
-        num = max(int(len(idxs) * ratio), 1)
+        data_idxs = np.delete(data_idxs, np.isin(data_idxs, slice_))
         loaders.append(DataLoader(
-            Subset(dataset, idxs[current_num:current_num + num if i != len(ratios) - 1 else None]),
+            Subset(dataset, data_idxs[np.isin(data_idxs, slice_)].tolist()),
             batch_size=batch_size,
             **{'shuffle': True} | kwargs,
         ))
-        current_num += num
-
     return tuple(loaders)
