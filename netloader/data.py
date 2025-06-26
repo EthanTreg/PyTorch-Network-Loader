@@ -230,8 +230,8 @@ def loader_init(
 def loader_init(
         dataset: Dataset,
         batch_size: int = 64,
-        ratios: tuple[float, ...] | None = None,
-        idxs: tuple[ndarray, ...] | ndarray | None = None,
+        ratios: list[float] | tuple[float, ...] | None = None,
+        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = None,
         **kwargs: Any) -> tuple[DataLoader, ...]:
     """
     Initialises data loaders from a subset of the dataset with the given ratios.
@@ -242,10 +242,10 @@ def loader_init(
         Dataset to create data loaders from
     batch_size : int, default = 64
         Batch size when sampling from the data loaders
-    ratios : tuple[float, ...] | None, default = (0.8, 0.2)
+    ratios : list[float] | tuple[float, ...] | None, default = (0.8, 0.2)
         Ratios of length M to split up the dataset into subsets, if idxs is provided, dataset will
         first be split up using idxs and ratios will be used on the remaining samples
-    idxs : tuple[ndarray, ...] | ndarray | None, default = None
+    idxs : tuple[ndarray, ...] | list[ndarray] | ndarray | None, default = None
         Dataset indexes for creating the subsets with shape (N,S), where N is the number of subsets
         and S is the number of samples in each subset
 
@@ -261,15 +261,10 @@ def loader_init(
     slice_: float | ndarray
     loaders: list[DataLoader] = []
     data_idxs: ndarray = np.arange(len(dataset))
-    idxs = list(idxs) if isinstance(idxs, list) or np.ndim(idxs) > 1 else \
+    idxs = list(idxs) if isinstance(idxs, (list, tuple)) or np.ndim(idxs) > 1 else \
         [] if idxs is None else [idxs]
-    ratios = ratios or (0.8, 0.2)
+    ratios = (0.8, 0.2) if ratios is None else list(np.cumsum(np.array(ratios) / np.sum(ratios)))
     np.random.shuffle(data_idxs)
-
-    if len(ratios) > len(idxs):
-        ratios = tuple(np.cumsum(np.array(ratios) / np.sum(ratios)))
-    else:
-        ratios = ()
 
     for slice_ in idxs + list(ratios):
         if isinstance(slice_, float):
