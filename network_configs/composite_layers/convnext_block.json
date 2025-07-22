@@ -21,21 +21,21 @@
       "kernel": 7,
       "stride": 1,
       "padding": 3,
-      "norm": "layer",
-      "activation": null
+      "activation": null,
+      "norm": "layer"
     },
     {
       "type": "Conv",
-      "kernel": 1,
-      "factor": 4,
       "layer": -1,
+      "factor": 4,
+      "kernel": 1,
       "padding": "same"
     },
     {
       "type": "Conv",
-      "kernel": 1,
-      "factor": 1,
       "layer": -2,
+      "factor": 1,
+      "kernel": 1,
       "padding": "same",
       "activation": null
     },

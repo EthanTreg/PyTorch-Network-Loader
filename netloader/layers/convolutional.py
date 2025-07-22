@@ -20,6 +20,9 @@ class Conv(BaseLayer):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """
@@ -154,6 +157,9 @@ class ConvDepth(Conv):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """
@@ -225,6 +231,9 @@ class ConvDepthDownscale(Conv):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """
@@ -275,6 +284,9 @@ class ConvDownscale(Conv):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """
@@ -340,6 +352,9 @@ class ConvTranspose(BaseLayer):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
 
@@ -517,6 +532,9 @@ class ConvTransposeUpscale(ConvTranspose):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """
@@ -591,6 +609,9 @@ class ConvUpscale(Conv):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """
@@ -673,6 +694,9 @@ class PixelShuffle(BaseLayer):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
 

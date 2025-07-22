@@ -18,7 +18,10 @@ class Checkpoint(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -84,7 +87,10 @@ class Concatenate(BaseMultiLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -211,9 +217,15 @@ class DropPath(BaseLayer):
     See `FractalNet: Ultra-Deep Neural Networks without Residuals
     <https://arxiv.org/abs/1605.07648>`_ by Larsson et al. (2016) for details.
 
+    Custom version of implementation by `timm
+    <https://github.com/pprp/timm/blob/master/timm/layers/drop.py#L157>`_.
+
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -223,7 +235,6 @@ class DropPath(BaseLayer):
     """
     def __init__(self, prob: float, shapes: list[list[int]] | None = None, **kwargs: Any) -> None:
         """
-
         Parameters
         ----------
         prob : float
@@ -236,7 +247,7 @@ class DropPath(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**{'idx': 0} | kwargs)
-        self._prob: float = 1 - prob
+        self._keep_prob: float = 1 - prob
 
         # If not used as a layer in a network
         if not shapes:
@@ -258,12 +269,26 @@ class DropPath(BaseLayer):
         (N,...) Tensor
             Output tensor
         """
-        if not self.training or self._prob <= 0:
+        if not self.training or self._keep_prob == 1:
             return x
 
-        mask: Tensor = x.new_empty(x.shape[0:1] + (1,) * (x.ndim - 1)).bernoulli_(self._prob)
-        mask.div_(self._prob)
+        mask: Tensor = x.new_empty(x.shape[0:1] + (1,) * (x.ndim - 1)).bernoulli_(self._keep_prob)
+
+        if self._keep_prob:
+            mask.div_(self._keep_prob)
+
         return x * mask
+
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network
+
+        Returns
+        -------
+        str
+            Layer parameters
+        """
+        return f'prob={1 - self._keep_prob}'
 
 
 class Index(BaseLayer):
@@ -272,7 +297,10 @@ class Index(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -357,7 +385,10 @@ class LayerNorm(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -428,7 +459,10 @@ class Reshape(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -549,7 +583,10 @@ class Scale(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -625,7 +662,10 @@ class Shortcut(BaseMultiLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -737,7 +777,10 @@ class Skip(BaseMultiLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods

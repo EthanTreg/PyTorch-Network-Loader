@@ -1,5 +1,5 @@
 """
-Collects all functions in the layers module
+Collects all classes in the layers module
 """
 from netloader.layers.linear import Activation, Linear, OrderedBottleneck, Sample, Upsample
 from netloader.layers.pooling import AdaptivePool, Pool, PoolDownscale

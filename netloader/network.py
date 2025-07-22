@@ -174,23 +174,22 @@ class Network(nn.Module):
         """
         self.checkpoints = []
         outputs: list[list[Tensor] | Tensor] = []
+        e: Exception
 
         if not self._checkpoints or any(isinstance(layer, layers.Unpack) for layer in self.net):
             outputs = [x]
 
-        for i, layer in enumerate(self.config['layers'][:self.layer_num]):
-            if 'group' in layer and layer['group'] != self.group:
+        for i, layer in enumerate(self.net):
+            if layer.group not in (0, self.group):
                 outputs.append(torch.tensor([]))
 
-                if layer['type'] == 'Checkpoint':
+                if isinstance(layer, layers.Checkpoint):
                     self.checkpoints.append(torch.tensor([]))
-                continue
 
             try:
-                x = self.net[i](x, outputs=outputs, checkpoints=self.checkpoints, net=self)
-            except RuntimeError:
-                log.getLogger(__name__).error(f"Error in {layer['type']} (layer {i})")
-                raise
+                x = layer(x, outputs=outputs, checkpoints=self.checkpoints, net=self)
+            except Exception as e:
+                raise type(e)(f'Error in {layer.__class__.__name__} (layer {i}):\n{e}') from e
 
             if not self._checkpoints:
                 outputs.append(x)

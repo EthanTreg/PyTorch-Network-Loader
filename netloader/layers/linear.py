@@ -21,7 +21,10 @@ class Activation(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -57,7 +60,10 @@ class Linear(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -145,7 +151,10 @@ class OrderedBottleneck(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
     min_size : int, default = 0
         Minimum gate size
@@ -214,7 +223,10 @@ class Sample(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
     sample_layer : Normal
         Layer to sample values from a Gaussian distribution
@@ -288,7 +300,10 @@ class Upsample(BaseLayer):
 
     Attributes
     ----------
-    layers : list[Module] | Sequential
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : Sequential
         Layers to loop through in the forward pass
 
     Methods

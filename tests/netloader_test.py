@@ -7,8 +7,8 @@ import torch
 import numpy as np
 
 import netloader.networks as nets
-from netloader import transforms
 from netloader.network import Network
+from netloader import transforms, models
 from netloader.utils.utils import get_device
 from netloader.data import BaseDataset, loader_init
 
@@ -89,15 +89,14 @@ def main():
     except NameError:
         pass
 
-    # Test training
-    print('Testing Network training...')
+    # Test Encoder training
+    print('Testing Encoder training...')
     network = Network(
         'test_encoder',
         '../network_configs/',
         in_shape[1:],
         [1],
     ).to(device)
-
     net = nets.Encoder(
         1,
         states_dir,
@@ -108,12 +107,13 @@ def main():
         transform=low_transform,
         in_transform=high_transform,
     ).to(device)
-    net.training(1, loaders)
+    net.training(4, loaders)
     net = nets.load_net(1, states_dir, net.net.name).to(device)
     net.training(10, loaders)
     net.predict(loaders[1])
 
-    # Test architectures
+    # Test Decoder training
+    print('Testing Decoder training...')
     network = Network(
         'test_decoder',
         '../network_configs/',
@@ -130,9 +130,27 @@ def main():
         transform=low_transform,
         in_transform=high_transform,
     ).to(device)
-    net.training(1, loaders)
-    net = nets.load_net(1, states_dir, net.net.name)
     net.training(2, loaders)
+    net = nets.load_net(1, states_dir, net.net.name)
+    net.training(4, loaders)
+    net.predict(loaders[1])
+
+    # Test ConvNeXt training
+    print('Testing ConvNeXt training...')
+    network = models.ConvNeXtTiny('test_convnext', in_shape[1:], [1])
+    net = nets.Encoder(
+        1,
+        states_dir,
+        network,
+        overwrite=True,
+        learning_rate=1e-4,
+        verbose='epoch',
+        transform=low_transform,
+        in_transform=high_transform,
+    ).to(device)
+    net.training(2, loaders)
+    net = nets.load_net(1, states_dir, net.net.name).to(device)
+    net.training(4, loaders)
     net.predict(loaders[1])
 
     print('TEST COMPLETE')

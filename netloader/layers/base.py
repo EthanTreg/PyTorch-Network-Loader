@@ -16,6 +16,9 @@ class BaseLayer(nn.Module):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers part of the parent layer to loop through in the forward pass
 
@@ -27,17 +30,21 @@ class BaseLayer(nn.Module):
     forward(x, **_) -> Tensor
         Forward pass for a generic layer
     """
-    def __init__(self, idx: int, **kwargs: Any) -> None:
+    def __init__(self, idx: int = 0, group: int = 0, **kwargs: Any) -> None:
         """
         Parameters
         ----------
         idx : int
             Layer number
+        group : int, default = 0
+            Which group the layer belongs to, if 0 it will always be used, else it will only be used
+            if the Network group matches the layer's group
 
         **kwargs
             Leftover parameters for checking if they are valid
         """
         super().__init__()
+        self.group: int = group
         self._device: torch.device = torch.device('cpu')
         self.layers: nn.Sequential = nn.Sequential()
         supported_params: list[str] = [
@@ -46,7 +53,6 @@ class BaseLayer(nn.Module):
             'shapes',
             'check_shapes',
             'type',
-            'group',
         ]
 
         if kwargs:
@@ -172,6 +178,9 @@ class BaseMultiLayer(BaseLayer):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers part of the parent layer to loop through in the forward pass
 

@@ -16,6 +16,9 @@ class AdaptivePool(BaseLayer):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
 
@@ -54,7 +57,7 @@ class AdaptivePool(BaseLayer):
         adapt_pool: Type[nn.Module]
 
         self._check_shape(shapes[-1])
-        self._check_adapt_pool(shapes[-1], shape)
+        shape = self._check_adapt_pool(shapes[-1], shape)
 
         adapt_pool = [
             [nn.AdaptiveMaxPool1d, nn.AdaptiveAvgPool1d],
@@ -129,6 +132,9 @@ class Pool(BaseLayer):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """
@@ -239,6 +245,9 @@ class PoolDownscale(Pool):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
     """

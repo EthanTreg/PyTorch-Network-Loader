@@ -17,6 +17,9 @@ class Recurrent(BaseLayer):
 
     Attributes
     ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
     layers : Sequential
         Layers to loop through in the forward pass
 
