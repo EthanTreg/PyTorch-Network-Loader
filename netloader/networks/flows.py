@@ -256,8 +256,8 @@ class NormFlowEncoder(Encoder):
             self.net.net[-1].requires_grad_(False)
 
         self.optimiser = self.set_optimiser([
-            {'encoder_params': self.net.net[:-1].parameters(), 'lr': learning_rate[0]},
-            {'flow_params': self.net.net[-1].parameters(), 'lr': learning_rate[1]},
+            {'params': self.net.net[:-1].parameters(), 'lr': learning_rate[0]},
+            {'params': self.net.net[-1].parameters(), 'lr': learning_rate[1]},
         ], **optimiser_kwargs or {})
         self.scheduler = self.set_scheduler(self.optimiser, **scheduler_kwargs or {})
 

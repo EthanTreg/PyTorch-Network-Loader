@@ -489,6 +489,21 @@ class ConvNeXtXLarge(ConvNeXt):
             out_shape: list[int],
             max_drop_path: float = 0,
             layer_scale: float = 1e-6) -> None:
+        """
+        Parameters
+        ----------
+        name : str
+            Name of the network configuration file
+        in_shape : list[int] | list[list[int]] | tuple[int, ...]
+            Shape of the input tensor(s), excluding batch size
+        out_shape : list[int]
+            shape of the output tensor, excluding batch size
+        max_drop_path : float, default = 0
+            Maximum drop path fraction
+        layer_scale : float, default = 1e-6
+            Default value for learnable parameters to scale the convolutional filters in a ConvNeXt
+            block
+        """
         super().__init__(
             name,
             in_shape,

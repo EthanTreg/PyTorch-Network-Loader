@@ -14,6 +14,7 @@ from torch import nn, optim, Tensor
 from torch.utils.data import DataLoader
 from numpy import ndarray
 
+import netloader
 from netloader.network import Network
 from netloader.transforms import BaseTransform
 from netloader.utils.utils import save_name, progress_bar
@@ -121,6 +122,7 @@ class BaseNetwork:
         self._device: torch.device = torch.device('cpu')
         self.save_path: str = ''
         self.description: str = description
+        self.version: str = netloader.__version__
         self.losses: tuple[list[float], list[float]] = ([], [])
         self.transforms: dict[str, BaseTransform | None] = {
             'ids': None,
@@ -177,6 +179,7 @@ class BaseNetwork:
         """
         return (f'Architecture: {self.__class__.__name__}\n'
                 f'Description: {self.description}\n'
+                f'Version: {self.version}\n'
                 f'Network: {self.net.name}\n'
                 f'Epoch: {self._epoch}\n'
                 f'Optimiser: {self.optimiser.__class__.__name__}\n'
@@ -199,6 +202,7 @@ class BaseNetwork:
             'verbose': self._verbose,
             'save_path': self.save_path,
             'description': self.description,
+            'version': netloader.__version__,
             'losses': self.losses,
             'transforms': self.transforms,
             'idxs': None if self.idxs is None else self.idxs.tolist(),
@@ -219,6 +223,7 @@ class BaseNetwork:
         self._train_state = True
         self._half = state['half']
         self._epoch = state['epoch']
+        self.version = state['version']
         self._verbose = state['verbose']
         self._device = torch.device('cpu')
         self.save_path = state['save_path']

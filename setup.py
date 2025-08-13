@@ -13,7 +13,13 @@ setup(
     author='Ethan Tregidga',
     author_email='ethan.tregidga@epfl.ch',
     license='MIT',
-    packages=['netloader', 'netloader.layers', 'netloader.utils', 'netloader.networks'],
+    packages=[
+        'netloader',
+        'netloader.layers',
+        'netloader.utils',
+        'netloader.networks',
+        'netloader.models',
+    ],
     install_requires=['numpy', 'torch'],
     extras_require={
         'flows': ['zuko']
