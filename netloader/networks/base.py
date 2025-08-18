@@ -15,9 +15,9 @@ from torch.utils.data import DataLoader
 from numpy import ndarray
 
 import netloader
+from netloader.utils import utils
 from netloader.network import Network
 from netloader.transforms import BaseTransform
-from netloader.utils.utils import save_name, progress_bar
 
 Param = dict[Any, Union[torch.Tensor, 'Param']]
 
@@ -116,14 +116,18 @@ class BaseNetwork:
             Optional keyword arguments to pass to set_scheduler
         """
         self._train_state: bool = True
+        self._plot_active: bool = False
         self._half: bool = mix_precision
         self._epoch: int = 0
         self._verbose: str = verbose
+        self._optimiser_kwargs: dict[str, Any] = optimiser_kwargs or {}
+        self._scheduler_kwargs: dict[str, Any] = scheduler_kwargs or {}
         self._device: torch.device = torch.device('cpu')
         self.save_path: str = ''
         self.description: str = description
         self.version: str = netloader.__version__
-        self.losses: tuple[list[float], list[float]] = ([], [])
+        self.losses: (tuple[list[float], list[float]] |
+                      tuple[list[dict[str, float]], list[dict[str, float]]]) = ([], [])
         self.transforms: dict[str, BaseTransform | None] = {
             'ids': None,
             'inputs': in_transform,
@@ -145,7 +149,7 @@ class BaseNetwork:
             self.net.name = type(self.net).__name__
 
         if save_num:
-            self.save_path = save_name(save_num, states_dir, self.net.name)
+            self.save_path = utils.save_name(save_num, states_dir, self.net.name)
 
             if os.path.exists(self.save_path) and overwrite:
                 log.getLogger(__name__).warning(f'{self.save_path} already exists and will be '
@@ -156,14 +160,14 @@ class BaseNetwork:
         self.optimiser = self.set_optimiser(
             self.net.parameters(),
             lr=learning_rate,
-            **optimiser_kwargs or {},
+            **self._optimiser_kwargs,
         )
-        self.scheduler = self.set_scheduler(self.optimiser, **scheduler_kwargs or {})
+        self.scheduler = self.set_scheduler(self.optimiser, **self._scheduler_kwargs)
 
         if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-            self.scheduler.load_state_dict(
-                {'factor': 0.5, 'min_lr': learning_rate * 1e-3} | (scheduler_kwargs or {}),
-            )
+            self._scheduler_kwargs = ({'factor': 0.5, 'min_lr': learning_rate * 1e-3}
+                                      | self._scheduler_kwargs)
+            self.scheduler.load_state_dict(self._scheduler_kwargs)
 
         # Adds all network classes to list of safe PyTorch classes when loading saved networks
         torch.serialization.add_safe_globals([self.__class__])
@@ -204,6 +208,8 @@ class BaseNetwork:
             'description': self.description,
             'version': netloader.__version__,
             'losses': self.losses,
+            'optimiser_kwargs': self._optimiser_kwargs,
+            'scheduler_kwargs': self._scheduler_kwargs,
             'transforms': self.transforms,
             'idxs': None if self.idxs is None else self.idxs.tolist(),
             'optimiser': self.optimiser.state_dict(),
@@ -221,19 +227,28 @@ class BaseNetwork:
             Dictionary containing the state of the network
         """
         self._train_state = True
+        self._plot_active = False
         self._half = state['half']
         self._epoch = state['epoch']
-        self.version = state['version']
+        self.version = state['version'] if 'version' in state else '<3.7.1'
         self._verbose = state['verbose']
         self._device = torch.device('cpu')
         self.save_path = state['save_path']
         self.description = state['description']
         self.losses = state['losses']
+        self._optimiser_kwargs = state['optimiser_kwargs'] if 'optimiser_kwargs' in state else {}
+        self._scheduler_kwargs = state['scheduler_kwargs'] if 'scheduler_kwargs' in state else {}
         self.transforms = state['transforms'] if 'transforms' in state else state['header']
         self.idxs = state['idxs'] if state['idxs'] is None else np.array(state['idxs'])
         self.net = state['net']
-        self.optimiser = self.set_optimiser(self.net.parameters())
-        self.scheduler = self.set_scheduler(self.optimiser)
+        self.optimiser = self.set_optimiser(
+            self.net.parameters(),
+            **state['optimiser_kwargs'] if 'optimiser_kwargs' in state else {},
+        )
+        self.scheduler = self.set_scheduler(
+            self.optimiser,
+            **state['scheduler_kwargs'] if 'scheduler_kwargs' in state else {},
+        )
 
         if 'header' in state:
             warn(
@@ -257,26 +272,112 @@ class BaseNetwork:
             self.optimiser = state['optimiser']
             self.scheduler = state['scheduler']
 
-    def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
+    @staticmethod
+    def _data_loader_translation(low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
         """
         Takes the low and high dimensional tensors from the data loader, and orders them as inputs
         and targets for the network
 
         Parameters
         ----------
-        low_dim : (N,...) Tensor
-            Low dimensional tensor from the data loader for N data
-        high_dim : (N,...) Tensor
-            High dimensional tensor from the data loader for N data
+        low_dim : Tensor
+            Low dimensional data from the data loader of shape (N,...) and type float, where N is
+            the number of elements
+        high_dim : Tensor
+            High dimensional data from the data loader of shape (N,...) and type float
 
         Returns
         -------
-        tuple[(N,...) Tensor, (N,...) Tensor]
-            Input and output target tensors for N data
+        tuple[Tensor, Tensor]
+            Input and output target tensors of shape (N,...) and type float
         """
         return high_dim, low_dim
 
-    def _train_val(self, loader: DataLoader) -> float:
+    def _batch_print(
+            self,
+            i: int,
+            batch_time: float,
+            loss: float | dict[str, float],
+            loader: DataLoader) -> None:
+        """
+        Print function during each batch of training
+
+        Parameters
+        ----------
+        i : int
+            Batch number
+        batch_time : float
+            Time taken for the batch
+        loss : float | dict[str, float]
+            Loss for the batch or a dictionary of losses
+        loader: DataLoader
+            Data loader that is being used for training
+        """
+        if self._verbose == 'full':
+            loss = sum(loss.values()) if isinstance(loss, dict) else loss
+            utils.progress_bar(
+                i,
+                len(loader),
+                text=f'Average loss: {loss / (i + 1):.2e}\tTime: {batch_time:.1f}',
+            )
+
+    def _epoch_print(
+            self,
+            i: int,
+            epochs: int,
+            epoch_time: float) -> None:
+        """
+        Print function at the end of each epoch
+
+        Parameters
+        ----------
+        i : int
+            Current epoch number
+        epochs : int
+            Total number of epochs
+        epoch_time : float
+            Time taken for the epoch
+        """
+        text: str = f'Epoch [{self._epoch}/{epochs}]\t' \
+                    f'Training loss: {self.losses[0][-1]:.3e}\t' \
+                    f'Validation loss: {self.losses[1][-1]:.3e}\t' \
+                    f'Time: {epoch_time:.1f}'
+
+        if (self._verbose in {'full', 'epoch'} or
+                (len(self.losses[0]) == 1 and self._verbose == 'plot')):
+            print(text)
+        elif self._verbose == 'progress':
+            utils.progress_bar(i, epochs, text=text)
+        elif self._verbose == 'plot':
+            utils.ascii_plot(
+                self.losses[0],
+                clear=self._plot_active,
+                text=text,
+                data2=self.losses[1],
+            )
+            self._plot_active = True
+
+    def _predict_print(self, i: int, predict_time: float, loader: DataLoader) -> None:
+        """
+        Print function during each batch of training
+
+        Parameters
+        ----------
+        i : int
+            Batch number
+        predict_time : float
+            Time taken for predicting
+        loader: DataLoader
+            Data loader that is being used for predicting
+        """
+        if self._verbose == 'full':
+            utils.progress_bar(i, len(loader))
+
+        if i == len(loader) - 1 and self._verbose is not None:
+            print(f'Prediction time: {predict_time:.3e} s')
+
+
+    def _train_val(self, loader: DataLoader) -> float | dict[str, float]:
         """
         Trains the network for one epoch
 
@@ -287,11 +388,15 @@ class BaseNetwork:
 
         Returns
         -------
-        float
-            Average loss value
+        float | dict[str, float]
+            Average loss value or dictionary of average loss values for the epoch
         """
+        i: int
+        value: float
         t_initial: float
-        loss: float = 0
+        batch_loss: float | dict[str, float]
+        loss: float | dict[str, float] = 0
+        key: str
         low_dim: Tensor
         high_dim: Tensor
 
@@ -303,35 +408,66 @@ class BaseNetwork:
                 t_initial = time()
                 low_dim = low_dim.to(self._device)
                 high_dim = high_dim.to(self._device)
-                loss += self._loss(*self._data_loader_translation(low_dim, high_dim))
-                self._update_scheduler(epoch=self._epoch + (i + 1) / len(loader))
+                batch_loss = self._loss(*self._data_loader_translation(low_dim, high_dim))
 
-                if self._verbose == 'full':
-                    progress_bar(
-                        i,
-                        len(loader),
-                        text=f'Average loss: {loss / (i + 1):.2e}\tTime: {time() - t_initial:.1f}',
-                    )
+                if isinstance(batch_loss, dict) and isinstance(loss, float):
+                    loss = batch_loss
+                elif isinstance(batch_loss, dict):
+                    for key, value in batch_loss.items():
+                        loss[key] += value
+                else:
+                    loss += batch_loss
 
+                if self._train_state:
+                    self._update_scheduler(epoch=self._epoch + (i + 1) / len(loader))
+
+                self._batch_print(i, time() - t_initial, batch_loss, loader)
+
+        if isinstance(loss, dict):
+            return {key: value / len(loader) for key, value in loss.items()}
         return loss / len(loader)
 
-    def _loss(self, in_data: Tensor, target: Tensor) -> float:
+    def _loss_func(self, in_data: Tensor, target: Tensor) -> dict[str, Tensor] | Tensor:
         """
         Empty method for child classes to base their loss functions on
 
         Parameters
         ----------
-        in_data : (N,...) Tensor
-            Input data of batch size N and the remaining dimensions depend on the network used
-        target : (N,...) Tensor
-            Target data of batch size N and the remaining dimensions depend on the network used
+        in_data : Tensor
+            Input data of shape (N,...) and type float, where N is the number of elements
+        target : Tensor
+            Target data of shape (N,...) and type float
+
+        Returns
+        -------
+        dict[str, Tensor] | Tensor
+            Loss of shape (1) and type float or dictionary of losses of shape (1) and type float
+        """
+        raise NotImplementedError
+
+    def _loss(self, in_data: Tensor, target: Tensor) -> float | dict[str, float]:
+        """
+        Returns the loss as a float
+
+        Parameters
+        ----------
+        in_data : Tensor
+            Input data of shape (N,...) and type float, where N is the number of elements
+        target : Tensor
+            Target data of shape (N,...) and type float
 
         Returns
         -------
         float
-            Loss
+            Loss or dictionary of losses which can be summed to get the total loss
         """
-        raise NotImplementedError
+        key: str
+        value: Tensor
+        loss: Tensor | dict[str, Tensor] = self._loss_func(in_data, target)
+
+        if isinstance(loss, dict):
+            return {key: value.item() for key, value in loss.items()}
+        return loss.item()
 
     def _param_device(self, params: Param, *args: Any, **kwargs: Any) -> None:
         r"""
@@ -444,8 +580,8 @@ class BaseNetwork:
         ----------
         path : str
             Path to save network predictions
-        data : dict[str, (N,...) ndarray]
-            Network predictions to save for dataset of size N
+        data : dict[str, ndarray]
+            Network predictions of shape (N,...) to save
         """
         if not path:
             return
@@ -543,6 +679,7 @@ class BaseNetwork:
         loaders : tuple[DataLoader, DataLoader]
             Train and validation data loaders
         """
+        i: int
         t_initial: float
         final_loss: float
 
@@ -562,23 +699,10 @@ class BaseNetwork:
             # Save training progress
             self._update_epoch()
             self.save()
-
-            if self._verbose in ('full', 'epoch'):
-                print(f'Epoch [{self._epoch}/{epochs}]\t'
-                      f'Training loss: {self.losses[0][-1]:.3e}\t'
-                      f'Validation loss: {self.losses[1][-1]:.3e}\t'
-                      f'Time: {time() - t_initial:.1f}')
-            elif self._verbose == 'progress':
-                progress_bar(
-                    i,
-                    epochs,
-                    text=f'Epoch [{self._epoch}/{epochs}]\t'
-                         f'Training loss: {self.losses[0][-1]:.3e}\t'
-                         f'Validation loss: {self.losses[1][-1]:.3e}\t'
-                         f'Time: {time() - t_initial:.1f}',
-                )
+            self._epoch_print(i, epochs, time() - t_initial)
 
         self.train(False)
+        self._plot_active = False
         final_loss = self._train_val(loaders[1])
         print(f'\nFinal validation loss: {final_loss:.3e}')
 
@@ -613,11 +737,10 @@ class BaseNetwork:
 
         Returns
         -------
-        dict[str, (N,...) ndarray]
-            Prediction IDs, optional inputs, target values, and predicted values for dataset of
-            size N
+        dict[str, ndarray]
+            Prediction IDs, optional inputs, target values, and predicted values of shape (N,...)
         """
-        initial_time: float = time()
+        t_initial: float = time()
         key: str
         ids: tuple[str, ...] | ndarray | Tensor
         data: list[list[ndarray]] = []
@@ -651,9 +774,7 @@ class BaseNetwork:
                     target.numpy(),
                     *self.batch_predict(in_data.to(self._device), **kwargs),
                 ])
-
-                if self._verbose == 'full':
-                    progress_bar(i, len(loader))
+                self._predict_print(i, time() - t_initial, loader)
 
         # Transforms all data and saves it to a dictionary
         transforms = {key: value for key, value in self.transforms.items()
@@ -672,10 +793,6 @@ class BaseNetwork:
             else transform(np.concat(value), back=True)
             for (key, transform), value in zip(transforms.items(), zip(*data))
         }
-
-        if self._verbose is not None:
-            print(f'Prediction time: {time() - initial_time:.3e} s')
-
         self._save_predictions(path, data_)
         return data_
 
@@ -685,13 +802,13 @@ class BaseNetwork:
 
         Parameters
         ----------
-        data : (N,...) Tensor
-            N data to generate predictions for
+        data : Tensor
+            Data of shape (N,...) and type float to generate predictions for
 
         Returns
         -------
-        tuple[(N,...) ndarray, ...]
-            N predictions for the given data
+        tuple[ndarray, ...]
+            Predictions of shape (N,...) and type float for the given data
         """
         return (self.net(data).detach().cpu().numpy(),)
 
@@ -783,7 +900,7 @@ def load_net(
         Saved network object
     """
     return torch.load(
-        save_name(num, states_dir, net_name),
+        utils.save_name(num, states_dir, net_name),
         map_location='cpu',
         weights_only=weights_only,
     )

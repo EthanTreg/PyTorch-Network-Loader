@@ -236,11 +236,21 @@ class Index(BaseTransform):
         self._slice[dim] = slice_
 
     def __getstate__(self) -> dict[str, Any]:
-        return {'in_shape': self._shape, 'slice': self._slice}
+        return {'in_shape': self._shape, 'slice': [(s.start, s.stop, s.step) for s in self._slice]}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self._shape = state['in_shape']
-        self._slice = state['slice']
+
+        if isinstance(state['slice'], slice):
+            warn(
+                f'{self.__class__.__name__} transform is saved in old non-weights safe '
+                'format and is deprecated, please resave the transform in the new format using '
+                'net.save()',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        else:
+            self._slice = [slice(*s) for s in state['slice']]
 
     def forward(self, x: ArrayLike) -> ArrayLike:
         idxs: ndarray = np.array(np.array(self._shape) != -1)
@@ -454,7 +464,7 @@ class MultiTransform(BaseTransform):
         """
         Parameters
         ----------
-        args : BaseTransform
+        *args : BaseTransform
             Transformations
         """
         super().__init__()
@@ -487,8 +497,9 @@ class MultiTransform(BaseTransform):
 
         if isinstance(state['transforms'][0], BaseTransform):
             warn(
-                'Transform is saved in old non-weights safe format and is deprecated, '
-                'please resave the transform in the new format using net.save()',
+                f'{self.__class__.__name__} transform is saved in old non-weights safe '
+                'format and is deprecated, please resave the transform in the new format using '
+                'net.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -543,6 +554,17 @@ class MultiTransform(BaseTransform):
         """
         self.transforms.append(transform)
 
+    def extend(self, *args: BaseTransform) -> None:
+        """
+        Extends the list of transforms with another list of transforms
+
+        Parameters
+        ----------
+        *args : BaseTransform
+            Transformations to extend MultiTransform transforms list
+        """
+        self.transforms.extend([*args])
+
     def extra_repr(self) -> str:
         transform_repr: str
         extra_repr: str = ''
@@ -586,7 +608,7 @@ class Normalise(BaseTransform):
     def __init__(
             self,
             *,
-            data: ArrayLike,
+            data: ndarray | Tensor,
             mean: bool = ...,
             dim: int | tuple[int, ...] | None = ...) -> None:
         ...
@@ -597,7 +619,7 @@ class Normalise(BaseTransform):
             dim: int | tuple[int, ...] | None = None,
             offset: ndarray | None = None,
             scale: ndarray | None = None,
-            data: ArrayLike | None = None) -> None:
+            data: ndarray | Tensor | None = None) -> None:
         """
         Parameters
         ----------
@@ -652,9 +674,9 @@ class Normalise(BaseTransform):
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
         if isinstance(uncertainty, Tensor):
-            uncertainty /= uncertainty.new_tensor(self.scale)
+            uncertainty = uncertainty / uncertainty.new_tensor(self.scale)
         else:
-            uncertainty /= self.scale
+            uncertainty = uncertainty / self.scale
         return self(x), uncertainty
 
     def backward_grad(
@@ -662,9 +684,9 @@ class Normalise(BaseTransform):
             x: ArrayLike,
             uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
         if isinstance(x, Tensor):
-            uncertainty *= uncertainty.new_tensor(self.scale)
+            uncertainty = uncertainty * uncertainty.new_tensor(self.scale)
         else:
-            uncertainty *= self.scale
+            uncertainty = uncertainty * self.scale
         return self(x, back=True), uncertainty
 
     def extra_repr(self) -> str:
@@ -717,26 +739,26 @@ class NumpyTensor(BaseTransform):
         except KeyError:
             self.dtype = torch.float32
 
-    def forward(self, x: ArrayLike) -> Tensor:
+    def forward(self, x: ndarray | Tensor) -> Tensor:
         if isinstance(x, ndarray):
             return torch.from_numpy(x).type(self.dtype)
         return x
 
-    def backward(self, x: ArrayLike) -> ndarray:
+    def backward(self, x: ndarray | Tensor) -> ndarray:
         if isinstance(x, Tensor):
             return x.detach().cpu().numpy()
         return x
 
     def forward_grad(
             self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+            x: ndarray | Tensor,
+            uncertainty: ndarray | Tensor) -> tuple[Tensor, Tensor]:
         return self(x), self(uncertainty)
 
     def backward_grad(
             self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+            x: ndarray | Tensor,
+            uncertainty: ndarray | Tensor) -> tuple[ndarray, ndarray]:
         return self(x, back=True), self(uncertainty, back=True)
 
 

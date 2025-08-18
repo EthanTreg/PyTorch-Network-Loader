@@ -32,10 +32,29 @@ def main():
     in_tensor = torch.empty(in_shape).to(device)
     target = torch.zeros([in_shape[0], 10]).to(device)
     networks = ['layer_examples', 'inceptionv4', 'convnext']
+    nets_dir = '../network_configs'
     states_dir = './model_states/'
 
     if not os.path.exists(states_dir):
         os.mkdir(states_dir)
+
+    print('Testing transforms...')
+    data = np.random.randn(5, 2, 10, 10)
+    transform = transforms.MultiTransform(
+        transforms.Index(dim=0, in_shape=(-1, 10, 10), slice_=slice(1)),
+        transforms.Reshape(in_shape=[1, 10, 10], out_shape=[10, 10]),
+    )
+    transform.extend(
+        transforms.Normalise(data=transform(data), mean=False),
+        transforms.MinClamp(),
+        transforms.Log(),
+        transforms.NumpyTensor(),
+    )
+    trans_data = transform(data, uncertainty=data)[0]
+    print(data.shape, trans_data.shape, transform(trans_data, back=True).shape)
+    blank_transform = transforms.MultiTransform(transforms.BaseTransform())
+    transforms.MultiTransform.__setstate__(blank_transform, transform.__getstate__())
+    assert (trans_data == blank_transform(data, uncertainty=data)[0]).all()
 
     for net_name in networks:
         print(f'Testing {net_name}...')
@@ -91,9 +110,11 @@ def main():
 
     # Test Encoder training
     print('Testing Encoder training...')
+    net = nets.load_net(1, states_dir, 'test_encoder')
+    net.training(net.get_epochs() + 1, loaders)
     network = Network(
         'test_encoder',
-        '../network_configs/',
+        nets_dir,
         in_shape[1:],
         [1],
     ).to(device)
@@ -103,7 +124,7 @@ def main():
         network,
         overwrite=True,
         learning_rate=1e-4,
-        verbose='epoch',
+        verbose='plot',
         transform=low_transform,
         in_transform=high_transform,
     ).to(device)
@@ -114,9 +135,11 @@ def main():
 
     # Test Decoder training
     print('Testing Decoder training...')
+    net = nets.load_net(1, states_dir, 'test_decoder')
+    net.training(net.get_epochs() + 1, loaders)
     network = Network(
         'test_decoder',
-        '../network_configs/',
+        nets_dir,
         [1],
         in_shape[1:],
     ).to(device)
@@ -137,14 +160,16 @@ def main():
 
     # Test ConvNeXt training
     print('Testing ConvNeXt training...')
-    network = models.ConvNeXtTiny('test_convnext', in_shape[1:], [1])
+    net = nets.load_net(1, states_dir, 'test_convnext')
+    net.training(net.get_epochs() + 1, loaders)
+    network = models.ConvNeXtTiny(in_shape[1:], [1])
     net = nets.Encoder(
         1,
         states_dir,
         network,
         overwrite=True,
         learning_rate=1e-4,
-        verbose='epoch',
+        verbose='full',
         transform=low_transform,
         in_transform=high_transform,
     ).to(device)

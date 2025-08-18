@@ -1,7 +1,7 @@
 """
 Base dataset classes for use with BaseNetwork
 """
-from typing import Any, overload
+from typing import Any, TypeVar, Type
 
 import torch
 import numpy as np
@@ -11,6 +11,7 @@ from numpy import ndarray
 
 
 UNSET = object()
+T = TypeVar('T', bound=Dataset)
 
 
 class BaseDatasetMeta(type):
@@ -18,7 +19,7 @@ class BaseDatasetMeta(type):
     Automatically creates an index for each sample in the dataset after the dataset has been
     initialised.
     """
-    def __call__(cls, *args: Any, **kwargs: Any) -> Dataset:
+    def __call__(cls: Type[T], *args: Any, **kwargs: Any) -> T:
         """
         Parameters
         ----------
@@ -154,78 +155,6 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
         """
         return torch.tensor(()) if self.extra is None else self.extra[idx]
 
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: tuple[float] = ...,
-        idxs: None = ...,
-        **kwargs: Any) -> tuple[DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: None = ...,
-        idxs: tuple[ndarray] = ...,
-        **kwargs: Any) -> tuple[DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: tuple[float, float] = ...,
-        idxs: None = ...,
-        **kwargs: Any) -> tuple[DataLoader, DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: tuple[float] = ...,
-        idxs: tuple[ndarray] = ...,
-        **kwargs: Any) -> tuple[DataLoader, DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: None = ...,
-        idxs: tuple[ndarray, ndarray] = ...,
-        **kwargs: Any) -> tuple[DataLoader, DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: tuple[float, float, float] = ...,
-        idxs: None = ...,
-        **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: tuple[float, float] = ...,
-        idxs: tuple[ndarray] = ...,
-        **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: tuple[float] = ...,
-        idxs: tuple[ndarray, ndarray] = ...,
-        **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
-
-@overload
-def loader_init(
-        dataset: BaseDataset,
-        batch_size: int = 64,
-        ratios: None = ...,
-        idxs: tuple[ndarray, ndarray, ndarray] = ...,
-        **kwargs: Any) -> tuple[DataLoader, DataLoader, DataLoader]: ...
 
 def loader_init(
         dataset: Dataset,

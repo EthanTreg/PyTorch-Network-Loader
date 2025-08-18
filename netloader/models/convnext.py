@@ -331,7 +331,6 @@ class ConvNeXtTiny(ConvNeXt):
     """
     def __init__(
             self,
-            name: str,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
             max_drop_path: float = 0,
@@ -339,8 +338,6 @@ class ConvNeXtTiny(ConvNeXt):
         """
         Parameters
         ----------
-        name : str
-            Name of the network configuration file
         in_shape : list[int] | list[list[int]] | tuple[int, ...]
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
@@ -352,7 +349,7 @@ class ConvNeXtTiny(ConvNeXt):
             block
         """
         super().__init__(
-            name,
+            'convnext_tiny',
             in_shape,
             out_shape,
             max_drop_path=max_drop_path,
@@ -368,7 +365,6 @@ class ConvNeXtSmall(ConvNeXt):
     """
     def __init__(
             self,
-            name: str,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
             max_drop_path: float = 0,
@@ -376,8 +372,6 @@ class ConvNeXtSmall(ConvNeXt):
         """
         Parameters
         ----------
-        name : str
-            Name of the network configuration file
         in_shape : list[int] | list[list[int]] | tuple[int, ...]
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
@@ -389,7 +383,7 @@ class ConvNeXtSmall(ConvNeXt):
             block
         """
         super().__init__(
-            name,
+            'convnext_small',
             in_shape,
             out_shape,
             max_drop_path=max_drop_path,
@@ -406,7 +400,6 @@ class ConvNeXtBase(ConvNeXt):
     """
     def __init__(
             self,
-            name: str,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
             max_drop_path: float = 0,
@@ -414,8 +407,6 @@ class ConvNeXtBase(ConvNeXt):
         """
         Parameters
         ----------
-        name : str
-            Name of the network configuration file
         in_shape : list[int] | list[list[int]] | tuple[int, ...]
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
@@ -427,7 +418,7 @@ class ConvNeXtBase(ConvNeXt):
             block
         """
         super().__init__(
-            name,
+            'convnext_base',
             in_shape,
             out_shape,
             max_drop_path=max_drop_path,
@@ -445,7 +436,6 @@ class ConvNeXtLarge(ConvNeXt):
     """
     def __init__(
             self,
-            name: str,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
             max_drop_path: float = 0,
@@ -453,8 +443,6 @@ class ConvNeXtLarge(ConvNeXt):
         """
         Parameters
         ----------
-        name : str
-            Name of the network configuration file
         in_shape : list[int] | list[list[int]] | tuple[int, ...]
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
@@ -466,7 +454,7 @@ class ConvNeXtLarge(ConvNeXt):
             block
         """
         super().__init__(
-            name,
+            'convnext_large',
             in_shape,
             out_shape,
             max_drop_path=max_drop_path,
@@ -484,7 +472,6 @@ class ConvNeXtXLarge(ConvNeXt):
     """
     def __init__(
             self,
-            name: str,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
             max_drop_path: float = 0,
@@ -492,8 +479,6 @@ class ConvNeXtXLarge(ConvNeXt):
         """
         Parameters
         ----------
-        name : str
-            Name of the network configuration file
         in_shape : list[int] | list[list[int]] | tuple[int, ...]
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
@@ -505,7 +490,7 @@ class ConvNeXtXLarge(ConvNeXt):
             block
         """
         super().__init__(
-            name,
+            'convnext_xlarge',
             in_shape,
             out_shape,
             max_drop_path=max_drop_path,
