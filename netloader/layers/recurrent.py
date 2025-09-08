@@ -7,20 +7,21 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
+from netloader.utils import Shapes
 from netloader.layers.misc import Reshape
-from netloader.layers.base import BaseLayer
+from netloader.layers.base import BaseSingleLayer
 
 
-class Recurrent(BaseLayer):
+class Recurrent(BaseSingleLayer):
     """
-    Recurrent layer constructor for either RNN, GRU or LSTM
+    Recurrent layer constructor for either RNN, GRU or LSTM.
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
+    layers : nn.Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -33,7 +34,8 @@ class Recurrent(BaseLayer):
     def __init__(
             self,
             idx: int,
-            shapes: list[list[int]],
+            shapes: Shapes,
+            *,
             batch_norm: bool = False,
             layers: int = 2,
             filters: int = 1,
@@ -72,7 +74,11 @@ class Recurrent(BaseLayer):
         self._bidirectional: str | None = bidirectional
         self._options: list[str | None] = [None, 'sum', 'mean', 'concatenate']
         shape: list[int] = [filters, int(np.prod(shapes[-1][1:]))]
-        modes: dict[str, Type[nn.RNNBase]] = {'rnn': nn.RNN, 'lstm': nn.LSTM, 'gru': nn.GRU}
+        modes: dict[str, Type[nn.RNN] | Type[nn.LSTM] | Type[nn.GRU]] = {
+            'rnn': nn.RNN,
+            'lstm': nn.LSTM,
+            'gru': nn.GRU,
+        }
         recurrent: nn.Module
 
         self._check_options('bidirectional', self._bidirectional, set(self._options))
@@ -82,8 +88,8 @@ class Recurrent(BaseLayer):
             dropout = 0
 
         recurrent = modes[mode.lower()](
-            input_size=shapes[-1][0],
-            hidden_size=shape[0],
+            shapes[-1][0],
+            shape[0],
             num_layers=layers,
             batch_first=True,
             dropout=dropout,
@@ -113,13 +119,15 @@ class Recurrent(BaseLayer):
 
         Parameters
         ----------
-        x : `(N,C_{in},L)` Tensor
-            Input tensor
+        x : Tensor
+            Input tensor with shape `(N,C_{in},L)` and type float, where N is the batch size,
+            `C_{in}` is the number of input channels and L is the length of the sequence
 
         Returns
         -------
-        `(N,C_{out},L)` Tensor
-            Output tensor
+        Tensor
+            Output tensor with shape `(N,C_{out},L)` and type float, where `C_{out}` is the number
+            of output channels
         """
         x = self.layers[0](x)
         x = self.layers[1](torch.transpose(x, 1, 2))[0]
@@ -131,13 +139,7 @@ class Recurrent(BaseLayer):
                 x = torch.sum(x, dim=-2)
             elif self._bidirectional == self._options[2]:
                 x = torch.mean(x, dim=-2)
-
-        x = torch.transpose(x, 1, 2)
-
-        for layer in self.layers[2:]:
-            x = layer(x)
-
-        return x
+        return self.layers[2:](torch.transpose(x, 1, 2))
 
     def extra_repr(self) -> str:
         """

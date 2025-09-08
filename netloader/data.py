@@ -1,7 +1,9 @@
 """
 Base dataset classes for use with BaseNetwork
 """
-from typing import Any, TypeVar, Type
+import logging as log
+from types import ModuleType
+from typing import Any, Generic, Self, Literal, Sequence, Iterator, cast, overload
 
 import torch
 import numpy as np
@@ -9,9 +11,612 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader, Subset
 from numpy import ndarray
 
+from netloader.utils.types import DataLike, ArrayLike, DataT, ArrayT, DatasetT, DataListT, ArrayTC
 
-UNSET = object()
-T = TypeVar('T', bound=Dataset)
+
+class Data(Generic[ArrayTC]):
+    """
+    Stores data with uncertainties for uncertainty handling in BaseNetwork.
+
+    Attributes
+    ----------
+    data : ArrayTC
+        Data
+    uncertainty : ArrayTC | None, default = None
+        Data uncertainty
+
+    Methods
+    -------
+    collate(data, data_field=True) -> ArrayTC | Data[ArrayTC]
+        Collates a list of Data objects into a single Data object
+    clone() -> Data[ArrayTC]
+        Clones the data and uncertainty
+    concat(dim=0) -> ArrayTC
+        Concatenates data and uncertainty for passing into a network
+    copy() -> Data[ArrayTC]
+        Copies the data and uncertainty
+    cpu() -> Self
+        Moves data and uncertainty to CPU if they are Tensors
+    detach() -> Self
+        Detaches data and uncertainty from the computation graph if they are Tensors
+    numpy() -> Data[ndarray]
+        Converts data and uncertainty to numpy arrays if they are Tensors
+    to(*args, **kwargs) -> Self
+        Move and/or cast the parameters and buffers
+    """
+    def __init__(self, data: ArrayTC, uncertainty: ArrayTC | None = None) -> None:
+        """
+        Parameters
+        ----------
+        data : ArrayTC
+            Data
+        uncertainty : ArrayTC | None, default = None
+            Data uncertainty
+        """
+        self.data: ArrayTC = data
+        self.uncertainty: ArrayTC | None = uncertainty
+
+    def __len__(self) -> int:
+        """
+        Returns the number of samples in the data.
+
+        Returns
+        -------
+        int
+            Number of samples in the data
+        """
+        return len(self.data)
+
+    def __getitem__(self, idx: int | slice) -> 'Data[ArrayTC]':
+        """
+        Gets a subset of the data and uncertainty.
+
+        Parameters
+        ----------
+        idx : int | slice
+            Index or slice to get
+
+        Returns
+        -------
+        Data[ArrayTC]
+            Data with subset of data and uncertainty
+        """
+        return Data(
+            self.data[idx],
+            uncertainty=self.uncertainty[idx] if self.uncertainty is not None else None
+        )
+
+    @staticmethod
+    @overload
+    def collate(data: list['Data[ArrayTC]'], *, data_field: Literal[True]) -> 'Data[ArrayTC]': ...
+
+    @staticmethod
+    @overload
+    def collate(data: list['Data[ArrayTC]'], *, data_field: Literal[False]) -> ArrayTC: ...
+
+    @staticmethod
+    @overload
+    def collate(data: list['Data[ArrayTC]'], *, data_field: bool) -> 'ArrayTC | Data[ArrayTC]': ...
+
+    @staticmethod
+    def collate(
+            data: list['Data[ArrayTC]'],
+            *,
+            data_field: bool = True) -> 'ArrayTC | Data[ArrayTC]':
+        """
+        Collates a list of Data objects into a single Data object.
+
+        Parameters
+        ----------
+        data : list[Data[ArrayTC]]
+            List of Data objects to collate
+        data_field : bool, default = True
+            If True, returns a Data object, else returns the collated data as an ArrayLike
+
+        Returns
+        -------
+        ArrayTC | Data[ArrayTC]
+            Collated ArrayLike or Data object
+        """
+        module: ModuleType = torch if isinstance(data[0].data, Tensor) else np
+        new_data: ArrayTC
+        datum: Data[Any]
+
+        if data[0].uncertainty is None:
+            new_data = module.concat([datum.data for datum in data])
+            return Data(new_data) if data_field else new_data
+
+        new_data = module.concat([datum.concat() for datum in data])
+        return Data(*new_data.swapaxes(0, 1)) if data_field else new_data
+
+    def clone(self) -> 'Data[ArrayTC]':
+        """
+        Clones the data and uncertainty.
+
+        Identical to Data.copy().
+
+        Returns
+        -------
+        Data[ArrayTC]
+            Cloned Data
+        """
+        data: ArrayTC
+        uncertainty: ArrayTC | None
+
+        if isinstance(self.data, ndarray):
+            data = self.data.copy()
+            uncertainty = self.uncertainty.copy() if self.uncertainty is not None else None
+        else:
+            data = self.data.clone()
+            uncertainty = self.uncertainty.clone() if self.uncertainty is not None else None
+        return Data(data, uncertainty=uncertainty)
+
+    def concat(self, dim: int = 0) -> ArrayTC:
+        """
+        Concatenates data and uncertainty for passing into a network.
+
+        Parameters
+        ----------
+        dim : int, default = 0
+            Dimension to concatenate along
+
+        Returns
+        -------
+        ArrayTC
+            Data and uncertainty concatenated along the specified dimension if uncertainty is not
+            None, else just data
+        """
+        module: ModuleType = torch if isinstance(self.data, Tensor) else np
+        kwargs: dict[str, int] = {'dim' if isinstance(self.data, Tensor) else 'axis': dim}
+
+        if self.uncertainty is not None:
+            return module.concat((self.data, self.uncertainty), **kwargs)
+        return self.data
+
+    def copy(self) -> 'Data[ArrayTC]':
+        """
+        Copies the data and uncertainty.
+
+        Identical to Data.clone().
+
+        Returns
+        -------
+        Data[ArrayTC]
+            Copied Data
+        """
+        return self.clone()
+
+    def cpu(self) -> Self:
+        """
+        Moves data and uncertainty to CPU if they are Tensors.
+
+        Returns
+        -------
+        Self
+            Self with data and uncertainty on CPU
+        """
+        if isinstance(self.data, Tensor):
+            self.data = self.data.cpu()
+
+        if isinstance(self.uncertainty, Tensor):
+            self.uncertainty = self.uncertainty.cpu()
+        return self
+
+    def detach(self) -> Self:
+        """
+        Detaches data and uncertainty from the computation graph if they are Tensors.
+
+        Returns
+        -------
+        Self
+            Self with data and uncertainty detached from the computation graph
+        """
+        if isinstance(self.data, Tensor):
+            self.data = self.data.detach()
+
+        if isinstance(self.uncertainty, Tensor):
+            self.uncertainty = self.uncertainty.detach()
+        return self
+
+    def numpy(self) -> 'Data[ndarray]':
+        """
+        Converts data and uncertainty to numpy arrays if they are Tensors.
+
+        Returns
+        -------
+        Data[ndarray]
+            New Data object with data and uncertainty as numpy arrays
+        """
+        return Data(
+            self.data.cpu().numpy() if isinstance(self.data, Tensor) else self.data,
+            uncertainty=self.uncertainty.cpu().numpy() if isinstance(self.uncertainty, Tensor) else
+            self.uncertainty
+        )
+
+    def to(self, *args: Any, **kwargs: Any) -> Self:
+        """
+        Move and/or cast the parameters and buffers.
+
+        Parameters
+        ----------
+        *args
+            Arguments to pass to the to method of data and uncertainty
+        **kwargs
+            Keyword arguments to pass to the to method of data and uncertainty
+
+        Returns
+        -------
+        Self
+            Self with data and uncertainty moved and/or cast
+        """
+        if isinstance(self.data, Tensor):
+            self.data = self.data.to(*args, **kwargs)
+
+        if isinstance(self.uncertainty, Tensor):
+            self.uncertainty = self.uncertainty.to(*args, **kwargs)
+        return self
+
+
+class DataList(Generic[DataT]):
+    """
+    A list that stores tensors, arrays, or Datas and provides batch operations.
+
+    Methods
+    -------
+    collate(data, data_field=True) -> DataList[DataLike]
+        Collates a list of DataList objects into a single DataList object
+    append(data) -> None
+        Appends an element to the DataList
+    cpu() -> DataList[DataLike]
+        Moves all tensors to CPU
+    clone() -> DataList[DataT]
+        Clones the DataList
+    copy() -> DataList[DataT]
+        Copies the DataList
+    detach() -> DataList[DataLike]
+        Detaches all tensors from the computation graph
+    extend(data) -> None
+        Extends the DataList by appending elements from the iterable
+    get(idx, list_=False) -> DataT | list[DataT] | DataList[DataT]
+        Gets a subset of the DataList or a subset of each element in the DataList
+    insert(idx, data) -> None
+        Inserts an element into the DataList at the specified index
+    iter(list_=True) -> Iterator[DataT] | Iterator[DataList[DataT]]
+        Iterates over each element in the DataList
+    len(list_=True) -> int
+        Gets the length of the DataList or the length of each element in the DataList
+    numpy() -> DataList[DataLike]
+        Converts all tensors to numpy arrays
+    to(*args, **kwargs) -> DataList[DataLike]
+        Move and/or cast the parameters and buffers
+    """
+    def __init__(self, data: list[DataT]) -> None:
+        """
+        Parameters
+        ----------
+        data : list[DataT]
+            List of Data, Tensor, or ndarray objects
+        """
+        self._data: list[DataT] = data
+
+        if any(len(data[0]) != len(datum) for datum in data[1:]):
+            raise ValueError(f'All elements in DataList must have the same length, got lengths: '
+                             f'{[len(datum) for datum in data]}')
+
+    def __len__(self) -> int:
+        """
+        Returns the number of elements in the DataList.
+
+        Returns
+        -------
+        int
+            Number of elements in the DataList
+        """
+        return self.len(list_=True)
+
+    def __getitem__(self, idx: int | slice) -> 'DataList[DataT]':
+        """
+        Gets a subset of each element in the DataList.
+
+        Parameters
+        ----------
+        idx: int | slice
+            Index or slice to get
+
+        Returns
+        -------
+        DataList[DataT]
+            DataList with subset of each element in the DataList
+        """
+        return self.get(idx, list_=False)
+
+    def __iter__(self) -> Iterator[DataT]:
+        """
+        Iterates over each element in the DataList.
+
+        Returns
+        -------
+        Iterator[DataT]
+            Iterator over each element in the DataList
+        """
+        return self.iter(list_=True)
+
+    @staticmethod
+    @overload
+    def collate(
+            data: list['DataList[DataT]'],
+            *,
+            data_field: Literal[True]) -> 'DataList[DataT]': ...
+
+    @staticmethod
+    @overload
+    def collate(
+            data: list['DataList[DataT]'],
+            *,
+            data_field: Literal[False]) -> 'DataList[ArrayT]': ...
+
+    @staticmethod
+    @overload
+    def collate(
+            data: list['DataList[DataT]'],
+            *,
+            data_field: bool) -> 'DataList[ArrayT] | DataList[DataT]': ...
+
+    @staticmethod
+    def collate(
+            data: list['DataList[DataT]'],
+            *,
+            data_field: bool = True) -> 'DataList[ArrayT] | DataList[DataT]':
+        """
+        Collates a list of DataList objects into a single DataList object.
+
+        Parameters
+        ----------
+        data : list[DataList[DataT]]
+            List of DataList objects to collate
+        data_field : bool, default = True
+            If True, collates Data elements into Data object, else collates into ArrayLike
+
+        Returns
+        -------
+        DataList[ArrayT] | DataList[DataT]
+            Collated DataList object
+        """
+        i: int
+        element_data: list[DataLike]
+        new_data: list[DataLike] = []
+        datum: 'DataList[DataT]'
+
+        for i in range(len(data[0])):
+            element_data = [datum.get(i, list_=True) for datum in data]
+            new_data.append(
+                Data.collate(cast(list[Data], element_data), data_field=data_field)
+                if isinstance(element_data[0], Data) else
+                torch.concat(cast(list[Tensor], element_data))
+                if isinstance(element_data[0], Tensor) else
+                np.concat(cast(list[ndarray], element_data)),
+            )
+        return cast(DataList[ArrayT] | DataList[DataT], DataList(new_data))
+
+    def append(self, data: DataT) -> None:
+        """
+        Appends an element to the DataList.
+
+        Parameters
+        ----------
+        data : DataT
+            Element to append to the DataList
+        """
+        if len(self) != len(data):
+            raise ValueError(f'Element to append must have the same length as the DataList, got '
+                             f'lengths: {len(self)} and {len(data)}')
+        self._data.append(data)
+
+    def clone(self) -> 'DataList[DataT]':
+        """
+        Clones the DataList.
+
+        Identical to DataList.copy().
+
+        Returns
+        -------
+        DataList[DataT]
+            Cloned DataList
+        """
+        data: DataT
+        return DataList([
+            cast(DataT, data.clone() if isinstance(data, Tensor) else data.copy())
+            for data in self._data
+        ])
+
+    def copy(self) -> 'DataList[DataT]':
+        """
+        Copies the DataList.
+
+        Identical to DataList.clone().
+
+        Returns
+        -------
+        DataList[DataT]
+            Copied DataList
+        """
+        return self.clone()
+
+    def cpu(self) -> 'DataList[DataT]':
+        """
+        Moves all tensors to CPU
+
+        Returns
+        -------
+        DataList[DataT]
+            DataList with all tensors moved to CPU
+        """
+        data: DataT
+        return DataList(cast(list[DataT], [
+            data.cpu() if isinstance(data, (Tensor, Data)) else data for data in self
+        ]))
+
+    def detach(self) -> 'DataList[DataT]':
+        """
+        Detaches all tensors from the computation graph
+
+        Returns
+        -------
+        DataList[DataT]
+            DataList with all tensors detached from the computation graph
+        """
+        data: DataT
+        return DataList(cast(list[DataT], [
+            data.detach() if isinstance(data, (Tensor, Data)) else data for data in self
+        ]))
+
+    def extend(self, data: 'Sequence[DataT] | DataList[DataT]') -> None:
+        """
+        Extends the DataList by appending elements from the iterable.
+
+        Parameters
+        ----------
+        data : Sequence[DataT] | DataList[DataT]
+            Elements to extend the DataList with
+        """
+        datum: DataT
+
+        for datum in data:
+            self.append(datum)
+
+    @overload
+    def get(self, idx: int, list_: Literal[True]) -> DataT: ...
+
+    @overload
+    def get(self, idx: slice, list_: Literal[True]) -> list[DataT]: ...
+
+    @overload
+    def get(self, idx: int | slice, list_: Literal[False]) -> 'DataList[DataT]': ...
+
+    @overload
+    def get(self, idx: int, list_: bool) -> 'DataT | DataList[DataT]': ...
+
+    @overload
+    def get(self, idx: slice, list_: bool) -> 'list[DataT] | DataList[DataT]': ...
+
+    def get(self, idx: int | slice, list_: bool = False) -> 'DataT | list[DataT] | DataList[DataT]':
+        """
+        Gets a subset of the DataList or a subset of each element in the DataList.
+
+        Parameters
+        ----------
+        idx : int | slice
+            Index or slice to get
+        list_ : bool, default = False
+            If True, returns a subset of the DataList, else returns a subset of each element in the
+            DataList
+
+        Returns
+        -------
+        DataT | list[DataT] | DataList[DataT]
+            Subset of the DataList or subset of each element in the DataList
+        """
+        data: DataT
+
+        if list_:
+            return self._data[idx]
+        return DataList(cast(list[DataT], [data[idx] for data in self]))
+
+    def insert(self, idx: int, data: DataT) -> None:
+        """
+        Inserts an element into the DataList at the specified index.
+
+        Parameters
+        ----------
+        idx : int
+            Index to insert the element at
+        data : DataT
+            Element to insert into the DataList
+        """
+        if len(self) != len(data):
+            raise ValueError(f'Element to insert must have the same length as the DataList, got '
+                             f'lengths: {len(self)} and {len(data)}')
+        self._data.insert(idx, data)
+
+    @overload
+    def iter(self, list_: Literal[True]) -> Iterator[DataT]: ...
+
+    @overload
+    def iter(self, list_: Literal[False]) -> Iterator['DataList[DataT]']: ...
+
+    @overload
+    def iter(self, list_: bool) -> Iterator[DataT] | Iterator['DataList[DataT]']: ...
+
+    def iter(self, list_: bool = True) -> Iterator[DataT] | Iterator['DataList[DataT]']:
+        """
+        Iterates over each element in the DataList.
+
+        Parameters
+        ----------
+        list_ : bool, default = True
+            If True, iterates over the DataList, else iterates over each element in the DataList
+
+        Returns
+        -------
+        Iterator[DataT] | Iterator[DataList[DataT]]
+            Iterator over each element in the DataList
+        """
+        i: int
+
+        for i in range(len(self)):
+            yield self.get(i, list_=list_)
+
+    def len(self, list_: bool = True) -> int:
+        """
+        Gets the length of the DataList or the length of each element in the DataList.
+
+        Parameters
+        ----------
+        list_ : bool, default = True
+            If True, returns the length of the DataList, else returns the length of each element
+            in the DataList
+
+        Returns
+        -------
+        int
+            Length of the DataList or length of each element in the DataList
+        """
+        return len(self._data) if list_ else len(self._data[0])
+
+    def numpy(self) -> 'DataList[ndarray | Data[ndarray]]':
+        """
+        Converts all tensors to numpy arrays
+
+        Returns
+        -------
+        DataList[ndarray | Data]
+            DataList with all tensors converted to numpy arrays
+        """
+        data: DataT
+        return DataList(cast(list[ndarray | Data[ndarray]], [
+            data.cpu().numpy() if hasattr(data, 'cpu') else data for data in self
+        ]))
+
+    def to(self, *args: Any, **kwargs: Any) -> 'DataList[DataT]':
+        """
+        Move and/or cast the parameters and buffers.
+
+        Parameters
+        ----------
+        *args
+            Arguments to pass to the to method of each element in the DataList
+        **kwargs
+            Keyword arguments to pass to the to method of each element in the DataList
+
+        Returns
+        -------
+        DataList[DataT]
+            DataList with all elements moved and/or cast
+        """
+        data: DataT
+        return DataList(cast(list[DataT], [
+            data.to(*args, **kwargs) if hasattr(data, 'to') else data for data in self
+        ]))
 
 
 class BaseDatasetMeta(type):
@@ -19,10 +624,12 @@ class BaseDatasetMeta(type):
     Automatically creates an index for each sample in the dataset after the dataset has been
     initialised.
     """
-    def __call__(cls: Type[T], *args: Any, **kwargs: Any) -> T:
+    def __call__(cls: type[DatasetT], *args: Any, **kwargs: Any) -> DatasetT:
         """
         Parameters
         ----------
+        cls : type[DatasetT]
+            Class that inherited BaseDatasetMeta
         *args
             Optional arguments to pass to BaseDataset class
         **kwargs
@@ -30,21 +637,26 @@ class BaseDatasetMeta(type):
 
         Returns
         -------
-        Dataset
+        DatasetT
             Dataset instance from the class that inherited BaseDatasetMeta
         """
-        instance: Dataset = super().__call__(*args, **kwargs)
+        instance: DatasetT = type.__call__(cls, *args, **kwargs)
 
         if hasattr(instance, 'idxs') and instance.idxs.dtype != np.int_:
             raise ValueError(f'idxs attribute already exists and does not have type int '
                              f'({instance.idxs.dtype}), idxs attribute must be reserved for sample '
                              f'index')
 
-        if not hasattr(instance, 'high_dim') or instance.high_dim is UNSET:
+        if not hasattr(instance, 'high_dim') or instance.high_dim is None:
             raise ValueError(f'{instance.__class__.__name__} has no high_dim attribute which is '
                              f'required by BaseDatasetMeta for creating idxs attribute')
 
-        if len(instance.idxs) != len(instance.high_dim):
+        if len(instance.idxs) == 0:
+            instance.idxs = np.arange(len(instance.high_dim))
+        elif len(instance.idxs) != len(instance.high_dim):
+            log.getLogger(__name__).warning(f'Length of idxs ({len(instance.idxs)}) and length of '
+                                            f'high_dim ({len(instance.high_dim)} does not match, '
+                                            f'idxs will be sent to a range of high_dim length')
             instance.idxs = np.arange(len(instance.high_dim))
 
         for attribute in ('extra', 'low_dim', 'high_dim'):
@@ -52,47 +664,52 @@ class BaseDatasetMeta(type):
                     len(getattr(instance, attribute)) != len(instance.idxs)):
                 raise ValueError(f'Length of attribute {attribute} ({len(attribute)}) and idxs '
                                  f'({len(instance.idxs)}) does not match')
-
         return instance
 
 
-class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
+class BaseDataset(Dataset[Any], Generic[DataListT], metaclass=BaseDatasetMeta):
     """
-    Base dataset class for use with BaseNetwork
+    Base dataset class for use with BaseNetwork.
 
     Attributes
     ----------
-    extra : list[Any] | ndarray | None, default = None
+    extra : list[Any] | ArrayLike | None, default = None
         Additional data for each sample in the dataset of length N with shape (N,...) and type Any
     idxs : ndarray
         Index for each sample in the dataset with shape (N) and type int
-    low_dim : ndarray | Tensor | None, default = None
-        Low dimensional data for each sample in the dataset with shape (N)
-    high_dim : ndarray | Tensor | object, default = UNSET
-        High dimensional data for each sample in the dataset with shape (N), this is required
+    low_dim : DataListT | None, default = None
+        Low dimensional data for each sample in the dataset with shape (N,...)
+    high_dim : DataListT | None, default = None
+        High dimensional data for each sample in the dataset with shape (N,...), this is required
 
     Methods
     -------
-    get_low_dim(idx) -> ndarray | Tensor
+    get_low_dim(idx) -> DataListT
         Gets a low dimensional sample of the given index
-    get_high_dim(idx) -> ndarray | Tensor
+    get_high_dim(idx) -> DataListT
         Gets a high dimensional sample of the given index
-    get_extra(idx) -> ndarray | Tensor
+    get_extra(idx) -> Any
         Gets extra data for the sample of the given index
     """
     def __init__(self) -> None:
         super().__init__()
-        self.extra: list[Any] | ndarray | Tensor | None = None
-        self.idxs: ndarray = np.array([0])
-        self.low_dim: ndarray | Tensor | None = None
-        self.high_dim: ndarray | Tensor | object = UNSET
+        self.extra: list[Any] | ArrayLike | None = None
+        self.idxs: ndarray = np.array([], dtype=np.int_)
+        self.low_dim: DataListT | None = None
+        self.high_dim: DataListT | None = None
 
     def __len__(self) -> int:
+        """
+        Returns the number of samples in the dataset
+
+        Returns
+        -------
+        int
+            Number of samples in the dataset
+        """
         return len(self.idxs)
 
-    def __getitem__(
-            self,
-            idx: int) -> tuple[int, ndarray | Tensor, ndarray | Tensor, Any]:
+    def __getitem__(self, idx: int) -> tuple[int, DataListT, DataListT, Any]:
         """
         Parameters
         ----------
@@ -101,12 +718,12 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
 
         Returns
         -------
-        tuple[int, ndarray | Tensor, ndarray | Tensor, Any]
+        tuple[int, DataListT, DataListT, Any]
             Sample index, low dimensional data, high dimensional data, and extra data
         """
         return self.idxs[idx], self.get_low_dim(idx), self.get_high_dim(idx), self.get_extra(idx)
 
-    def get_low_dim(self, idx: int) -> ndarray | Tensor:
+    def get_low_dim(self, idx: int) -> DataListT:
         """
         Gets a low dimensional sample of the given index
 
@@ -117,12 +734,12 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
 
         Returns
         -------
-        ndarray | Tensor
+        DataListT
             Low dimensional sample
         """
-        return torch.tensor(()) if self.low_dim is None else self.low_dim[idx]
+        return cast(DataListT, torch.tensor(()) if self.low_dim is None else self.low_dim[idx])
 
-    def get_high_dim(self, idx: int) -> ndarray | Tensor:
+    def get_high_dim(self, idx: int) -> DataListT:
         """
         Gets a high dimensional sample of the given index
 
@@ -133,11 +750,11 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
 
         Returns
         -------
-        ndarray | Tensor
+        DataListT
             High dimensional sample
         """
-        assert isinstance(self.high_dim, (ndarray, Tensor))
-        return self.high_dim[idx]
+        assert self.high_dim is not None
+        return cast(DataListT, self.high_dim[idx])
 
     def get_extra(self, idx: int) -> Any:
         """
@@ -150,7 +767,7 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
 
         Returns
         -------
-        ndarray | Tensor
+        Any
             Sample extra data
         """
         return torch.tensor(()) if self.extra is None else self.extra[idx]
@@ -158,10 +775,13 @@ class BaseDataset(Dataset, metaclass=BaseDatasetMeta):
 
 def loader_init(
         dataset: Dataset,
+        *,
+        return_idxs: bool = False,
         batch_size: int = 64,
         ratios: list[float] | tuple[float, ...] | None = None,
         idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = None,
-        **kwargs: Any) -> tuple[DataLoader, ...]:
+        **kwargs: Any) -> (tuple[DataLoader, ...] |
+                           tuple[tuple[DataLoader, ...], tuple[list[int], ...]]):
     """
     Initialises data loaders from a subset of the dataset with the given ratios.
 
@@ -169,34 +789,35 @@ def loader_init(
     ----------
     dataset : Dataset
         Dataset to create data loaders from
+    return_idxs : bool, default = False
+        If the indexes for each data loader should be returned
     batch_size : int, default = 64
         Batch size when sampling from the data loaders
     ratios : list[float] | tuple[float, ...] | None, default = (0.8, 0.2)
         Ratios of length M to split up the dataset into subsets, if idxs is provided, dataset will
         first be split up using idxs and ratios will be used on the remaining samples
-    idxs : tuple[ndarray, ...] | list[ndarray] | ndarray | None, default = None
+    idxs : list[ndarray] | tuple[ndarray, ...] | ndarray | None, default = None
         Dataset indexes for creating the subsets with shape (N,S), where N is the number of subsets
         and S is the number of samples in each subset
-
     **kwargs : Any
         Optional keyword arguments to pass to DataLoader
 
     Returns
     -------
-    tuple[DataLoader, ...]
-        Data loaders for each subset of length N + M
+    tuple[DataLoader, ...] | tuple[tuple[DataLoader, ...], tuple[list[int], ...]]
+        Data loaders for each subset of length N + M and optionally indexes used for each subset
     """
     num: int
     slice_: float | ndarray
     loaders: list[DataLoader] = []
-    data_idxs: ndarray = np.arange(len(dataset))
-    idxs = list(idxs) if isinstance(idxs, (list, tuple)) or np.ndim(idxs) > 1 else \
-        [] if idxs is None else [idxs]
-    ratios = (0.8, 0.2) if ratios is None else list(np.cumsum(np.array(ratios) / np.sum(ratios)))
+    data_idxs: ndarray = np.arange(len(dataset))  # type: ignore
+    idxs = [] if idxs is None else list(idxs) \
+        if isinstance(idxs, (tuple, list)) or np.ndim(idxs) > 1 else [idxs]
+    ratios = (0.8, 1) if ratios is None else list(np.cumsum(np.array(ratios) / np.sum(ratios)))
     np.random.shuffle(data_idxs)
 
     for slice_ in idxs + list(ratios):
-        if isinstance(slice_, float):
+        if isinstance(slice_, (int, float)):
             num = max(int(len(data_idxs) * slice_), 1)
             slice_ = data_idxs[:num]
 
@@ -209,4 +830,71 @@ def loader_init(
             **{'shuffle': True} | kwargs,
         ))
         data_idxs = np.delete(data_idxs, np.isin(data_idxs, slice_))
+
+    if return_idxs:
+        return tuple(loaders), tuple(loader.dataset.indices for loader in loaders)  # type: ignore
     return tuple(loaders)
+
+
+@overload
+def data_collation(
+        data: list[ArrayTC] | ArrayTC,
+        *,
+        data_field: bool) -> ArrayTC: ...
+
+@overload
+def data_collation(
+        data: list[DataList[DataT]],
+        *,
+        data_field: Literal[True]) -> DataList[DataT]: ...
+
+@overload
+def data_collation(
+        data: list[DataList[DataT]],
+        *,
+        data_field: Literal[False]) -> DataList[ArrayT]: ...
+
+@overload
+def data_collation(
+        data: list[Data[ArrayTC]],
+        *,
+        data_field: Literal[True]) -> Data[ArrayTC]: ...
+
+@overload
+def data_collation(
+        data: list[Data[ArrayTC]],
+        *,
+        data_field: Literal[False]) -> ArrayTC: ...
+
+def data_collation(  # type: ignore
+        data: list[ArrayTC] | list[Data[ArrayTC]] | list[DataList[DataT]] | ArrayTC,
+        *,
+        data_field: bool = True,
+) -> ArrayTC | Data[ArrayTC] | DataList[ArrayT] | DataList[DataT]:
+    """
+    Collates a list of ArrayLike, Data, or DataList objects into a single object.
+
+    Parameters
+    ----------
+    data : list[ArrayTC] | list[Data[ArrayTC]] | list[DataList[DataT]] | ArrayTC
+        List of ArrayLike, Data, or DataList objects to collate, or if ArrayLike,
+        will return as is, with shape (N,...)
+    data_field : bool, default = True
+        If Datas should return Data else ArrayLike
+
+    Returns
+    -------
+    ArrayTC | Data[ArrayTC] | DataList[ArrayT] | DataList[DataT]
+        Collated Data or DataList object, or ArrayLike if data_field is False or input is
+        ArrayLike, with shape (N,...)
+    """
+    if isinstance(data, (Tensor, ndarray)):
+        return data
+    if isinstance(data[0], (Tensor, ndarray)):
+        return torch.concat(cast(list[Tensor], data)) if isinstance(data[0], Tensor) else \
+            np.concat(cast(list[ndarray], data))
+
+    # data = cast(list[Data] | list[DataList], data)
+    return Data.collate(cast(list[Data], data), data_field=data_field) \
+        if isinstance(data[0], Data) else \
+        DataList.collate(cast(list[DataList], data), data_field=data_field)

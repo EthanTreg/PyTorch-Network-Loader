@@ -3,30 +3,29 @@ Normalizing flow network layers
 """
 from typing import Any
 
+from torch import Tensor
 from zuko.flows import NSF
 from zuko.distributions import NormalizingFlow
-from torch import Tensor
 
+from netloader.utils import Shapes
 from netloader.layers.base import BaseLayer
 
 
 class SplineFlow(BaseLayer):
     """
-    Neural spline flow layer constructor
+    Neural spline flow layer constructor.
 
-    Should only be used as the last layer in the network as it does not return a Tensor
+    Should only be used as the last layer in the network as it does not return a Tensor.
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : list[Module] | Sequential
-        Layers to loop through in the forward pass
 
     Methods
     -------
-    forward(x, **_) -> NormalizingFlow
+    forward(x) -> NormalizingFlow
         Forward pass of the neural spline flow to return a distribution
     """
     def __init__(
@@ -34,7 +33,8 @@ class SplineFlow(BaseLayer):
             transforms: int,
             hidden_features: list[int],
             net_out: list[int],
-            shapes: list[list[int]],
+            shapes: Shapes,
+            *,
             context: bool = False,
             features: int | None = None,
             factor: float | None = None,
@@ -52,16 +52,18 @@ class SplineFlow(BaseLayer):
             Number of features in each of the hidden layers
         net_out : list[int]
             Shape of the network's output
-        shapes : list[list[int]]
+        shapes : Shapes
             Shape of the outputs from each layer
         context : bool, default = False
             If the output from the previous layer should be used to condition the normalizing flow
-        features : int, optional
+        features : int | None, default = None
             Dimensions of the probability distribution, if factor is provided, features will not be
             used
-        factor : float, optional
+        factor : float | None, default = None
             Output features is equal to the factor of the network's output, will be used if
             provided, else features will be used
+        **kwargs
+            Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
         self._context: bool = context
@@ -83,7 +85,7 @@ class SplineFlow(BaseLayer):
             context_ = 0
 
         self._layer = NSF(
-            features=features,
+            features=shape[-1],
             context=context_,
             transforms=transforms,
             hidden_features=hidden_features,
@@ -98,7 +100,7 @@ class SplineFlow(BaseLayer):
         Parameters
         ----------
         x : Tensor
-            Input tensor
+            Input tensor with shape (N,...) and type float, where N is the batch size
 
         Returns
         -------
@@ -107,5 +109,4 @@ class SplineFlow(BaseLayer):
         """
         if self._context:
             return self._layer(x)
-
         return self._layer()

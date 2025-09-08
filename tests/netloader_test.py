@@ -17,10 +17,17 @@ class Dataset(BaseDataset):
     """
     Mock dataset with input values equal to target label
     """
-    def __init__(self, samples: int, shape: list[int]) -> None:
+    def __init__(
+            self,
+            samples: int,
+            low_dim_num: int,
+            high_dim_shape: list[int]) -> None:
         super().__init__()
-        self.low_dim = np.random.random((samples, 1))
-        self.high_dim = np.ones((samples, *shape)) * self.low_dim[:, 0, *[np.newaxis] * len(shape)]
+        self.low_dim = np.repeat(np.random.random((samples, 1)), low_dim_num, axis=-1)
+        self.high_dim = np.ones((
+            samples,
+            *high_dim_shape,
+        )) * self.low_dim[:, 0, *[np.newaxis] * len(high_dim_shape)]
 
 
 def main():
@@ -51,10 +58,11 @@ def main():
         transforms.NumpyTensor(),
     )
     trans_data = transform(data, uncertainty=data)[0]
-    print(data.shape, trans_data.shape, transform(trans_data, back=True).shape)
     blank_transform = transforms.MultiTransform(transforms.BaseTransform())
     transforms.MultiTransform.__setstate__(blank_transform, transform.__getstate__())
     assert (trans_data == blank_transform(data, uncertainty=data)[0]).all()
+    print(f'Test Data Shape: {data.shape}\nTransformed Data Shape: {trans_data.numpy().shape}\n'
+          f'Untransformed Data Shape: {transform(trans_data, back=True).shape}')
 
     for net_name in networks:
         print(f'Testing {net_name}...')
@@ -80,7 +88,7 @@ def main():
         loss.backward()
 
     # Initialise datasets
-    dataset = Dataset(1000, [1, 100, 100])
+    dataset = Dataset(1000, 1, [1, 100, 100])
     high_transform = transforms.MultiTransform(
         transforms.Normalise(data=dataset.high_dim),
         transforms.NumpyTensor(),
@@ -110,8 +118,12 @@ def main():
 
     # Test Encoder training
     print('Testing Encoder training...')
-    net = nets.load_net(1, states_dir, 'test_encoder')
-    net.training(net.get_epochs() + 1, loaders)
+    try:
+        net = nets.load_net(1, states_dir, 'test_encoder').to(device)
+        net.training(net.get_epochs() + 1, loaders)
+    except FileNotFoundError:
+        pass
+
     network = Network(
         'test_encoder',
         nets_dir,
@@ -135,8 +147,12 @@ def main():
 
     # Test Decoder training
     print('Testing Decoder training...')
-    net = nets.load_net(1, states_dir, 'test_decoder')
-    net.training(net.get_epochs() + 1, loaders)
+    try:
+        net = nets.load_net(1, states_dir, 'test_decoder').to(device)
+        net.training(net.get_epochs() + 1, loaders)
+    except FileNotFoundError:
+        pass
+
     network = Network(
         'test_decoder',
         nets_dir,
@@ -160,8 +176,12 @@ def main():
 
     # Test ConvNeXt training
     print('Testing ConvNeXt training...')
-    net = nets.load_net(1, states_dir, 'test_convnext')
-    net.training(net.get_epochs() + 1, loaders)
+    try:
+        net = nets.load_net(1, states_dir, 'test_convnext').to(device)
+        net.training(net.get_epochs() + 1, loaders)
+    except FileNotFoundError:
+        pass
+
     network = models.ConvNeXtTiny(in_shape[1:], [1])
     net = nets.Encoder(
         1,

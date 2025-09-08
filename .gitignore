@@ -3,8 +3,11 @@ __pycache__/
 /venv/
 /netloader.egg-info/
 /build/
+/model_states/
 **/*[Tt][Ee][Ss][Tt]*
 **/*[Tt][Ee][Mm][Pp]*
+/tests/model_states/
+/tests/model_states/*
 !/tests/
 !/tests/netloader_test.py
 !/network_configs/test*

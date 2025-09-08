@@ -54,7 +54,7 @@ class BaseMultiLayer(base.BaseMultiLayer):
 def _int_list_conversion(length: int, elements: list[int | list[int]]) -> list[list[int]]:
     """
     Converts integers to a list of integers, if integer is already a list of integers, then list
-    will be preserved
+    will be preserved.
 
     Parameters
     ----------
@@ -85,7 +85,7 @@ def _kernel_shape(
         padding: int | list[int],
         shape: list[int]) -> list[int]:
     """
-    Calculates the output shape after a kernel operation
+    Calculates the output shape after a kernel operation.
 
     Parameters
     ----------
@@ -126,7 +126,7 @@ def _padding(
         in_shape: list[int],
         out_shape: list[int]) -> list[int]:
     """
-    Calculates the padding required for specific output shape
+    Calculates the padding required for specific output shape.
 
     Parameters
     ----------

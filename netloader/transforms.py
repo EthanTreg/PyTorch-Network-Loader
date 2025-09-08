@@ -3,29 +3,30 @@ Transformations that can be inverted
 """
 from warnings import warn
 from types import ModuleType
-from typing import Callable, Any, overload
+from typing import Callable, Any, Generic, cast, overload
 
 import torch
 import numpy as np
 from torch import Tensor
 from numpy import ndarray
 
-from netloader.utils.utils import ArrayLike
+from netloader.data import Data
+from netloader.utils.types import ArrayLike, DataT, ArrayT
 
 
-class BaseTransform:
+class BaseTransform(Generic[DataT, ArrayT]):
     """
     Base transformation class that other types of transforms build from
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> ArrayT
         Forward pass of the transformation
-    backward(x) -> ArrayLike
+    backward(x) -> ArrayT
         Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> ArrayLike
+    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> ArrayLike
+    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Backwards pass to invert the transformation and uncertainty propagation
     extra_repr() -> str
         Displays layer parameters when printing the transform
@@ -35,50 +36,52 @@ class BaseTransform:
         torch.serialization.add_safe_globals([self.__class__])
 
     @overload
-    def __call__(self, x: ArrayLike, *, back: bool = ...) -> ArrayLike:
+    def __call__(self, x: ArrayT, *, back: bool = ...) -> ArrayT:
+        ...
+
+    @overload
+    def __call__(self, x: DataT, *, back: bool = ...) -> DataT:
         ...
 
     @overload
     def __call__(
             self,
-            x: ArrayLike,
+            x: ArrayT,
             *,
             back: bool = ...,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+            uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         ...
 
     def __call__(
             self,
-            x: ArrayLike,
+            x: ArrayT | DataT,
+            *,
             back: bool = False,
-            uncertainty: ArrayLike | None = None) -> ArrayLike | tuple[ArrayLike, ArrayLike]:
+            uncertainty: ArrayT | None = None) -> ArrayT | DataT | tuple[ArrayT, ArrayT]:
         """
         Calling function returns the forward, backwards or uncertainty propagation of the
         transformation
 
         Parameters
         ----------
-        x : ArrayLike
+        x : DataLike
             Input array or tensor of shape (N,...), where N is the number of elements
         back : bool, default = False
             If the inverse transformation should be applied
-        uncertainty : ArrayLike, default = None
+        uncertainty : ArrayT, default = None
             Corresponding uncertainties for the input data for uncertainty propagation of shape
             (N,...)
 
         Returns
         -------
-        ArrayLike | tuple[ArrayLike, ArrayLike]
+        DataLike | tuple[ArrayT, ArrayT]
             Transformed array or tensor of shape (N,...) and propagated uncertainties of shape
             (N,...)  if provided
         """
-        if back and uncertainty is not None:
-            return self.backward_grad(x, uncertainty)
-        if back:
-            return self.backward(x)
-        if uncertainty is not None:
-            return self.forward_grad(x, uncertainty)
-        return self.forward(x)
+        if isinstance(x, Data):
+            return cast(DataT, Data(*self._call(x.data, back=back, uncertainty=x.uncertainty)))
+        x, uncertainty = cast(ArrayT, x), cast(ArrayT, uncertainty)
+        return cast(DataT, self._call(x, back=back, uncertainty=uncertainty))
 
     def __repr__(self) -> str:
         """
@@ -112,77 +115,103 @@ class BaseTransform:
             Dictionary containing the state of the transformation
         """
 
-    def forward(self, x: ArrayLike) -> ArrayLike:
+    def _call(
+            self,
+            x: ArrayT,
+            back: bool = False,
+            uncertainty: ArrayT | None = None) -> ArrayT | tuple[ArrayT, ArrayT]:
+        """
+        Internal calling function to handle the different types of calls
+
+        Parameters
+        ----------
+        x : ArrayT
+            Input array or tensor of shape (N,...) and type float, where N is the number of elements
+        back : bool, default = False
+            If the inverse transformation should be applied
+        uncertainty : ArrayT | None, default = None
+            Corresponding uncertainties for the input data for uncertainty propagation of shape
+            (N,...) and type float
+
+        Returns
+        -------
+        ArrayT | tuple[ArrayT]
+            Transformed array or tensor and propagated uncertainties if provided of shape
+            (N,...) and type float
+        """
+        if back and uncertainty is not None:
+            return self.backward_grad(x, uncertainty)
+        if back:
+            return self.backward(x)
+        if uncertainty is not None:
+            return self.forward_grad(x, uncertainty)
+        return self.forward(x)
+
+    def forward(self, x: ArrayT) -> ArrayT:
         """
         Forward pass of the transformation
 
         Parameters
         ----------
-        x : ArrayLike
+        x : ArrayT
             Input array or tensor of shape (N,...), where N is the number of elements
 
         Returns
         -------
-        ArrayLike
+        ArrayT
             Transformed array or tensor of shape (N,...)
         """
         return x
 
-    def backward(self, x: ArrayLike) -> ArrayLike:
+    def backward(self, x: ArrayT) -> ArrayT:
         """
         Backwards pass to invert the transformation
 
         Parameters
         ----------
-        x : ArrayLike
+        x : ArrayT
             Input array or tensor of shape (N,...), where N is the number of elements
 
         Returns
         -------
-        ArrayLike
+        ArrayT
             Untransformed array or tensor of shape (N,...)
         """
         return x
 
-    def forward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         """
         Forward pass of the transformation and uncertainty propagation
 
         Parameters
         ----------
-        x : ArrayLike
+        x : ArrayT
             Input array or tensor of shape (N,...), where N is the number of elements
-        uncertainty : ArrayLike
+        uncertainty : ArrayT
             Uncertainty of the input array or tensor of shape (N,...)
 
         Returns
         -------
-        tuple[ArrayLike, ArrayLike]
+        tuple[ArrayT, ArrayT]
             Transformed array or tensor of shape (N,...) and transformed uncertainty of shape
             (N,...)
         """
         return self(x), uncertainty
 
-    def backward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def backward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         """
         Backwards pass to invert the transformation and uncertainty propagation
 
         Parameters
         ----------
-        x : ArrayLike
+        x : ArrayT
             Input array or tensor of shape (N,...), where N is the number of elements
-        uncertainty : ArrayLike
+        uncertainty : ArrayT
             Uncertainty of the input array or tensor of shape (N,...)
 
         Returns
         -------
-        tuple[ArrayLike, ArrayLike]
+        tuple[ArrayT, ArrayT]
             Untransformed array or tensor of shape (N,...) and untransformed uncertainty of shape
             (N,...)
         """
@@ -206,15 +235,16 @@ class Index(BaseTransform):
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> ArrayT
         Forward pass of the transformation
-    forward_grad(x, uncertainty) -> ArrayLike
+    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Forward pass of the transformation and uncertainty propagation
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
     def __init__(
             self,
+            *,
             dim: int = -1,
             in_shape: tuple[int, ...] | None = None,
             slice_: slice = slice(None)) -> None:
@@ -252,17 +282,14 @@ class Index(BaseTransform):
         else:
             self._slice = [slice(*s) for s in state['slice']]
 
-    def forward(self, x: ArrayLike) -> ArrayLike:
+    def forward(self, x: ArrayT) -> ArrayT:
         idxs: ndarray = np.array(np.array(self._shape) != -1)
 
         if np.array(np.array(x.shape[1:])[idxs] != np.array(self._shape)[idxs]).any():
             return super().forward(x)
-        return x[:, *self._slice]
+        return cast(ArrayT, x[:, *self._slice])
 
-    def forward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         return self(x), self(uncertainty)
 
     def extra_repr(self) -> str:
@@ -275,18 +302,18 @@ class Log(BaseTransform):
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> ArrayT
         Forward pass of the transformation
-    backward(x) -> ArrayLike
+    backward(x) -> ArrayT
         Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> ArrayLike
+    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> ArrayLike
+    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Backwards pass to invert the transformation and uncertainty propagation
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self, base: float = 10, idxs: list[int] | None = None) -> None:
+    def __init__(self, *, base: float = 10, idxs: list[int] | None = None) -> None:
         """
         Parameters
         ----------
@@ -312,7 +339,7 @@ class Log(BaseTransform):
             warn(f'{self.__class__.__name__} transform is saved in an old format and is '
                  f'deprecated, please resave the transform', DeprecationWarning, stacklevel=2)
 
-    def forward(self, x: ArrayLike) -> ArrayLike:
+    def forward(self, x: ArrayT) -> ArrayT:
         module: ModuleType = torch if isinstance(x, Tensor) else np
         logs: dict[float, Callable] = {module.e: module.log, 10: module.log10, 2: module.log2}
 
@@ -326,34 +353,26 @@ class Log(BaseTransform):
             x = module.log(x) / np.log(self._base)
         return x
 
-    def backward(self, x: ArrayLike) -> ArrayLike:
+    def backward(self, x: ArrayT) -> ArrayT:
         if self._idxs is not None:
-            x[..., self._idxs] = self._base ** x[..., self._idxs]
+            x[..., self._idxs] = self._base ** x[..., self._idxs]  # type: ignore
         else:
-            x = self._base ** x
+            x = cast(ArrayT, self._base ** x)
         return x
 
-    def forward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         module: ModuleType = torch if isinstance(x, Tensor) else np
+        uncertainty = uncertainty.clone() if isinstance(uncertainty, Tensor) else uncertainty.copy()
 
-        if self._base == module.e and self._idxs is not None:
-            uncertainty[..., self._idxs] /= x[..., self._idxs]
-        elif self._base == module.e:
-            uncertainty /= x
-        elif self._idxs is not None:
+        if self._idxs is not None:
             uncertainty[..., self._idxs] /= x[..., self._idxs] * np.log(self._base)
         else:
             uncertainty /= x * np.log(self._base)
         return self(x), module.abs(uncertainty)
 
-    def backward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def backward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         module: ModuleType = torch if isinstance(x, Tensor) else np
+        uncertainty = uncertainty.clone() if isinstance(uncertainty, Tensor) else uncertainty.copy()
         x = self(x, back=True)
 
         if self._idxs is not None:
@@ -377,12 +396,12 @@ class MinClamp(BaseTransform):
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> ArrayT
         Forward pass of the transformation
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
-    def __init__(self, dim: int | None = None, idxs: list[int] | None = None) -> None:
+    def __init__(self, *, dim: int | None = None, idxs: list[int] | None = None) -> None:
         """
         Parameters
         ----------
@@ -408,11 +427,11 @@ class MinClamp(BaseTransform):
             warn(f'{self.__class__.__name__} transform is saved in an old format and is '
                  f'deprecated, please resave the transform', DeprecationWarning, stacklevel=2)
 
-    def forward(self, x: ArrayLike) -> ArrayLike:
+    def forward(self, x: ArrayT) -> ArrayT:
         kwargs: dict[str, Any]
         module: ModuleType = torch if isinstance(x, Tensor) else np
-        x_clamp: ArrayLike
-        min_count: ArrayLike
+        x_clamp: ArrayT
+        min_count: ArrayT
 
         if isinstance(x, Tensor):
             kwargs = {'dim': self._dim, 'keepdim': True}
@@ -423,7 +442,7 @@ class MinClamp(BaseTransform):
             min_count = module.amin(module.where(x > 0, x, module.max(x)), **kwargs)
             x = module.maximum(x, min_count)
         else:
-            x_clamp = x[..., self._idxs]
+            x_clamp = cast(ArrayT, x[..., self._idxs])
             min_count = module.amin(module.where(
                 x_clamp > 0,
                 x_clamp,
@@ -447,16 +466,18 @@ class MultiTransform(BaseTransform):
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> ArrayT
         Forward pass of the transformation
-    backward(x) -> ArrayLike
+    backward(x) -> ArrayT
         Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> ArrayLike
+    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> ArrayLike
+    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Backwards pass to invert the transformation and uncertainty propagation
-    append(transform)
+    append(transform) -> None
         Appends a transform to the list of transforms
+    extend(*args) -> None
+        Extends the list of transforms with another list of transforms
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
@@ -509,34 +530,28 @@ class MultiTransform(BaseTransform):
                 self.transforms.append(globals()[name]())
                 self.transforms[-1].__setstate__(transform)
 
-    def forward(self, x: ArrayLike) -> ArrayLike:
+    def forward(self, x: ArrayT) -> ArrayT:
         transform: BaseTransform
 
         for transform in self.transforms:
             x = transform(x)
         return x
 
-    def backward(self, x: ArrayLike) -> ArrayLike:
+    def backward(self, x: ArrayT) -> ArrayT:
         transform: BaseTransform
 
         for transform in self.transforms[::-1]:
             x = transform(x, back=True)
         return x
 
-    def forward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         transform: BaseTransform
 
         for transform in self.transforms:
             x, uncertainty = transform(x, uncertainty=uncertainty)
         return x, uncertainty
 
-    def backward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def backward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         transform: BaseTransform
 
         for transform in self.transforms[::-1]:
@@ -589,13 +604,13 @@ class Normalise(BaseTransform):
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> ArrayT
         Forward pass of the transformation
-    backward(x) -> ArrayLike
+    backward(x) -> ArrayT
         Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> ArrayLike
+    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> ArrayLike
+    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Backwards pass to invert the transformation and uncertainty propagation
     extra_repr() -> str
         Displays layer parameters when printing the transform
@@ -608,18 +623,19 @@ class Normalise(BaseTransform):
     def __init__(
             self,
             *,
-            data: ndarray | Tensor,
+            data: ArrayLike,
             mean: bool = ...,
             dim: int | tuple[int, ...] | None = ...) -> None:
         ...
 
     def __init__(
             self,
+            *,
             mean: bool = True,
             dim: int | tuple[int, ...] | None = None,
             offset: ndarray | None = None,
             scale: ndarray | None = None,
-            data: ndarray | Tensor | None = None) -> None:
+            data: ArrayLike | None = None) -> None:
         """
         Parameters
         ----------
@@ -659,35 +675,27 @@ class Normalise(BaseTransform):
         self.offset = np.array(state['offset'])
         self.scale = np.array(state['scale'])
 
-    def forward(self, x: ArrayLike) -> ArrayLike:
+    def forward(self, x: ArrayT) -> ArrayT:
         if isinstance(x, Tensor):
-            return (x - x.new_tensor(self.offset)) / x.new_tensor(self.scale)
-        return (x - self.offset) / self.scale
+            return cast(ArrayT, (x - x.new_tensor(self.offset)) / x.new_tensor(self.scale))
+        return cast(ArrayT, (x - self.offset) / self.scale)
 
-    def backward(self, x: ArrayLike) -> ArrayLike:
+    def backward(self, x: ArrayT) -> ArrayT:
         if isinstance(x, Tensor):
-            return x * x.new_tensor(self.scale) + x.new_tensor(self.offset)
-        return x * self.scale + self.offset
+            return cast(ArrayT, x * x.new_tensor(self.scale) + x.new_tensor(self.offset))
+        return cast(ArrayT, x * self.scale + self.offset)
 
-    def forward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
-        if isinstance(uncertainty, Tensor):
-            uncertainty = uncertainty / uncertainty.new_tensor(self.scale)
-        else:
-            uncertainty = uncertainty / self.scale
-        return self(x), uncertainty
+    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
+        return self(x), cast(ArrayT, uncertainty / (
+            uncertainty.new_tensor(self.scale) if isinstance(uncertainty, Tensor) else
+            self.scale
+        ))
 
-    def backward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
-        if isinstance(x, Tensor):
-            uncertainty = uncertainty * uncertainty.new_tensor(self.scale)
-        else:
-            uncertainty = uncertainty * self.scale
-        return self(x, back=True), uncertainty
+    def backward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
+        return self(x, back=True), cast(ArrayT, uncertainty * (
+            uncertainty.new_tensor(self.scale) if isinstance(uncertainty, Tensor) else
+            self.scale
+        ))
 
     def extra_repr(self) -> str:
         if 1 < self.offset.size <= 10:
@@ -706,21 +714,21 @@ class NumpyTensor(BaseTransform):
 
     Attributes
     ----------
-    dtype : dtype, default = float32
+    dtype : torch.dtype, default = float32
         Data type of the tensor
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> Tensor
         Forward pass of the transformation
-    backward(x) -> ArrayLike
+    backward(x) -> ndarray
         Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> ArrayLike
+    forward_grad(x, uncertainty) -> tuple[Tensor, Tensor]
         Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> ArrayLike
+    backward_grad(x, uncertainty) -> tuple[ndarray, ndarray]
         Backwards pass to invert the transformation and uncertainty propagation
     """
-    def __init__(self, dtype: torch.dtype = torch.float32) -> None:
+    def __init__(self, *, dtype: torch.dtype = torch.float32) -> None:
         """
         Parameters
         ----------
@@ -739,27 +747,21 @@ class NumpyTensor(BaseTransform):
         except KeyError:
             self.dtype = torch.float32
 
-    def forward(self, x: ndarray | Tensor) -> Tensor:
+    def forward(self, x: ArrayLike) -> Tensor:
         if isinstance(x, ndarray):
             return torch.from_numpy(x).type(self.dtype)
         return x
 
-    def backward(self, x: ndarray | Tensor) -> ndarray:
+    def backward(self, x: ArrayLike) -> ndarray:
         if isinstance(x, Tensor):
             return x.detach().cpu().numpy()
         return x
 
-    def forward_grad(
-            self,
-            x: ndarray | Tensor,
-            uncertainty: ndarray | Tensor) -> tuple[Tensor, Tensor]:
+    def forward_grad(self, x: ArrayLike, uncertainty: ArrayLike) -> tuple[Tensor, Tensor]:
         return self(x), self(uncertainty)
 
-    def backward_grad(
-            self,
-            x: ndarray | Tensor,
-            uncertainty: ndarray | Tensor) -> tuple[ndarray, ndarray]:
-        return self(x, back=True), self(uncertainty, back=True)
+    def backward_grad(self, x: ArrayLike, uncertainty: ArrayLike) -> tuple[ndarray, ndarray]:
+        return self.backward(x), self.backward(uncertainty)
 
 
 class Reshape(BaseTransform):
@@ -768,19 +770,20 @@ class Reshape(BaseTransform):
 
     Methods
     -------
-    forward(x) -> ArrayLike
+    forward(x) -> ArrayT
         Forward pass of the transformation
-    backward(x) -> ArrayLike
+    backward(x) -> ArrayT
         Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> ArrayLike
+    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> ArrayLike
+    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
         Backwards pass to invert the transformation and uncertainty propagation
     extra_repr() -> str
         Displays layer parameters when printing the transform
     """
     def __init__(
             self,
+            *,
             in_shape: list[int] | None = None,
             out_shape: list[int] | None = None) -> None:
         """
@@ -802,30 +805,20 @@ class Reshape(BaseTransform):
         self._in_shape = state['in_shape']
         self._out_shape = state['out_shape']
 
-    def forward(self, x: ArrayLike) -> ArrayLike:
+    def forward(self, x: ArrayT) -> ArrayT:
         if self._out_shape is None:
             return super().forward(x)
-        if isinstance(x, ndarray):
-            return x.reshape(len(x), *self._out_shape)
-        return x.view(len(x), *self._out_shape)
+        return getattr(x, 'view' if isinstance(x, Tensor) else 'reshape')(len(x), *self._out_shape)
 
-    def backward(self, x: ArrayLike) -> ArrayLike:
+    def backward(self, x: ArrayT) -> ArrayT:
         if self._in_shape is None:
             return super().backward(x)
-        if isinstance(x, ndarray):
-            return x.reshape(len(x), *self._in_shape)
-        return x.view(len(x), *self._in_shape)
+        return getattr(x, 'view' if isinstance(x, Tensor) else 'reshape')(len(x), *self._in_shape)
 
-    def forward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         return self(x), self(uncertainty)
 
-    def backward_grad(
-            self,
-            x: ArrayLike,
-            uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+    def backward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
         return self(x, back=True), self(uncertainty, back=True)
 
     def extra_repr(self) -> str:

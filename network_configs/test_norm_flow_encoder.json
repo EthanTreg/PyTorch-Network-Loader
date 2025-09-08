@@ -1,7 +1,7 @@
 {
   "net": {
     "checkpoints": 1,
-    "description": "Tests the encoder architecture"
+    "description": "Tests the normalising flow encoder architecture"
   },
   "layers": [
     {
@@ -23,8 +23,11 @@
       "shape": [-1]
     },
     {
-      "type": "Linear",
-      "factor": 1
+      "type": "SplineFlow",
+      "factor": 1,
+      "transforms": 2,
+      "hidden_features": [4, 4],
+      "context": true
     }
   ]
 }

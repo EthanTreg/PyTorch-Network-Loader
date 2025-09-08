@@ -1,112 +1,120 @@
 """
 Classes that contain multiple types of networks
 """
-from typing import Any
+from typing import Any, cast
 
 import torch
 import numpy as np
-from torch import optim, Tensor
+from torch import optim, nn, Tensor
 from torch.utils.data import DataLoader
 from zuko.distributions import NormalizingFlow
 from numpy import ndarray
 
 from netloader.network import Network
-from netloader.utils.utils import label_change
-from netloader.networks.base import BaseNetwork
+from netloader.utils import label_change
+from netloader.data import Data
+from netloader.loss_funcs import BaseLoss
 from netloader.transforms import BaseTransform
-from netloader.networks.encoder_decoder import Encoder
+from netloader.networks.base import BaseNetwork
+from netloader.networks.encoder_decoder import BaseEncoder
+from netloader.utils.types import NDArrayLike, TensorListLike, NDArrayListLike, TensorT
 
 
 class NormFlow(BaseNetwork):
     """
     Transforms a simple distribution into a distribution that reflects the input data
 
-    Requires last layer to be a normalizing flow and will not pass input data through the network
+    Requires last layer to be a normalizing flow and will not pass input data through the network.
 
     Attributes
     ----------
-    net : Module | Network
+    net : nn.Module | Network | CompatibleNetwork
         Neural spline flow
-    save_path : str, default = ''
+    save_path : str
         Path to the network save file
-    description : str, default = ''
-        Description of the network training
-    losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
-        Current network training and validation losses
-    transforms : dict[str, BaseTransform | None], default = {...: None, ...}
+    description : str
+        Description of the network
+    losses : tuple[list[LossCT], list[LossCT]]
+        Network training and validation losses as a float or dictionary of losses for each loss
+        function
+    transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
-    idxs: (N) ndarray, default = None
-        Data indices for random training & validation datasets
-    optimiser : Optimizer, default = AdamW
+    idxs: ndarray | None
+        Training data indices with shape (N) and type int, where N is the number of elements in the
+        training dataset
+    optimiser : optim.Optimizer
         Network optimiser
-    scheduler : LRScheduler, default = ReduceLROnPlateau
+    scheduler : optim.lr_scheduler.LRScheduler
         Optimiser scheduler
 
     Methods
     -------
-    predict(path=None, num=[1e3], header=[...]) -> dict[str, ndarray]
+    predict(path='', num=[1e3]) -> dict[str, NDArrayLike]
         Generates probability distributions for a dataset and can save to a file
     """
-    def _data_loader_translation(self, low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
+    @staticmethod
+    def _data_loader_translation(low_dim: TensorT, high_dim: TensorT) -> tuple[TensorT, TensorT]:
         """
-        Takes the low and high dimensional tensors from the data loader, and orders them as inputs
-        and targets for the network
+        Orders low and high dimensional tensors from the data loader as inputs and targets for the
+        network.
 
         Parameters
         ----------
-        low_dim : Tensor
-            Low dimensional tensor from the data loader
-        high_dim : Tensor
-            High dimensional tensor from the data loader
+        low_dim : TensorT
+            Low dimensional tensor from the data loader of shape (N, ...) and type float, where N is
+            the batch size
+        high_dim : TensorT
+            High dimensional tensor from the data loader of shape (N, ...) and type float
 
         Returns
         -------
-        tuple[Tensor, Tensor]
-            Input and output target tensors
+        tuple[TensorT, TensorT]
+            Input and output target tensors of shape (N, ...) and type float
         """
         return low_dim, high_dim
 
-    def _loss(self, _: Any, target: Tensor) -> float:
+    def _loss_tensor(self, _: Any, target: TensorListLike) -> Tensor:
         """
-        Calculates the loss from the flow's predictions
+        Calculates the loss from the flow's predictions.
 
         Parameters
         ----------
-        target : (N, ...) Tensor
-            Target high dimensional data of batch size N and the remaining dimensions depend on the
-            network used
+        target : TensorListLike
+            Target high dimensional data of shape (N, ...) and type float, where N is the batch size
 
         Returns
         -------
-        float
-            Loss from the network's predictions
+        Tensor
+            Loss from the flow's predictions
         """
-        loss: Tensor = -self.net().log_prob(target).mean()
-        self._update(loss)
-        return loss.item()
+        return -self.net().log_prob(target).mean()
 
     def predict(
             self,
-            *_: Any,
-            path: str | None = None,
+            loader: DataLoader[Any] | None = None,
+            *,
+            path: str = '',
             num: list[int] | None = None,
-            **__: Any) -> dict[str, ndarray]:
+            **__: Any) -> dict[str, NDArrayLike]:
         """
-        Generates probability distributions for a dataset and can save to a file
+        Generates probability distributions for a dataset and can save to a file.
 
         Parameters
         ----------
-        path : str, default = None
-            Path as CSV file to save the predictions if they should be saved
+        loader : DataLoader[Any] | None, default = None
+            Unused, present for compatibility with BaseNetwork
+        path : str, default = ''
+            Path as pkl file to save the predictions if they should be saved
         num : list[int], default = [1e3]
-            Number of samples to generate
+            Number of samples, S, to generate
 
         Returns
         -------
-        dict[str, ndarray]
-            Predicted distribution
+        dict[str, NDArrayLike]
+            Predicted distribution, with shape (N, ..., S) and type float for dataset of size N
         """
-        data: dict[str, ndarray]
+        assert isinstance(self.transforms['preds'], (BaseTransform, type(None)))
+        data: dict[str, NDArrayLike]
         samples: ndarray
         transform: BaseTransform | None = self.transforms['preds']
 
@@ -119,54 +127,57 @@ class NormFlow(BaseNetwork):
         return data
 
 
-class NormFlowEncoder(Encoder):
+class NormFlowEncoder(BaseEncoder):
     """
     Calculates the loss for a network and normalizing flow that takes high-dimensional data
-    and predicts a low-dimensional data distribution
+    and predicts a low-dimensional data distribution.
 
-    Requires the normalizing flow to be the last layer in the network
+    Requires the normalizing flow to be the last layer in the network.
 
     Attributes
     ----------
-    net : Module | Network
-        normalizing flow to predict low-dimensional data distribution
-    flow_loss : float, default = 1
+    net : nn.Module | Network | CompatibleNetwork
+        Neural network
+    flow_loss : float
         Loss weight for the normalizing flow
-    encoder_loss : float, default = 1
+    encoder_loss : float
         Loss weight for the output of the encoder
-    save_path : str, default = ''
+    save_path : str
         Path to the network save file
-    description : str, default = ''
-        Description of the network training
-    losses : tuple[list[Tensor], list[Tensor]], default = ([], [])
-        Current flow training and validation losses
-    transforms : dict[str, BaseTransform | None], default = {...: None, ...}
+    description : str
+        Description of the network
+    losses : tuple[list[LossCT], list[LossCT]]
+        Network training and validation losses as a float or dictionary of losses for each loss
+        function
+    transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
-    idxs: (N) ndarray, default = None
-        Data indices for random training & validation datasets
-    classes : (C) Tensor, default = None
-        Unique classes of size C if using class classification
-    optimiser : Optimizer, default = AdamW
+    idxs: ndarray | None
+        Training data indices with shape (N) and type int, where N is the number of elements in the
+        training dataset
+    classes : Tensor | None
+        Unique classes of shape (C) and type int/float, where C is the number of classes
+    optimiser : optim.Optimizer
         Network optimiser
-    scheduler : LRScheduler, default = ReduceLROnPlateau
+    scheduler : optim.lr_scheduler.LRScheduler
         Optimiser scheduler
 
     Methods
     -------
     set_optimiser(*args, **kwargs)
         Sets the optimiser for the network
-    predict(loader, bin_num=100, path=None, num=[1e3], header=[...]) -> dict[str, ndarray]
+    predict(loader, bin_num=100, path='', num=[1e3], header=[...]) -> dict[str, NDArrayLike]
         Generates probability distributions for a dataset and can save to a file
-    batch_predict(data, num=[1e3]) -> tuple[ndarray | list[None], ndarray | list[None]]
+    batch_predict(data, num=[1e3]) -> tuple[NDArrayListLike | None, ndarray | None]
         Generates probability distributions for the given data batch
     extra_repr() -> str
-        Displays layer parameters when printing the architecture
+        Additional representation of the architecture.
     """
     def __init__(
             self,
             save_num: int | str,
             states_dir: str,
-            net: torch.nn.Module | Network,
+            net: nn.Module | Network,
+            *,
             overwrite: bool = False,
             mix_precision: bool = False,
             net_checkpoint: int | None = None,
@@ -175,8 +186,9 @@ class NormFlowEncoder(Encoder):
             train_epochs: tuple[int, int] = (0, -1),
             learning_rate: tuple[float, float] = (1e-3,) * 2,
             classes: Tensor | None = None,
-            transform: BaseTransform | None = None,
-            in_transform: BaseTransform | None = None,
+            loss_func: BaseLoss | None = None,
+            transform: list[BaseTransform] | BaseTransform | None = None,
+            in_transform: list[BaseTransform] | BaseTransform | None = None,
             optimiser_kwargs: dict[str, Any] | None = None,
             scheduler_kwargs: dict[str, Any] | None = None) -> None:
         """
@@ -187,7 +199,7 @@ class NormFlowEncoder(Encoder):
         states_dir : str
             Directory to save the network and flow
         net : nn.Module | Network
-            normalizing flow to predict low-dimensional data distribution
+            Normalizing flow to predict low-dimensional data distribution
         overwrite : bool, default = False
             If saving can overwrite an existing save file, if True and file with the same name
             exists, an error will be raised
@@ -210,7 +222,10 @@ class NormFlowEncoder(Encoder):
             Optimiser initial learning rate for encoder and normalizing flow, if None, no optimiser
             or scheduler will be set
         classes : Tensor, default = None
-            Unique classes of size C if using class classification
+            Unique classes of shape (C) and type int/float, where C is the number of classes
+        loss_func : BaseLoss | None, default = MSELoss | CrossEntropyLoss
+            Loss function for the encoder, if None MSELoss will be used if classes is None, else
+            CrossEntropyLoss will be used
         in_transform : BaseTransform, default = None
             Transformation for the input data
         optimiser_kwargs : dict[str, Any] | None, default = None
@@ -228,6 +243,7 @@ class NormFlowEncoder(Encoder):
             description=description,
             verbose=verbose,
             classes=classes,
+            loss_func=loss_func,
             transform=transform,
             in_transform=in_transform,
             optimiser_kwargs=optimiser_kwargs,
@@ -257,7 +273,7 @@ class NormFlowEncoder(Encoder):
 
         self.optimiser = self.set_optimiser([
             {'params': self.net.net[:-1].parameters(), 'lr': learning_rate[0]},
-            {'params': self.net.net[-1].parameters(), 'lr': learning_rate[1]},
+            {'params': self.net.net[-1:].parameters(), 'lr': learning_rate[1]},
         ], **optimiser_kwargs or {})
         self.scheduler = self.set_scheduler(self.optimiser, **scheduler_kwargs or {})
 
@@ -285,32 +301,34 @@ class NormFlowEncoder(Encoder):
         self.flow_loss = state['flow_loss']
         self.encoder_loss = state['encoder_loss']
 
-    def _loss(self, in_data: Tensor, target: Tensor) -> float:
+    def _loss_tensor(
+            self,
+            in_data: TensorListLike,
+            target: TensorListLike) -> dict[str, Tensor]:
         """
-        Calculates the loss from the network and flow's predictions
+        Calculates the loss from the network and flow's predictions.
 
         Parameters
         ----------
-        in_data : (N,...) Tensor
-            Input high dimensional data of batch size N and the remaining dimensions depend on the
-            network used
-        target : (N, ...) Tensor
-            Target low dimensional data of batch size N and the remaining dimensions depend on the
-            network used
+        in_data : TensorListLike
+            Input high dimensional data of shape (N, ...) and type float, where N is the batch size
+        target : TensorListLike
+            Target low dimensional data of shape (N, ...) and type float
 
         Returns
         -------
-        float
-            Loss from the flow's predictions'
+        dict[str, Tensor]
+            Dictionary of losses for encoder and flow
         """
-        loss: Tensor = torch.tensor(0.).to(self._device)
-        output: Tensor | NormalizingFlow
+        loss: dict[str, Tensor] = {}
+        output: Tensor | NormalizingFlow = self.net(in_data)
 
-        # Encoder outputs
-        output = self.net(in_data)
+        if not isinstance(target, Tensor):
+            raise ValueError(f'{self.__class__.__name__} requires target to be a Tensor, got '
+                             f'{type(target)}')
 
         if isinstance(output, NormalizingFlow) and self.flow_loss:
-            loss += self.flow_loss * -output.log_prob(target).mean()
+            loss['flow'] = self.flow_loss * -output.log_prob(target).mean()
 
         if isinstance(output, NormalizingFlow) and self._checkpoint:
             output = self.net.checkpoints[self._checkpoint]
@@ -320,10 +338,8 @@ class NormFlowEncoder(Encoder):
             target = label_change(target.squeeze(), self.classes)
 
         if self.encoder_loss and isinstance(output, Tensor):
-            loss += self.encoder_loss * self._loss_func(output, target)
-
-        self._update(loss)
-        return loss.item()
+            loss['encoder'] = self.encoder_loss * self._loss_func_(output, target)
+        return loss
 
     def _update_epoch(self) -> None:
         """
@@ -341,12 +357,13 @@ class NormFlowEncoder(Encoder):
 
     def predict(
             self,
-            loader: DataLoader,
+            loader: DataLoader[Any],
+            *_: Any,
             inputs: bool = False,
             bin_num: int = 100,
-            path: str | None = None,
+            path: str = '',
             num: list[int] | None = None,
-            **_: Any) -> dict[str, ndarray]:
+            **__: Any) -> dict[str, NDArrayLike]:
         """
         Generates probability distributions for a dataset and can save to a file
 
@@ -362,28 +379,34 @@ class NormFlowEncoder(Encoder):
         path : str, default = None
             Path as a pkl file to save the predictions if they should be saved
         num : list[int], default = [1e3]
-            Number of samples to generate from the predicted distribution
+            Number of samples, S, to generate from the predicted distribution
 
         Returns
         -------
-        dict[str, ndarray]
-            Prediction IDs, target values, target probability, distribution maximum, distribution
-            median, and predicted distribution with samples S for dataset of size N
+        dict[str, NDArrayLike]
+            Prediction IDs of shape (N), optional inputs, target values, target probability,
+            distribution maximum, distribution median of shape (N,...), and predicted distribution
+            of shape (N,...,S) and type float for dataset of size N
         """
         probs: list[ndarray] = []
         maxima: list[ndarray] = []
-        data: dict[str, ndarray]
+        data: dict[str, NDArrayLike] = super().predict(loader, inputs=inputs, num=num)
         hist: ndarray
         bins: ndarray
         prob: ndarray
+        distribution: ndarray
+        target: ndarray
 
-        data = super().predict(loader, inputs=inputs, num=num)
-
-        if data['distributions'] is None:
+        if 'distributions' not in data:
             self._save_predictions(path, data)
             return data
 
-        for target, distribution in zip(data['targets'], data['distributions']):
+        assert (isinstance(data['distributions'], ndarray) and
+                isinstance(data['targets'], (ndarray, Data)))
+
+        for target, distribution in zip(
+                data['targets'] if isinstance(data['targets'], ndarray) else data['targets'].data,
+                data['distributions']):
             hist, bins = np.histogram(distribution, bins=bin_num, density=True)
             prob = hist * (bins[1] - bins[0])
             bins[-1] += 1e-6
@@ -398,26 +421,29 @@ class NormFlowEncoder(Encoder):
 
     def batch_predict(
             self,
-            data: Tensor,
+            data: TensorListLike,
+            *,
             num: list[int] | None = None,
-            **_: Any) -> tuple[ndarray | list[None], ndarray | list[None]]:
+            **_: Any) -> tuple[NDArrayListLike | None, ndarray | None]:
         """
         Generates probability distributions for the data batch
 
         Parameters
         ----------
-        data : (N,...) Tensor
-            Data to generate distributions for
-        num : list[int], default = [1e3]
-            Number of samples to generate
+        data : TensorListLike
+            Data of shape (N,...) and type float to generate distributions for, where N is the batch
+            size
+        num : list[int] | None, default = [1e3]
+            Number of samples, S, to generate
 
         Returns
         -------
-        tuple[(N,...) ndarray | list[None], (N,S) ndarray | list[None]]
-            Network output and S samples from each probability distribution in batch of N
+        tuple[NDArrayListLike | None, ndarray | None]
+            Network output with shape (N,...) and type float and samples of shape (N,S) and type
+            float from each probability distribution
         """
-        samples: ndarray | list[None] = [None]
-        output: ndarray | Tensor | NormalizingFlow | list[None] = self.net(data)
+        samples: ndarray | None = None
+        output: NormalizingFlow | TensorListLike | None = self.net(data)
 
         if num is None:
             num = [int(1e3)]
@@ -429,25 +455,24 @@ class NormFlowEncoder(Encoder):
                 0,
                 1,
             ).detach().cpu().numpy()
-            output = [None]
-        else:
-            assert isinstance(output, Tensor)
-            output = output.detach().cpu().numpy()
+            output = None
 
         if output is None and self._checkpoint:
-            output = self.net.checkpoints[self._checkpoint].detach().cpu().numpy()
+            output = self.net.checkpoints[self._checkpoint]
 
-        assert not isinstance(output, Tensor)
-        return output, samples
+        assert not isinstance(output, NormalizingFlow)
+        return (None if output is None else
+                cast(NDArrayListLike, output.detach().cpu().numpy()),
+                samples)
 
     def extra_repr(self) -> str:
         """
-        Displays architecture parameters when printing the network
+        Additional representation of the architecture.
 
         Returns
         -------
         str
-            Architecture parameters
+            Architecture specific representation
         """
         return (f'{super().extra_repr()}, '
                 f'train_epochs: {self._epochs}, '

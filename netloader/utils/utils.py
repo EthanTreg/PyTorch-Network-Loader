@@ -6,25 +6,113 @@ import sys
 import inspect
 import logging as log
 from types import ModuleType
-from typing import Any, TypeVar
+from typing import Any, Literal, cast, overload
 
 import torch
 import numpy as np
 from torch import Tensor
 from numpy import ndarray
 
-ArrayLike = TypeVar('ArrayLike', bound=ndarray | Tensor)
+from netloader.utils.types import ArrayT
+
+
+class Shapes(list[list[int] | list[list[int]]]):
+    """
+    Shapes list that allows for indexing of multiple shapes.
+    """
+    @overload  #  type: ignore[override]
+    def __getitem__(self, idx: int | tuple[int, int]) -> list[int]: ...
+
+    @overload
+    def __getitem__(self, idx: slice) -> 'Shapes': ...
+
+    def __getitem__(self, idx: int | tuple[int, int] | slice) -> 'list[int] | Shapes':
+        """
+        Get shape from the shapes list.
+
+        Parameters
+        ----------
+        idx : int | tuple[int, int] | slice
+            Index of the shape to get, if tuple then first index is the layer index and second is
+            the shape index if the layer has multiple shapes, if slice, returns a Shapes object with
+            the sliced shapes
+
+        Returns
+        -------
+        list[int] | Shapes
+            Shape at the provided index
+        """
+        return self.get(idx, list_=False)
+
+    def __repr__(self) -> str:
+        return f'Shapes({super().__repr__()})'
+
+    @overload
+    def get(self, idx: slice, list_: bool) -> 'Shapes': ...
+
+    @overload
+    def get(self, idx: tuple[int, int], list_: bool) -> list[int]: ...
+
+    @overload
+    def get(self, idx: int, list_: Literal[False]) -> list[int]: ...
+
+    @overload
+    def get(self, idx: int, list_: Literal[True]) -> list[list[int]]: ...
+
+    @overload
+    def get(self, idx: int, list_: bool) -> list[int] | list[list[int]]: ...
+
+    def get(
+            self,
+            idx: int | tuple[int, int] | slice,
+            list_: bool = True) -> 'list[int] | list[list[int]] | Shapes':
+        """
+        Get shape from the shapes list.
+
+        Parameters
+        ----------
+        idx : int | tuple[int, int] | slice
+            Index of the shape to get, if tuple then first index is the layer index and second is
+            the shape index if the layer has multiple shapes, if slice, returns a Shapes object with
+            the sliced shapes
+        list_ : bool, default = True
+            If true, returns a list of shapes if the index contains multiple shapes, else returns a
+            single shape
+
+        Returns
+        -------
+        list[int] | list[list[int]] | Shapes
+            Shape at the provided index
+        """
+        item: list[int] | list[list[int]] | list[list[int] | list[list[int]]] = super().__getitem__(
+            idx if isinstance(idx, (int, slice)) else idx[0],
+        )
+
+        if isinstance(idx, slice):
+            return Shapes(cast(list[list[int] | list[list[int]]], item))
+        if isinstance(idx, tuple) and isinstance(item[0], list):
+            return cast(list[int], item[idx[1]])
+        if isinstance(idx, tuple) and idx[1]:
+            raise ValueError(f'Index {idx} does not contain multiple shapes, shape at index is '
+                             f'{item}')
+        if isinstance(item[0], list) and not list_:
+            raise ValueError(f'Index {idx} does not contain a single shape, shape at index is '
+                             f'{item}, if you want to return all shapes at that index, use '
+                             f'Shapes.get(idx, list_=True) instead')
+        return cast(list[int], item)
 
 
 def ascii_plot(
         data: list[float],
+        *,
         clear: bool = False,
         x_num: int = 20,
         height: int = 6,
         text: str = '',
+        label: str = '',
         data2: list[float] | None = None) -> None:
     """
-    Prints a simple ASCII graph of data per index
+    Prints a simple ASCII graph of data per index.
 
     Parameters
     ----------
@@ -38,6 +126,8 @@ def ascii_plot(
         Height of the graph in lines
     text : str, default = ''
         Optional text to display at the end of the graph
+    label : str, default = ''
+        Label for the x-axis
     data2 : list[float] | None, default = None
         Secondary data to plot
     """
@@ -53,7 +143,7 @@ def ascii_plot(
     line: str
     symbol: str
     symbol2: str
-    x_label: str = 'Epochs:'
+    x_label: str = f'{label}:' if label else ''
     grid: list[str]
     symbols: list[str] = ['_', '-', '‾']  # low, mid, high
     symbols2: list[str] = ['.', '·', '˙']
@@ -110,7 +200,7 @@ def ascii_plot(
 
 def check_params(name: str, supported_params: list[str] | ndarray, in_params: ndarray) -> None:
     """
-    Checks if provided parameters are supported by the function
+    Checks if provided parameters are supported by the function.
 
     Parameters
     ----------
@@ -119,7 +209,7 @@ def check_params(name: str, supported_params: list[str] | ndarray, in_params: nd
     supported_params : list[str] | ndarray
         Parameters supported by the function
     in_params : ndarray
-        Input parameters
+        Input parameters of shape (N), where N is the number of parameters.
     """
     bad_params: ndarray = in_params[~np.isin(in_params, supported_params)]
 
@@ -157,11 +247,11 @@ def deep_merge(base: dict, new: dict) -> dict:
 
 def get_device() -> tuple[dict[str, Any], torch.device]:
     """
-    Gets the device for PyTorch to use
+    Gets the device for PyTorch to use.
 
     Returns
     -------
-    tuple[dict[str, Any], device]
+    tuple[dict[str, Any], torch.device]
         Arguments for the PyTorch DataLoader to use when loading data into memory and PyTorch device
     """
     device: torch.device = torch.device(
@@ -178,32 +268,34 @@ def get_device() -> tuple[dict[str, Any], torch.device]:
 
 
 def label_change(
-        data: ArrayLike,
-        in_label: ArrayLike,
+        data: ArrayT,
+        in_label: ArrayT,
+        *,
         one_hot: bool = False,
-        out_label: ArrayLike | None = None) -> ArrayLike:
+        out_label: ArrayT | None = None) -> ArrayT:
     """
-    Converts an array or tensor of class values to an array or tensor of class indices
+    Converts an array or tensor of class values to an array or tensor of class indices.
 
     Parameters
     ----------
-    data : (N) ArrayLike
-        Classes of size N
-    in_label : (C) ArrayLike
-        Unique class values of size C found in data
+    data : ArrayT
+        Classes of shape (N) where N is the number of samples
+    in_label : ArrayT
+        Unique class values of size (C) where C is the number of classes
     one_hot : bool, default = False
         If the returned tensor should be 1D array of class indices or 2D one hot tensor if out_label
         is None or is an int
-    out_label : (C) ArrayLike, default = None
-        Unique class values of size C to transform data into, if None, then values will be indexes
+    out_label : ArrayT | None, default = None
+        Unique class values of size (C) to transform data into, if None, then values will be indexes
 
     Returns
     -------
-    (N) | (N,C) ArrayLike
-        ndarray or Tensor of class indices, or if one_hot is True, one hot tensor
+    ArrayT
+        ndarray or Tensor of class indices of shape (N) and type float, or if one_hot is True, one
+        hot tensor of shape (N,C) and type float
     """
-    data_one_hot: ArrayLike
-    out_data: ArrayLike
+    data_one_hot: ArrayT
+    out_data: ArrayT
     module: ModuleType
 
     if isinstance(data, Tensor):
@@ -217,24 +309,21 @@ def label_change(
         out_label = module.arange(len(in_label))
 
     if isinstance(out_label, Tensor):
-        out_label = out_label.to(data.device)
+        out_label = cast(ArrayT, out_label.to(data.device))
 
-    assert out_label is not None
-    out_data = out_label[module.searchsorted(in_label, data)]
+    out_data = cast(ArrayT, out_label[module.searchsorted(in_label, data)])
 
     if one_hot:
         data_one_hot = module.zeros((len(data), len(in_label)))
         data_one_hot[module.arange(len(data)), out_data] = 1
         out_data = data_one_hot
 
-    if isinstance(out_data, Tensor):
-        out_data = out_data.to(data.device)
-    return out_data
+    return cast(ArrayT, out_data.to(data.device) if isinstance(out_data, Tensor) else out_data)
 
 
-def progress_bar(i: int, total: int, text: str = '', **kwargs: Any) -> None:
+def progress_bar(i: int, total: int, *, text: str = '', **kwargs: Any) -> None:
     """
-    Terminal progress bar
+    Terminal progress bar.
 
     Parameters
     ----------
@@ -244,7 +333,6 @@ def progress_bar(i: int, total: int, text: str = '', **kwargs: Any) -> None:
         Completion number
     text : str, default = ''
         Optional text to place at the end of the progress bar
-
     **kwargs
         Optional keyword arguments to pass to print
     """
@@ -266,7 +354,7 @@ def progress_bar(i: int, total: int, text: str = '', **kwargs: Any) -> None:
 def safe_globals(safe_package: str, modules: ModuleType | list[ModuleType]) -> None:
     """
     Adds all classes in the module from the specified package to the list of safe PyTorch classes
-    when loading saved networks
+    when loading saved networks.
 
     Parameters
     ----------
@@ -289,7 +377,7 @@ def safe_globals(safe_package: str, modules: ModuleType | list[ModuleType]) -> N
 
 def save_name(num: int | str, states_dir: str, name: str) -> str:
     """
-    Standardises the network save file naming
+    Standardises the network save file naming.
 
     Parameters
     ----------

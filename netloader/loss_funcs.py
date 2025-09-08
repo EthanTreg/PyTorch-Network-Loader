@@ -89,6 +89,65 @@ class BaseLoss(nn.Module):
         return self._loss_func(output, target)
 
 
+class CrossEntropyLoss(BaseLoss):
+    """
+    Cross entropy loss function
+    """
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """
+        Parameters
+        ----------
+        *args
+            Optional arguments to be passed to CrossEntropyLoss
+        **kwargs
+            Optional keyword arguments to be passed to CrossEntropyLoss
+        """
+        super().__init__(nn.CrossEntropyLoss, *args, **kwargs)
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self._loss_func = nn.CrossEntropyLoss(*self._args, **self._kwargs)
+
+
+class GaussianNLLLoss(BaseLoss):
+    """
+    Gaussian negative log likelihood loss function
+    """
+    def __init__(self, *args: Any, dim: int = 1, **kwargs: Any) -> None:
+        """
+        Parameters
+        ----------
+        dim : int, default = 1
+            Dimension of the target that contains the mean and uncertainty
+        *args
+            Optional arguments to be passed to GaussianNLLLoss
+        **kwargs
+            Optional keyword arguments to be passed to GaussianNLLLoss
+        """
+        super().__init__(nn.GaussianNLLLoss, *args, **kwargs)
+        self._dim: int = dim
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = super().__getstate__()
+        state['dim'] = self._dim
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self._loss_func = nn.GaussianNLLLoss(*self._args, **self._kwargs)
+        self._dim = state['dim']
+
+    def forward(self, output: Tensor, target: Tensor) -> Tensor:
+        if target.shape[self._dim] != 2 or output.shape[self._dim] != 1:
+            raise ValueError(f'Target shape must be 2 and output shape must be 1 at dim '
+                             f'{self._dim}, got target shape {target.shape} and output shape '
+                             f'{output.shape}')
+
+        idx: list[list[int] | slice] = [slice(None)] * target.dim()
+        idx[self._dim] = [0, 1]
+        return self._loss_func(output[*idx][0], target[*idx][0], target[*idx][1] ** 2)
+
+
 class MSELoss(BaseLoss):
     """
     Mean Squared Error (MSE) loss function
@@ -109,21 +168,4 @@ class MSELoss(BaseLoss):
         self._loss_func = nn.MSELoss(*self._args, **self._kwargs)
 
 
-class CrossEntropyLoss(BaseLoss):
-    """
-    Cross entropy loss function
-    """
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """
-        Parameters
-        ----------
-        *args
-            Optional arguments to be passed to CrossEntropyLoss
-        **kwargs
-            Optional keyword arguments to be passed to CrossEntropyLoss
-        """
-        super().__init__(nn.CrossEntropyLoss, *args, **kwargs)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        super().__setstate__(state)
-        self._loss_func = nn.CrossEntropyLoss(*self._args, **self._kwargs)
+__all__ = ['CrossEntropyLoss', 'GaussianNLLLoss', 'MSELoss']

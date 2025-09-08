@@ -3,44 +3,45 @@ Linear network layers
 """
 from __future__ import annotations
 import logging as log
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Self, Literal
 
 import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.base import BaseLayer
+from netloader.utils import Shapes
+from netloader.layers.base import BaseLayer, BaseSingleLayer
 
 if TYPE_CHECKING:
     from netloader.network import Network
 
 
-class Activation(BaseLayer):
+class Activation(BaseSingleLayer):
     """
-    Activation layer constructor
+    Activation layer constructor.
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
+    layers : nn.Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
             self,
+            *,
             activation: str = 'ELU',
-            shapes: list[list[int]] | None = None,
+            shapes: Shapes | None = None,
             **kwargs: Any) -> None:
         """
         Parameters
         ----------
         activation : str, default = 'ELU'
             Which activation function to use from PyTorch
-        shapes : list[list[int]], optional
+        shapes : Shapes | None, default = None
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
-
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -54,16 +55,16 @@ class Activation(BaseLayer):
         shapes.append(shapes[-1].copy())
 
 
-class Linear(BaseLayer):
+class Linear(BaseSingleLayer):
     """
-    Linear layer constructor
+    Linear layer constructor.
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
+    layers : nn.Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -74,7 +75,8 @@ class Linear(BaseLayer):
     def __init__(
             self,
             net_out: list[int],
-            shapes: list[list[int]],
+            shapes: Shapes,
+            *,
             features: int | None = None,
             layer: int | None = None,
             factor: float | None = None,
@@ -88,15 +90,15 @@ class Linear(BaseLayer):
         ----------
         net_out : list[int]
             Shape of the network's output
-        shapes : list[list[int]]
+        shapes : Shapes
             Shape of the outputs from each layer
-        features : int, optional
+        features : int | None, default = None
             Number of output features for the layer, if factor is provided, features will not be
             used
-        layer : int, optional
+        layer : int | None, default = None
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float, optional
+        factor : float | None, default = None
             Output features is equal to the factor of the network's output, or if layer is provided,
             which layer to be relative to, will be used if provided, else features will be used
         batch_norm : bool, default = False
@@ -118,9 +120,9 @@ class Linear(BaseLayer):
         # Number of features can be defined by either a factor of the output size or explicitly
         shape = self._check_factor_filters(
             shape[::-1],
-            features,
-            factor,
-            [np.prod(target)] if flatten_target else target[::-1],
+            filters=features,
+            factor=factor,
+            target=[int(np.prod(target))] if flatten_target else target[::-1],
         )[::-1]
 
         self.layers.add_module('Linear', nn.Linear(
@@ -147,15 +149,13 @@ class OrderedBottleneck(BaseLayer):
     to encode the most important information in the first values of the latent space.
 
     See `Information-Ordered Bottlenecks for Adaptive Semantic Compression
-    <https://arxiv.org/abs/2305.11213>`_ by Ho et al. (2023)
+    <https://arxiv.org/abs/2305.11213>`_ by Ho et al. (2023).
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
-        Layers to loop through in the forward pass
     min_size : int, default = 0
         Minimum gate size
 
@@ -166,11 +166,11 @@ class OrderedBottleneck(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
-    def __init__(self, shapes: list[list[int]], min_size: int = 0, **kwargs: Any) -> None:
+    def __init__(self, shapes: Shapes, *, min_size: int = 0, **kwargs: Any) -> None:
         """
         Parameters
         ----------
-        shapes : list[list[int]]
+        shapes : Shapes
             Shape of the outputs from each layer
         min_size : int, default = 0
             Minimum gate size
@@ -187,13 +187,15 @@ class OrderedBottleneck(BaseLayer):
 
         Parameters
         ----------
-        x : (N,...,Z) Tensor
-            Input tensor with batch size N and latent Z where Z > min_size
+        x : Tensor
+            Input tensor with shape (N,...,Z) and type float, where N is the batch size and Z is the
+            latent space where Z > min_size
 
         Returns
         -------
-        (N,...,Z) Tensor
-            Input zeroed from a random index to the last value along the dimension Z
+        Tensor
+            Input zeroed from a random index to the last value along the dimension Z with shape
+            (N,...,Z) and type float
         """
         if not self.training or self.min_size >= x.size(-1):
             return x
@@ -219,16 +221,14 @@ class Sample(BaseLayer):
     """
     Samples random values from a Gaussian distribution for a variational autoencoder,
     mean and standard deviation are the first and second half of the input channels with the last
-    channel ignored if there are an odd number
+    channel ignored if there are an odd number.
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
-        Layers to loop through in the forward pass
-    sample_layer : Normal
+    sample_layer : distributions.Normal
         Layer to sample values from a Gaussian distribution
 
     Methods
@@ -236,13 +236,13 @@ class Sample(BaseLayer):
     forward(x, net) -> Tensor
         Forward pass of the sampling layer
     """
-    def __init__(self, idx: int, shapes: list[list[int]], **kwargs: Any) -> None:
+    def __init__(self, idx: int, shapes: Shapes, **kwargs: Any) -> None:
         """
         Parameters
         ----------
         idx : int
             Layer number
-        shapes : list[list[int]]
+        shapes : Shapes
             Shape of the outputs from each layer
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -266,16 +266,18 @@ class Sample(BaseLayer):
 
         Parameters
         ----------
-        x : (N,C,...) | (N,Z) Tensor
-            Input tensor with batch size N containing the mean and standard deviation in the
-            channels dimension C, or latent Z
+        x : Tensor
+            Input tensor with shape (N,C,...) | (N,Z) and type float, where N is the batch size, and
+            either the channels dimension, C, or latent, Z, containing the mean and standard
+            deviation
         net : Network
             Parent network that this layer is part of
 
         Returns
         -------
-        (N,C/2,...) | (N,Z/2) Tensor
-            Output tensor sampled from the input tensor split into mean and standard deviation
+        Tensor
+            Output tensor sampled from the input tensor split into mean and standard deviation with
+            shape (N,C/2,...) | (N,Z/2) and type float
         """
         split: int = x.size(1) // 2
         mean: Tensor = x[:, :split]
@@ -294,16 +296,16 @@ class Sample(BaseLayer):
         return self
 
 
-class Upsample(BaseLayer):
+class Upsample(BaseSingleLayer):
     """
-    Constructs an upsampler
+    Constructs an upsampler.
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
+    layers : nn.Sequential
         Layers to loop through in the forward pass
 
     Methods
@@ -314,21 +316,22 @@ class Upsample(BaseLayer):
     def __init__(
             self,
             idx: int,
-            shapes: list[list[int]],
+            shapes: Shapes,
+            *,
             shape: list[int] | None = None,
-            scale: float | tuple[float, ...] = 2,
-            mode: str = 'nearest',
+            scale: float | list[float] | tuple[float, ...] = 2,
+            mode: Literal['nearest', 'linear', 'bilinear', 'bicubic', 'trilinear'] = 'nearest',
             **kwargs: Any) -> None:
         """
         Parameters
         ----------
         idx : int
             Layer number
-        shapes : list[list[int]]
+        shapes : Shapes
             Shape of the outputs from each layer
-        shape : list[int], optional
+        shape : list[int] | None, default = None
             Shape of the output, will be used if provided, else scale will be used
-        scale : float | tuple[float], default = 2
+        scale : float | tuple[float] | tuple[float, ...], default = 2
             Factor to upscale all or individual dimensions, first dimension is ignored, won't be
             used if shape is provided
         mode : {'nearest', 'linear', 'bilinear', 'bicubic', 'trilinear'}
@@ -337,7 +340,6 @@ class Upsample(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(idx=idx, **kwargs)
-        scale_arg: dict[str, tuple[int, ...] | tuple[float, ...]]
         modes: dict[str, list[int]] = {
             'nearest': [2, 3, 4],
             'linear': [2],
@@ -358,16 +360,18 @@ class Upsample(BaseLayer):
             scale = (scale,) * len(shapes[-1][1:])
 
         if shape:
-            scale_arg = {'size': tuple(shape)}
             shapes.append(shape)
         else:
-            scale_arg = {'scale_factor': scale}
             shapes.append(shapes[-1].copy())
             shapes[-1][1:] = [
                 int(length * factor) for length, factor in zip(shapes[-1][1:], scale)
             ]
 
-        self.layers.add_module('Upsample', nn.Upsample(**scale_arg, mode=mode))
+        self.layers.add_module('Upsample', nn.Upsample(
+            size=tuple(shape) if shape else None,
+            scale_factor=None if shape else scale,
+            mode=mode,
+        ))
 
     @staticmethod
     def _check_mode_dimension(mode: str, shape: list[int], modes: dict[str, list[int]]) -> None:
@@ -396,7 +400,7 @@ class Upsample(BaseLayer):
         ----------
         in_shape : list[int]
             Input shape
-        out_shape : list[int]
+        out_shape : list[int] | None
             Target output shape
         """
         if out_shape is not None and len(out_shape) != 1 and len(out_shape) + 1 != len(in_shape):

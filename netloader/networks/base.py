@@ -2,11 +2,10 @@
 Base network class to base other networks off
 """
 import os
-import pickle
 import logging as log
 from time import time
 from warnings import warn
-from typing import Any, Self, Union, Iterable
+from typing import Any, Self, Generic, cast
 
 import torch
 import numpy as np
@@ -15,74 +14,84 @@ from torch.utils.data import DataLoader
 from numpy import ndarray
 
 import netloader
-from netloader.utils import utils
-from netloader.network import Network
+import netloader.data
+from netloader import utils
 from netloader.transforms import BaseTransform
+from netloader.networks.utils import UtilityMixin
+from netloader.network import Network, CompatibleNetwork
+from netloader.data import Data, DataList, data_collation
+from netloader.utils.types import (
+    Param,
+    TensorLike,
+    NDArrayLike,
+    TensorListLike,
+    NDArrayListLike,
+    LossCT,
+    TensorLossCT,
+)
 
-Param = dict[Any, Union[torch.Tensor, 'Param']]
 
-
-class BaseNetwork:
+class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
     """
     Base network class that other types of networks build from
 
     Attributes
     ----------
-    net : Module | Network
-        Neural network
-    save_path : str, default = ''
+    save_path : str
         Path to the network save file
-    description : str, default = ''
+    description : str
         Description of the network
-    losses : tuple[list[float], list[float]], default = ([], [])
-        Network training and validation losses
-    transforms : dict[str, BaseTransform | None], default = {...: None, ...}
+    version : str
+        Version of the network when it was created or re-saved
+    losses : tuple[list[LossCT], list[LossCT]]
+        Network training and validation losses as a float or dictionary of losses for each loss
+        function
+    transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
-    idxs: ndarray, default = None
-        Data indices with shape (N), where N is the number of elements in the dataset for random
-        training & validation datasets
-    optimiser : Optimizer | None, default = None
-        Network optimiser, if learning rate is provided AdamW will be used
-    scheduler : LRScheduler, default = None
-        Optimiser scheduler, if learning rate is provided ReduceLROnPlateau will be used
+    idxs: ndarray | None
+        Training data indices with shape (N) and type int, where N is the number of elements in the
+        training dataset
+    net : nn.Module | Network | CompatibleNetwork
+        Neural network
+    optimiser : optim.Optimizer
+        Network optimiser
+    scheduler : optim.lr_scheduler.LRScheduler
+        Optimiser scheduler
 
     Methods
     -------
-    set_optimiser(parameters, **kwargs) -> Optimizer
-        Sets the optimiser for the network, by default it is AdamW
-    set_scheduler(optimiser, **kwargs) -> LRScheduler
-        Sets the scheduler for the network, by default it is ReduceLROnPlateau
-    get_device() -> device
+    get_device() -> torch.device
         Gets the device of the network
     get_epochs() -> int
         Returns the number of epochs the network has been trained for
     train(train)
         Flips the train/eval state of the network
-    training(epoch, training)
+    training(epoch, loaders)
         Trains & validates the network for each epoch
     save()
-        If save_num is provided, saves the network to the states directory
-    predict(loader, path=None, **kwargs) -> dict[str, ndarray]
+        Saves the network to the given path
+    predict(loader, *, inputs=False, path='', **kwargs) -> dict[str, NDArrayLike]
         Generates predictions for a dataset and can save to a file
-    batch_predict(data) -> tuple[ndarray]
+    batch_predict(data) -> tuple[NDArrayLike | None, ...]
         Generates predictions for the given data batch
     to(*args, **kwargs) -> Self
         Move and/or cast the parameters and buffers
     extra_repr() -> str
-        Displays layer parameters when printing the architecture
+        Additional representation of the architecture
     """
     def __init__(
             self,
             save_num: int | str,
             states_dir: str,
             net: nn.Module | Network,
+            *,
             overwrite: bool = False,
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
-            transform: BaseTransform | None = None,
-            in_transform: BaseTransform | None = None,
+            transform: list[BaseTransform] | BaseTransform | None = None,
+            in_transform: list[BaseTransform] | BaseTransform | None = None,
             optimiser_kwargs: dict[str, Any] | None = None,
             scheduler_kwargs: dict[str, Any] | None = None) -> None:
         """
@@ -92,7 +101,7 @@ class BaseNetwork:
             File number or name to save the network
         states_dir : str
             Directory to save the network
-        net : Module | Network
+        net : nn.Module | Network
             Network to predict low-dimensional data
         overwrite : bool, default = False
             If saving can overwrite an existing save file, if True and file with the same name
@@ -103,13 +112,14 @@ class BaseNetwork:
             Optimiser initial learning rate
         description : str, default = ''
             Description of the network
-        verbose : {'epoch', 'full', 'progress', None}
+        verbose : {'epoch', 'full', 'plot', 'progress', None}
             If details about each epoch should be printed ('epoch'), details about epoch and epoch
-            progress (full), just total progress ('progress'), or nothing (None)
-        transform : BaseTransform, default = None
-            Transformation of the network's output
-        in_transform : BaseTransform, default = None
-            Transformation for the input data
+            progress (full), details about epoch and an ASCII plot of the loss progress ('plot'),
+            just total progress ('progress'), or nothing (None)
+        transform : list[BaseTransform] | BaseTransform | None, default = None
+            Transformation(s) of the network's output(s)
+        in_transform : list[BaseTransform] | BaseTransform | None, default = None
+            Transformation(s) for the network's input(s)
         optimiser_kwargs : dict[str, Any] | None, default = None
             Optional keyword arguments to pass to set_optimiser
         scheduler_kwargs : dict[str, Any] | None, default = None
@@ -122,13 +132,13 @@ class BaseNetwork:
         self._verbose: str = verbose
         self._optimiser_kwargs: dict[str, Any] = optimiser_kwargs or {}
         self._scheduler_kwargs: dict[str, Any] = scheduler_kwargs or {}
+        self._logger: log.Logger = log.getLogger(__name__)
         self._device: torch.device = torch.device('cpu')
         self.save_path: str = ''
         self.description: str = description
         self.version: str = netloader.__version__
-        self.losses: (tuple[list[float], list[float]] |
-                      tuple[list[dict[str, float]], list[dict[str, float]]]) = ([], [])
-        self.transforms: dict[str, BaseTransform | None] = {
+        self.losses: tuple[list[LossCT], list[LossCT]] = ([], [])
+        self.transforms: dict[str, list[BaseTransform] | BaseTransform | None] = {
             'ids': None,
             'inputs': in_transform,
             'targets': transform,
@@ -137,23 +147,15 @@ class BaseNetwork:
         self.idxs: ndarray | None = None
         self.optimiser: optim.Optimizer
         self.scheduler: optim.lr_scheduler.LRScheduler
-        self.net: nn.Module | Network = net
-
-        if not isinstance(self.net, Network) and not hasattr(self.net, 'net'):
-            self.net.net = nn.ModuleList(self.net._modules.values())
-        elif not isinstance(self.net, Network) and not isinstance(self.net.net, nn.ModuleList):
-            raise NameError('net requires an indexable module list as attribute net, but attribute '
-                            'net already exists')
-
-        if not hasattr(self.net, 'name'):
-            self.net.name = type(self.net).__name__
+        self.net: Network | CompatibleNetwork = net if isinstance(net, Network) else \
+            CompatibleNetwork(net)
 
         if save_num:
             self.save_path = utils.save_name(save_num, states_dir, self.net.name)
 
             if os.path.exists(self.save_path) and overwrite:
-                log.getLogger(__name__).warning(f'{self.save_path} already exists and will be '
-                                                f'overwritten if training continues')
+                self._logger.warning(f'{self.save_path} already exists and will be overwritten if '
+                                     f'training continues')
             elif os.path.exists(self.save_path):
                 raise FileExistsError(f'{self.save_path} already exists and overwrite is False')
 
@@ -174,7 +176,7 @@ class BaseNetwork:
 
     def __repr__(self) -> str:
         """
-        Returns a string representation of the network
+        Returns a string representation of the network.
 
         Returns
         -------
@@ -192,7 +194,7 @@ class BaseNetwork:
 
     def __getstate__(self) -> dict[str, Any]:
         """
-        Returns a dictionary containing the state of the network for pickling
+        Returns a dictionary containing the state of the network for pickling.
 
         Returns
         -------
@@ -219,7 +221,7 @@ class BaseNetwork:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """
-        Sets the state of the network for pickling
+        Sets the state of the network for pickling.
 
         Parameters
         ----------
@@ -272,35 +274,14 @@ class BaseNetwork:
             self.optimiser = state['optimiser']
             self.scheduler = state['scheduler']
 
-    @staticmethod
-    def _data_loader_translation(low_dim: Tensor, high_dim: Tensor) -> tuple[Tensor, Tensor]:
-        """
-        Takes the low and high dimensional tensors from the data loader, and orders them as inputs
-        and targets for the network
-
-        Parameters
-        ----------
-        low_dim : Tensor
-            Low dimensional data from the data loader of shape (N,...) and type float, where N is
-            the number of elements
-        high_dim : Tensor
-            High dimensional data from the data loader of shape (N,...) and type float
-
-        Returns
-        -------
-        tuple[Tensor, Tensor]
-            Input and output target tensors of shape (N,...) and type float
-        """
-        return high_dim, low_dim
-
     def _batch_print(
             self,
             i: int,
             batch_time: float,
-            loss: float | dict[str, float],
-            loader: DataLoader) -> None:
+            loader: DataLoader[Any],
+            loss: LossCT) -> None:
         """
-        Print function during each batch of training
+        Print function during each batch of training.
 
         Parameters
         ----------
@@ -308,17 +289,18 @@ class BaseNetwork:
             Batch number
         batch_time : float
             Time taken for the batch
-        loss : float | dict[str, float]
+        loader: DataLoader[Any]
+            Data loader that the batch came from
+        loss : LossCT
             Loss for the batch or a dictionary of losses
-        loader: DataLoader
-            Data loader that is being used for training
         """
         if self._verbose == 'full':
-            loss = sum(loss.values()) if isinstance(loss, dict) else loss
             utils.progress_bar(
                 i,
                 len(loader),
-                text=f'Average loss: {loss / (i + 1):.2e}\tTime: {batch_time:.1f}',
+                text=f'Average loss: '
+                     f'{(sum(loss.values()) if isinstance(loss, dict) else loss) / (i + 1):.2e}\t'
+                     f'Time: {batch_time:.1f}',
             )
 
     def _epoch_print(
@@ -327,7 +309,7 @@ class BaseNetwork:
             epochs: int,
             epoch_time: float) -> None:
         """
-        Print function at the end of each epoch
+        Print function at the end of each epoch.
 
         Parameters
         ----------
@@ -338,28 +320,35 @@ class BaseNetwork:
         epoch_time : float
             Time taken for the epoch
         """
-        text: str = f'Epoch [{self._epoch}/{epochs}]\t' \
-                    f'Training loss: {self.losses[0][-1]:.3e}\t' \
-                    f'Validation loss: {self.losses[1][-1]:.3e}\t' \
-                    f'Time: {epoch_time:.1f}'
+        text: str
+        losses: tuple[list[float], list[float]] = (
+            [loss['total'] if isinstance(loss, dict) else loss for loss in self.losses[0]],
+            [loss['total'] if isinstance(loss, dict) else loss for loss in self.losses[1]],
+        )
+        loss: LossCT
+
+        text = f'Epoch [{self._epoch}/{epochs}]\t' \
+               f'Training loss: {losses[0][-1]:.3e}\t' \
+               f'Validation loss: {losses[1][-1]:.3e}\t' \
+               f'Time: {epoch_time:.1f}'
 
         if (self._verbose in {'full', 'epoch'} or
-                (len(self.losses[0]) == 1 and self._verbose == 'plot')):
+                (len(losses[0]) == 1 and self._verbose == 'plot')):
             print(text)
         elif self._verbose == 'progress':
             utils.progress_bar(i, epochs, text=text)
         elif self._verbose == 'plot':
             utils.ascii_plot(
-                self.losses[0],
+                losses[0],
                 clear=self._plot_active,
                 text=text,
-                data2=self.losses[1],
+                data2=losses[1],
             )
             self._plot_active = True
 
-    def _predict_print(self, i: int, predict_time: float, loader: DataLoader) -> None:
+    def _predict_print(self, i: int, predict_time: float, loader: DataLoader[Any]) -> None:
         """
-        Print function during each batch of training
+        Print function during each batch of prediction.
 
         Parameters
         ----------
@@ -367,7 +356,7 @@ class BaseNetwork:
             Batch number
         predict_time : float
             Time taken for predicting
-        loader: DataLoader
+        loader: DataLoader[Any]
             Data loader that is being used for predicting
         """
         if self._verbose == 'full':
@@ -377,9 +366,9 @@ class BaseNetwork:
             print(f'Prediction time: {predict_time:.3e} s')
 
 
-    def _train_val(self, loader: DataLoader) -> float | dict[str, float]:
+    def _train_val(self, loader: DataLoader[Any]) -> LossCT:
         """
-        Trains the network for one epoch
+        Trains the network for one epoch.
 
         Parameters
         ----------
@@ -388,17 +377,19 @@ class BaseNetwork:
 
         Returns
         -------
-        float | dict[str, float]
+        LossCT
             Average loss value or dictionary of average loss values for the epoch
         """
         i: int
         value: float
         t_initial: float
-        batch_loss: float | dict[str, float]
-        loss: float | dict[str, float] = 0
         key: str
-        low_dim: Tensor
-        high_dim: Tensor
+        loss: LossCT | None = None
+        low_dim: list[Tensor] | list[Data[Tensor]] | list[DataList[Tensor | Data[Tensor]]]
+        high_dim: list[Tensor] | list[Data[Tensor]] | list[DataList[Tensor | Data[Tensor]]]
+        batch_loss: LossCT
+        target: TensorListLike
+        in_data: TensorListLike
 
         with torch.set_grad_enabled(self._train_state), torch.autocast(
                 enabled=self._half,
@@ -406,128 +397,138 @@ class BaseNetwork:
                 dtype=torch.bfloat16):
             for i, (_, low_dim, high_dim, *_) in enumerate(loader):
                 t_initial = time()
-                low_dim = low_dim.to(self._device)
-                high_dim = high_dim.to(self._device)
-                batch_loss = self._loss(*self._data_loader_translation(low_dim, high_dim))
+                in_data, target = cast(
+                    tuple[TensorListLike, TensorListLike],
+                    self._data_loader_translation(
+                        data_collation(low_dim, data_field=False).to(self._device),
+                        data_collation(high_dim, data_field=False).to(self._device),
+                    ),
+                )
+                batch_loss = self._loss(in_data, target)
 
-                if isinstance(batch_loss, dict) and isinstance(loss, float):
-                    loss = batch_loss
-                elif isinstance(batch_loss, dict):
+                if isinstance(batch_loss, dict) and loss:
                     for key, value in batch_loss.items():
                         loss[key] += value
-                else:
+
+                    loss['total'] += batch_loss['total'] if 'total' in batch_loss else \
+                        sum(batch_loss.values())
+                elif isinstance(batch_loss, float) and loss:
                     loss += batch_loss
+                else:
+                    loss = batch_loss
 
                 if self._train_state:
                     self._update_scheduler(epoch=self._epoch + (i + 1) / len(loader))
 
-                self._batch_print(i, time() - t_initial, batch_loss, loader)
+                self._batch_print(i, time() - t_initial, loader, batch_loss)
+
+        assert loss
 
         if isinstance(loss, dict):
             return {key: value / len(loader) for key, value in loss.items()}
         return loss / len(loader)
 
-    def _loss_func(self, in_data: Tensor, target: Tensor) -> dict[str, Tensor] | Tensor:
+    def _loss_func(self, in_data: TensorListLike, target: TensorListLike) -> TensorLossCT:
         """
-        Empty method for child classes to base their loss functions on
+        Empty method for child classes to base their loss functions on.
 
         Parameters
         ----------
-        in_data : Tensor
+        in_data : TensorListLike
             Input data of shape (N,...) and type float, where N is the number of elements
-        target : Tensor
+        target : TensorListLike
             Target data of shape (N,...) and type float
 
         Returns
         -------
-        dict[str, Tensor] | Tensor
+        TensorLossCT
+            Loss of shape (1) and type float or dictionary of losses of shape (1) and type float
+        """
+        raise DeprecationWarning
+
+    def _loss_tensor(self, in_data: TensorListLike, target: TensorListLike) -> TensorLossCT:
+        """
+        Empty method for child classes to base their loss functions on.
+
+        Parameters
+        ----------
+        in_data : TensorListLike
+            Input data of shape (N,...) and type float, where N is the number of elements
+        target : TensorListLike
+            Target data of shape (N,...) and type float
+
+        Returns
+        -------
+        TensorLossCT
             Loss of shape (1) and type float or dictionary of losses of shape (1) and type float
         """
         raise NotImplementedError
 
-    def _loss(self, in_data: Tensor, target: Tensor) -> float | dict[str, float]:
+    def _loss(self, in_data: TensorListLike, target: TensorListLike) -> LossCT:
         """
-        Returns the loss as a float
+        Returns the loss as a float & updates network weights if training.
 
         Parameters
         ----------
-        in_data : Tensor
+        in_data : TensorListLike
             Input data of shape (N,...) and type float, where N is the number of elements
-        target : Tensor
+        target : TensorListLike
             Target data of shape (N,...) and type float
 
         Returns
         -------
-        float
+        LossCT
             Loss or dictionary of losses which can be summed to get the total loss
         """
         key: str
         value: Tensor
-        loss: Tensor | dict[str, Tensor] = self._loss_func(in_data, target)
+        loss: TensorLossCT
+
+        try:
+            loss = self._loss_func(in_data, target)
+            warn(
+                '_loss_func is deprecated, please use _loss_tensor instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        except DeprecationWarning:
+            loss = self._loss_tensor(in_data, target)
+
+        self._update(
+            loss if isinstance(loss, Tensor) else torch.sum(torch.cat(list(loss.values()))),
+        )
 
         if isinstance(loss, dict):
-            return {key: value.item() for key, value in loss.items()}
-        return loss.item()
+            return {key: value.item() for key, value in loss.items()}  # type: ignore[return-value]
+        return loss.item()  # type: ignore[return-value]
 
-    def _param_device(self, params: Param, *args: Any, **kwargs: Any) -> None:
-        r"""
-        Sends parameters to the device, such as the parameters in the optimiser
-
-        This can be called as
-
-        .. function:: to(device=None, dtype=None, non_blocking=False)
-           :noindex:
-
-        .. function:: to(dtype, non_blocking=False)
-           :noindex:
-
-        .. function:: to(tensor, non_blocking=False)
-           :noindex:
-
-        .. function:: to(memory_format=torch.channels_last)
-           :noindex:
-
-        Its signature is similar to :meth:`torch.Tensor.to`, but only accepts
-        floating point or complex :attr:`dtype`\ s. In addition, this method will
-        only cast the floating point or complex parameters and buffers to :attr:`dtype`
-        (if given). The integral parameters and buffers will be moved
-        :attr:`device`, if that is given, but with dtypes unchanged. When
-        :attr:`non_blocking` is set, it tries to convert/move asynchronously
-        with respect to the host if possible, e.g., moving CPU Tensors with
-        pinned memory to CUDA devices.
-
-        See below for examples.
-
-        .. note::
-            This method modifies the module in-place.
-
-        Args:
-            device (:class:`torch.device`): the desired device of the parameters
-                and buffers in this module
-            dtype (:class:`torch.dtype`): the desired floating point or complex dtype of
-                the parameters and buffers in this module
-            tensor (torch.Tensor): Tensor whose dtype and device are the desired
-                dtype and device for all parameters and buffers in this module
-            memory_format (:class:`torch.memory_format`): the desired memory
-                format for 4D parameters and buffers in this module (keyword
-                only argument)
-
-        Returns:
-            Module: self
+    def _param_device(self, params: dict[Tensor, Param] | Param, *args: Any, **kwargs: Any) -> None:
         """
-        # pylint: disable=protected-access
+        Sends parameters to the device, such as the parameters in the optimiser.
+
+        Parameters
+        ----------
+        params : dict[Tensor, Param] | Param
+            Parameters to move/cast
+        *args, **kwargs
+            Arguments to pass to torch.Tensor.to
+        """
+        param: Tensor | Param
+
         for param in params.values():
             if isinstance(param, dict):
                 self._param_device(param, *args, **kwargs)
-            else:
+            elif isinstance(param, Tensor):
                 param.data = param.data.to(*args, **kwargs)
 
+                # pylint: disable=protected-access
                 if param._grad is not None:
                     param._grad.data = param._grad.data.to(*args, **kwargs)
+                # pylint: enable=protected-access
 
     def _update(self, loss: Tensor) -> None:
         """
-        Updates the network using backpropagation
+        Updates the network using backpropagation.
 
         Parameters
         ----------
@@ -541,11 +542,11 @@ class BaseNetwork:
 
     def _update_scheduler(self, metrics: float | None = None, **_: Any) -> None:
         """
-        Updates the scheduler for the network
+        Updates the scheduler for the network.
 
         Parameters
         ----------
-        metrics : float, default = None
+        metrics : float | None, default = None
             Loss metric to update ReduceLROnPlateau
         """
         learning_rate: list[float]
@@ -567,83 +568,24 @@ class BaseNetwork:
 
     def _update_epoch(self) -> None:
         """
-        Updates network epoch
+        Updates network epoch.
         """
         self._epoch += 1
 
-    @staticmethod
-    def _save_predictions(path: str | None, data: dict[str, ndarray]) -> None:
-        """
-        Saves network predictions to pickle file if path is provided
-
-        Parameters
-        ----------
-        path : str
-            Path to save network predictions
-        data : dict[str, ndarray]
-            Network predictions of shape (N,...) to save
-        """
-        if not path:
-            return
-
-        with open(path + '' if '.pkl' in path else '.pkl', 'wb') as file:
-            pickle.dump(data, file)  # type: ignore
-
-    @staticmethod
-    def set_optimiser(
-            parameters: list[dict[str, Iterable[nn.Parameter]]] | Iterable[nn.Parameter],
-            **kwargs: Any) -> optim.Optimizer:
-        """
-        Sets the optimiser for the network, by default it is AdamW
-
-        Parameters
-        ----------
-        parameters : list[dict[str, Iterable[nn.Parameter]]] | Iterable[nn.Parameter]
-            Network parameters to optimise
-
-        **kwargs
-            Optional keyword arguments to pass to the optimiser
-
-        Returns
-        -------
-        optim.Optimizer
-            Network optimiser
-        """
-        return optim.AdamW(parameters, **kwargs)
-
-    @staticmethod
-    def set_scheduler(optimiser: optim.Optimizer, **kwargs: Any) -> optim.lr_scheduler.LRScheduler:
-        """
-        Sets the scheduler for the network, by default it is ReduceLROnPlateau
-
-        Parameters
-        ----------
-        optimiser : optim.Optimizer
-            Network optimiser
-        **kwargs
-            Optional keyword arguments to pass to the scheduler
-
-        Returns
-        -------
-        optim.lr_scheduler.LRScheduler
-            Optimiser scheduler
-        """
-        return optim.lr_scheduler.ReduceLROnPlateau(optimiser, **kwargs)
-
     def get_device(self) -> torch.device:
         """
-        Gets the device of the network
+        Gets the device of the network.
 
         Returns
         -------
-        device
+        torch.device
             Device of the network
         """
         return self._device
 
     def get_epochs(self) -> int:
         """
-        Returns the number of epochs the network has been trained for
+        Returns the number of epochs the network has been trained for.
 
         Returns
         -------
@@ -654,7 +596,7 @@ class BaseNetwork:
 
     def train(self, train: bool) -> None:
         """
-        Flips the train/eval state of the network
+        Flips the train/eval state of the network.
 
         Parameters
         ----------
@@ -668,20 +610,20 @@ class BaseNetwork:
         else:
             self.net.eval()
 
-    def training(self, epochs: int, loaders: tuple[DataLoader, DataLoader]) -> None:
+    def training(self, epochs: int, loaders: tuple[DataLoader[Any], DataLoader[Any]]) -> None:
         """
-        Trains & validates the network for each epoch
+        Trains & validates the network for each epoch.
 
         Parameters
         ----------
         epochs : int
             Number of epochs to train the network up to
-        loaders : tuple[DataLoader, DataLoader]
+        loaders : tuple[DataLoader[Any], DataLoader[Any]]
             Train and validation data loaders
         """
         i: int
         t_initial: float
-        final_loss: float
+        loss: LossCT
 
         # Train for each epoch
         for i in range(self._epoch, epochs):
@@ -694,7 +636,10 @@ class BaseNetwork:
             # Validate network
             self.train(False)
             self.losses[1].append(self._train_val(loaders[1]))
-            self._update_scheduler(metrics=self.losses[1][-1])
+            self._update_scheduler(
+                metrics=self.losses[1][-1]['total'] if isinstance(self.losses[1][-1], dict) else \
+                    self.losses[1][-1],
+            )
 
             # Save training progress
             self._update_epoch()
@@ -703,12 +648,12 @@ class BaseNetwork:
 
         self.train(False)
         self._plot_active = False
-        final_loss = self._train_val(loaders[1])
-        print(f'\nFinal validation loss: {final_loss:.3e}')
+        loss = self._train_val(loaders[1])
+        print(f'\nFinal validation loss: {loss if isinstance(loss, float) else loss['total']:.3e}')
 
     def save(self) -> None:
         """
-        Saves the network to the given path
+        Saves the network to the given path.
         """
         if self.save_path:
             torch.save(self, self.save_path)
@@ -716,41 +661,46 @@ class BaseNetwork:
 
     def predict(
             self,
-            loader: DataLoader,
+            loader: DataLoader[Any],
+            *,
             inputs: bool = False,
-            path: str | None = None,
-            **kwargs: Any) -> dict[str, ndarray]:
+            path: str = '',
+            **kwargs: Any) -> dict[str, NDArrayLike]:
         """
-        Generates predictions for the network and can save to a file
+        Generates predictions for the network and can save to a file.
 
         Parameters
         ----------
-        loader : DataLoader
+        loader : DataLoader[Any]
             Data loader to generate predictions for
-        inputs : bool, default = False,
+        inputs : bool, default = False
             If the input data should be returned and saved
-        path : str, default = None
-            Path as CSV file to save the predictions if they should be saved
-
+        path : str, default = ''
+            Path as pkl file to save the predictions if they should be saved
         **kwargs
             Optional keyword arguments to pass to batch_predict
 
         Returns
         -------
-        dict[str, ndarray]
+        dict[str, NDArrayLike]
             Prediction IDs, optional inputs, target values, and predicted values of shape (N,...)
+            and type float for dataset of size N
         """
         t_initial: float = time()
         key: str
         ids: tuple[str, ...] | ndarray | Tensor
-        data: list[list[ndarray]] = []
-        data_: dict[str, ndarray]
-        value: ndarray
-        target: Tensor
-        in_data: Tensor
-        low_dim: Tensor
-        high_dim: Tensor
-        transform: BaseTransform | None
+        low_dim: list[Tensor] | list[Data[Tensor]] | list[DataList[Tensor | Data[Tensor]]]
+        high_dim: list[Tensor] | list[Data[Tensor]] | list[DataList[Tensor | Data[Tensor]]]
+        data: list[list[NDArrayLike | None]] = []
+        data_: dict[str, NDArrayLike] = {}
+        transform: list[BaseTransform] | BaseTransform | None
+        transforms: dict[str, list[BaseTransform] | BaseTransform | None] = {
+            key: transform for key, transform in self.transforms.items()
+            if inputs or key != 'inputs'
+        }
+        datum: NDArrayLike
+        target: TensorLike
+        in_data: TensorLike
         self.train(False)
 
         if 'input_' in kwargs:
@@ -767,95 +717,83 @@ class BaseNetwork:
                 device_type=self._device.type,
                 dtype=torch.float32):
             for i, (ids, low_dim, high_dim, *_) in enumerate(loader):
-                in_data, target = self._data_loader_translation(low_dim, high_dim)
-                data.append([
+                in_data, target = self._data_loader_translation(
+                    data_collation(low_dim, data_field=True),
+                    data_collation(high_dim, data_field=True),
+                )
+                data.append(cast(list[NDArrayLike | None], [
                     ids.numpy() if isinstance(ids, Tensor) else np.array(ids),
                     *([in_data.numpy()] if inputs else []),
                     target.numpy(),
-                    *self.batch_predict(in_data.to(self._device), **kwargs),
-                ])
+                    *self.batch_predict(
+                        (in_data if isinstance(in_data, Tensor) else
+                        cast(DataList[Tensor], data_collation(
+                            cast(list[Data] | list[DataList[Tensor]], [in_data]),
+                            data_field=False,
+                        ))).to(self._device),
+                        **kwargs,
+                    ),
+                ]))
                 self._predict_print(i, time() - t_initial, loader)
 
         # Transforms all data and saves it to a dictionary
-        transforms = {key: value for key, value in self.transforms.items()
-                      if inputs or key != 'inputs'}
-        data_ = {
-            # Concatenate if there is no transform
-            key: np.concat(value) if transform is None
-            # If prediction is a tuple, treat second entry as the uncertainty and apply transform
-            else transform(
-                np.concat(np.array(value)[:, 0]),
-                back=True,
-                uncertainty=np.concat(np.array(value)[:, 1]),
-            )
-            if isinstance(value[0], tuple)
-            # Else apply transformation
-            else transform(np.concat(value), back=True)
-            for (key, transform), value in zip(transforms.items(), zip(*data))
-        }
+        for (key, transform), datum_ in zip(transforms.items(), zip(*data)):
+            if datum_[0] is None:
+                continue
+
+            # Concatenate values
+            datum = data_collation(list(datum_), data_field=True)
+
+            if isinstance(datum, DataList) and transform:
+                data_[key] = DataList(
+                    [trans(val, back=True) for val, trans in zip(
+                        datum,
+                        transform if isinstance(transform, list) else [transform] * len(datum),
+                    )],
+                )
+            elif isinstance(transform, BaseTransform):
+                assert not isinstance(datum, DataList)
+                data_[key] = transform(datum, back=True)
+            else:
+                if isinstance(transform, list):
+                    self._logger.warning(f'List of transforms requires corresponding data with key '
+                                         f'({key}) to be a DataList, data will not be '
+                                         f'untransformed')
+                data_[key] = datum
+
         self._save_predictions(path, data_)
         return data_
 
-    def batch_predict(self, data: Tensor, **_: Any) -> tuple[ndarray, ...]:
+    def batch_predict(self, data: TensorListLike, **_: Any) -> tuple[NDArrayListLike | None, ...]:
         """
-        Generates predictions for the given data batch
+        Generates predictions for the given data batch.
 
         Parameters
         ----------
-        data : Tensor
-            Data of shape (N,...) and type float to generate predictions for
+        data : TensorListLike
+            Data of shape (N,...) and type float to generate predictions for, where N is the batch
+            size
 
         Returns
         -------
-        tuple[ndarray, ...]
+        tuple[NDArrayListLike | None, ...]
             Predictions of shape (N,...) and type float for the given data
         """
         return (self.net(data).detach().cpu().numpy(),)
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
-        r"""Move and/or cast the parameters and buffers.
+        """
+        Move and/or cast the parameters and buffers.
 
-        This can be called as
+        Parameters
+        ----------
+        *args, **kwargs
+            Arguments to pass to torch.Tensor.to
 
-        .. function:: to(device=None, dtype=None, non_blocking=False)
-           :noindex:
-
-        .. function:: to(dtype, non_blocking=False)
-           :noindex:
-
-        .. function:: to(tensor, non_blocking=False)
-           :noindex:
-
-        .. function:: to(memory_format=torch.channels_last)
-           :noindex:
-
-        Its signature is similar to :meth:`torch.Tensor.to`, but only accepts
-        floating point or complex :attr:`dtype`\ s. In addition, this method will
-        only cast the floating point or complex parameters and buffers to :attr:`dtype`
-        (if given). The integral parameters and buffers will be moved
-        :attr:`device`, if that is given, but with dtypes unchanged. When
-        :attr:`non_blocking` is set, it tries to convert/move asynchronously
-        with respect to the host if possible, e.g., moving CPU Tensors with
-        pinned memory to CUDA devices.
-
-        See below for examples.
-
-        .. note::
-            This method modifies the module in-place.
-
-        Args:
-            device (:class:`torch.device`): the desired device of the parameters
-                and buffers in this module
-            dtype (:class:`torch.dtype`): the desired floating point or complex dtype of
-                the parameters and buffers in this module
-            tensor (torch.Tensor): Tensor whose dtype and device are the desired
-                dtype and device for all parameters and buffers in this module
-            memory_format (:class:`torch.memory_format`): the desired memory
-                format for 4D parameters and buffers in this module (keyword
-                only argument)
-
-        Returns:
-            Module: self
+        Returns
+        -------
+        Self
+            The network with parameters and buffers moved/cast
         """
         self.net = self.net.to(*args, **kwargs)
         self._param_device(self.optimiser.state, *args, **kwargs)
@@ -864,7 +802,7 @@ class BaseNetwork:
 
     def extra_repr(self) -> str:
         """
-        Additional representation of the architecture
+        Additional representation of the architecture.
 
         Returns
         -------
@@ -874,13 +812,9 @@ class BaseNetwork:
         return ''
 
 
-def load_net(
-        num: int | str,
-        states_dir: str,
-        net_name: str,
-        weights_only: bool = True) -> BaseNetwork:
+def load_net(num: int | str, states_dir: str, net_name: str, **kwargs: Any) -> BaseNetwork:
     """
-    Loads a network from file
+    Loads a network from file.
 
     Parameters
     ----------
@@ -890,9 +824,8 @@ def load_net(
         Directory to the save files
     net_name : str
         Name of the network
-    weights_only : bool, default = True
-        If PyTorch should only load tensors, primitive types, dictionaries & types added to the
-        torch.serialization.add_safe_globals()
+    **kwargs
+        Optional keyword arguments to pass to torch.load
 
     Returns
     -------
@@ -901,6 +834,5 @@ def load_net(
     """
     return torch.load(
         utils.save_name(num, states_dir, net_name),
-        map_location='cpu',
-        weights_only=weights_only,
+        **{'map_location': 'cpu'} | kwargs,
     )

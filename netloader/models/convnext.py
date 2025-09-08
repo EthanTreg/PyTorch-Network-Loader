@@ -3,140 +3,15 @@ PyTorch-Network-Loader Python implementation of ConvNeXt.
 See the ConvNeXt paper: arXiv:2201.03545.
 See the ConvNeXt GitHub: https://github.com/facebookresearch/ConvNeXt
 """
-from typing import Any, OrderedDict
+from typing import Any
 
 import numpy as np
-from torch import nn, Tensor
+from torch import nn
+
 from netloader import layers
+from netloader.utils import Shapes
 from netloader.network import Network
 from netloader.layers.base import BaseLayer
-
-
-class ConvNeXtBlock(BaseLayer):
-    """
-    ConvNeXt block using BaseLayer.
-
-    Attributes
-    ----------
-    group : int, default = 0
-        Layer group, if 0 it will always be used, else it will only be used if its group matches the
-        Networks
-    shapes : list[list[int]]
-        Layer output shapes
-    check_shapes : list[list[int]]
-        Checkpoint output shapes
-    layers : Sequential
-        Layers part of the parent layer to loop through in the forward pass
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the block
-    """
-    def __init__(
-            self,
-            net_out: list[int],
-            shapes: list[list[int]],
-            drop_path: float = 0,
-            layer_scale: float = 1e-6,
-            **kwargs: Any) -> None:
-        """
-        Parameters
-        ----------
-        net_out : list[int]
-            Shape of the network's output, required only if layer contains factor
-        shapes : list[list[int]]
-            Shape of the outputs from each layer
-        drop_path : float, default = 0
-            Probability of Drop Path dropout
-        layer_scale : float, default = 1e-6
-            Initial scale factor for layer Scale
-
-        **kwargs
-            Leftover parameters for checking if they are valid
-        """
-        kwargs = {'idx': 0} | kwargs
-        super().__init__(**kwargs)
-        self.shapes: list[list[int]] = [shapes[-1].copy()]
-        self.check_shapes: list[list[int]] = []
-
-        self.layers = nn.Sequential(OrderedDict([
-            ('Checkpoint', layers.Checkpoint(self.shapes, self.check_shapes)),
-            ('ConvDepth', layers.ConvDepth(
-                net_out,
-                self.shapes,
-                layer=-1,
-                factor=1,
-                kernel=7,
-                stride=1,
-                padding=3,
-                activation=None,
-                norm='layer',
-                **kwargs,
-            )),
-            ('Conv1', layers.Conv(
-                net_out,
-                self.shapes,
-                layer=-1,
-                factor=4,
-                kernel=1,
-                padding='same',
-                activation='GELU',
-                **kwargs,
-            )),
-            ('Conv2', layers.Conv(
-                net_out,
-                self.shapes,
-                layer=0,
-                factor=1,
-                kernel=1,
-                padding='same',
-                activation=None,
-                **kwargs,
-            )),
-            ('Scale', layers.Scale(1, layer_scale, self.shapes, **kwargs)),
-            ('DropPath', layers.DropPath(
-                drop_path,
-                self.shapes,
-                **kwargs,
-            )),
-            ('Shortcut', layers.Shortcut(
-                True,
-                -1,
-                self.shapes,
-                self.check_shapes,
-                **kwargs | {'checkpoint': True},
-            )),
-        ]))
-        shapes.append(self.shapes[-1])
-
-    def forward(
-            self,
-            x: Tensor,
-            outputs: list[Tensor],
-            checkpoints: list[Tensor],
-            *_: Any,
-            **__: Any) -> Tensor:
-        """
-        Forward pass for the ConvNeXt block
-
-        Parameters
-        ----------
-        x : (N,...) Tensor
-            Input tensor with batch size N
-        outputs : list[Tensor]
-            Output from each layer
-        checkpoints : list[Tensor]
-            List of checkpoint values
-
-        Returns
-        -------
-        (N,...) Tensor
-            Output tensor with batch size N
-        """
-        for layer in self.layers:
-            x = layer(x, outputs=outputs, checkpoints=checkpoints)
-        return x
 
 
 class ConvNeXt(Network):
@@ -145,30 +20,33 @@ class ConvNeXt(Network):
 
     Attributes
     ----------
-    name : str
-        Name of the network, used for saving
-    check_shapes : list[list[int]]
-        Checkpoint output shapes
-    shapes : list[list[int] | list[list[int]]
-        Layer output shapes
-    checkpoints : list[Tensor]
-        Outputs from each checkpoint
-    config : dict[str, Any]
-        Network configuration
-    net : ModuleList
-        Network construction
     layer_num : int, default = None
         Number of layers to use, if None use all layers
     group : int, default = 0
         Which group is the active group if a layer has the group attribute
-    kl_loss : Tensor, default = 0
-        KL divergence loss on the latent space, if using a sample layer
+    name : str
+        Name of the network, used for saving
+    version : str
+        NetLoader version string
+    checkpoints : list[TensorListLike]
+        Outputs from each checkpoint with each Tensor having shape (N,...) and type float, where N
+        is the batch size
+    config : dict[str, Any]
+        Network configuration
+    kl_loss : Tensor
+        KL divergence loss on the latent space, of shape (1) and type float, if using a sample layer
+    net : nn.ModuleList
+        Network construction
+    shapes : Shapes
+        Layer output shapes
+    check_shapes : Shapes
     """
     def __init__(
             self,
             name: str,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
+            *,
             max_drop_path: float = 0,
             layer_scale: float = 1e-6,
             dims: list[int] | None = None,
@@ -178,8 +56,8 @@ class ConvNeXt(Network):
         ----------
         name : str
             Name of the network configuration file
-        in_shape : list[int] | list[list[int]] | tuple[int, ...]
-            Shape of the input tensor(s), excluding batch size
+        in_shape : list[int] | tuple[int, ...]
+            Shape of the input tensor, excluding batch size
         out_shape : list[int]
             shape of the output tensor, excluding batch size
         max_drop_path : float, default = 0
@@ -244,7 +122,7 @@ class ConvNeXt(Network):
         self._depths = state['depths']
         self.group = state['group']
         self.layer_num = state['layer_num']
-        self.shapes = [state['shapes'][0]]
+        self.shapes = Shapes([state['shapes'][0]])
 
         self._build_net(state['shapes'][-1])
         self.load_state_dict(state['net'])
@@ -261,11 +139,13 @@ class ConvNeXt(Network):
         """
         if isinstance(layer, (nn.Conv1d, nn.Conv2d, nn.Conv3d, nn.Linear)):
             nn.init.trunc_normal_(layer.weight, std=0.02)
-            nn.init.constant_(layer.bias, 0)
+
+            if layer.bias is not None:
+                nn.init.constant_(layer.bias, 0)
 
     def _build_net(self, out_shape: list[int]) -> None:
         """
-        Constructs the ConvNeXt network layers
+        Constructs the ConvNeXt network layers.
 
         Parameters
         ----------
@@ -279,60 +159,110 @@ class ConvNeXt(Network):
         drop_paths = np.linspace(0, self._max_drop_path, depths[-1]).tolist()
 
         # Stem
-        self.net.append(layers.Conv(
+        self.net.append(layers.ConvDownscale(
             out_shape,
             self.shapes,
             filters=self._dims[0],
-            kernel=4,
-            stride=4,
+            scale=4,
+            activation=None if self.version != '<3.8.1' else 'ELU',
             norm='layer',
             **kwargs,
         ))
 
         # Main body
         for dim, in_depth, out_depth in zip(self._dims, [0, *depths], depths):
-            # Downscaling
+            # Downscaling, this is skipped in the first iteration
             self.net.extend([
                 layers.LayerNorm(dims=1, shapes=self.shapes, **kwargs),
-                layers.Conv(
+                layers.ConvDownscale(
                     out_shape,
                     self.shapes,
                     filters=dim,
-                    kernel=2,
-                    stride=2,
+                    scale=2,
+                    activation=None if self.version != '<3.8.1' else 'ELU',
                     **kwargs,
                 ),
             ] if dim != self._dims[0] else [])
 
             # ConvNeXt blocks
             self.net.extend([
-                *[ConvNeXtBlock(
+                *[layers.ConvNeXtBlock(
                     out_shape,
                     self.shapes,
-                    drop_path,
+                    drop_path=drop_path,
                     layer_scale=self._layer_scale,
                 ) for drop_path in drop_paths[in_depth:out_depth]],
             ])
 
         # Head
-        self.net.extend([
+        self.net.extend(self._head(out_shape, **kwargs))
+
+    def _head(self, out_shape: list[int], **kwargs: Any) -> list[BaseLayer]:
+        """
+        Head of ConvNeXt for adapting the learned features into the desired output.
+
+        Parameters
+        ----------
+        out_shape : list[int]
+            shape of the output tensor, excluding batch size
+
+        **kwargs
+            Global network parameters
+
+        Returns
+        -------
+        list[BaseLayer]
+            Layers used in the head
+        """
+        return [
             layers.AdaptivePool(1, self.shapes, **kwargs),
             layers.Reshape([-1], shapes=self.shapes, **kwargs),
             layers.LayerNorm(dims=1, shapes=self.shapes, **kwargs),
-            layers.Linear(out_shape, self.shapes, factor=1, **kwargs),
-        ])
+            layers.Linear(
+                out_shape,
+                self.shapes,
+                factor=1,
+                activation=None if self.version != '<3.8.1' else 'SELU',
+                **kwargs,
+            ),
+        ]
 
 
 class ConvNeXtTiny(ConvNeXt):
     """
     Tiny version of ConvNeXt with the number of convolutional filters in each downscaled section
     following [96, 192, 384, 768] with the number of ConvNeXt blocks in each downscaled section
-    following [3, 3, 9, 3]
+    following [3, 3, 9, 3].
+
+    Attributes
+    ----------
+    layer_num : int, default = None
+        Number of layers to use, if None use all layers
+    group : int, default = 0
+        Which group is the active group if a layer has the group attribute
+    name : str
+        Name of the network, used for saving
+    version : str
+        NetLoader version string
+    checkpoints : list[TensorListLike]
+        Outputs from each checkpoint with each Tensor having shape (N,...) and type float, where N
+        is the batch size
+    config : dict[str, Any]
+        Network configuration
+    kl_loss : Tensor
+        KL divergence loss on the latent space, of shape (1) and type float, if using a sample layer
+    net : nn.ModuleList
+        Network construction
+    shapes : Shapes
+        Layer output shapes
+    check_shapes : Shapes
+        Checkpoint output shapes
     """
     def __init__(
             self,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
+            *,
             max_drop_path: float = 0,
             layer_scale: float = 1e-6) -> None:
         """
@@ -361,12 +291,37 @@ class ConvNeXtSmall(ConvNeXt):
     """
     Small version of ConvNeXt with the number of convolutional filters in each downscaled section
     following [96, 192, 384, 768] with the number of ConvNeXt blocks in each downscaled section
-    following [3, 3, 27, 3]
+    following [3, 3, 27, 3].
+
+    Attributes
+    ----------
+    layer_num : int, default = None
+        Number of layers to use, if None use all layers
+    group : int, default = 0
+        Which group is the active group if a layer has the group attribute
+    name : str
+        Name of the network, used for saving
+    version : str
+        NetLoader version string
+    checkpoints : list[TensorListLike]
+        Outputs from each checkpoint with each Tensor having shape (N,...) and type float, where N
+        is the batch size
+    config : dict[str, Any]
+        Network configuration
+    kl_loss : Tensor
+        KL divergence loss on the latent space, of shape (1) and type float, if using a sample layer
+    net : nn.ModuleList
+        Network construction
+    shapes : Shapes
+        Layer output shapes
+    check_shapes : Shapes
+        Checkpoint output shapes
     """
     def __init__(
             self,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
+            *,
             max_drop_path: float = 0,
             layer_scale: float = 1e-6) -> None:
         """
@@ -396,12 +351,37 @@ class ConvNeXtBase(ConvNeXt):
     """
     Base version of ConvNeXt with the number of convolutional filters in each downscaled section
     following [128, 256, 512, 1024] with the number of ConvNeXt blocks in each downscaled section
-    following [3, 3, 27, 3]
+    following [3, 3, 27, 3].
+
+    Attributes
+    ----------
+    layer_num : int, default = None
+        Number of layers to use, if None use all layers
+    group : int, default = 0
+        Which group is the active group if a layer has the group attribute
+    name : str
+        Name of the network, used for saving
+    version : str
+        NetLoader version string
+    checkpoints : list[TensorListLike]
+        Outputs from each checkpoint with each Tensor having shape (N,...) and type float, where N
+        is the batch size
+    config : dict[str, Any]
+        Network configuration
+    kl_loss : Tensor
+        KL divergence loss on the latent space, of shape (1) and type float, if using a sample layer
+    net : nn.ModuleList
+        Network construction
+    shapes : Shapes
+        Layer output shapes
+    check_shapes : Shapes
+        Checkpoint output shapes
     """
     def __init__(
             self,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
+            *,
             max_drop_path: float = 0,
             layer_scale: float = 1e-6) -> None:
         """
@@ -432,12 +412,37 @@ class ConvNeXtLarge(ConvNeXt):
     """
     Large version of ConvNeXt with the number of convolutional filters in each downscaled section
     following [192, 384, 768, 1536] with the number of ConvNeXt blocks in each downscaled section
-    following [3, 3, 27, 3]
+    following [3, 3, 27, 3].
+
+    Attributes
+    ----------
+    layer_num : int, default = None
+        Number of layers to use, if None use all layers
+    group : int, default = 0
+        Which group is the active group if a layer has the group attribute
+    name : str
+        Name of the network, used for saving
+    version : str
+        NetLoader version string
+    checkpoints : list[TensorListLike]
+        Outputs from each checkpoint with each Tensor having shape (N,...) and type float, where N
+        is the batch size
+    config : dict[str, Any]
+        Network configuration
+    kl_loss : Tensor
+        KL divergence loss on the latent space, of shape (1) and type float, if using a sample layer
+    net : nn.ModuleList
+        Network construction
+    shapes : Shapes
+        Layer output shapes
+    check_shapes : Shapes
+        Checkpoint output shapes
     """
     def __init__(
             self,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
+            *,
             max_drop_path: float = 0,
             layer_scale: float = 1e-6) -> None:
         """
@@ -468,12 +473,37 @@ class ConvNeXtXLarge(ConvNeXt):
     """
     Extra large version of ConvNeXt with the number of convolutional filters in each downscaled
     section following [256, 512, 1024, 2048] with the number of ConvNeXt blocks in each downscaled
-    section following [3, 3, 27, 3]
+    section following [3, 3, 27, 3].
+
+    Attributes
+    ----------
+    layer_num : int, default = None
+        Number of layers to use, if None use all layers
+    group : int, default = 0
+        Which group is the active group if a layer has the group attribute
+    name : str
+        Name of the network, used for saving
+    version : str
+        NetLoader version string
+    checkpoints : list[TensorListLike]
+        Outputs from each checkpoint with each Tensor having shape (N,...) and type float, where N
+        is the batch size
+    config : dict[str, Any]
+        Network configuration
+    kl_loss : Tensor
+        KL divergence loss on the latent space, of shape (1) and type float, if using a sample layer
+    net : nn.ModuleList
+        Network construction
+    shapes : Shapes
+        Layer output shapes
+    check_shapes : Shapes
+        Checkpoint output shapes
     """
     def __init__(
             self,
             in_shape: list[int] | tuple[int, ...],
             out_shape: list[int],
+            *,
             max_drop_path: float = 0,
             layer_scale: float = 1e-6) -> None:
         """

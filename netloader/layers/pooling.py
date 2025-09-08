@@ -1,38 +1,38 @@
 """
 Pooling network layers
 """
-from typing import Any, Type
+from typing import Any, Type, cast
 
 import numpy as np
 from torch import nn, Tensor
 
+from netloader.utils import Shapes
+from netloader.layers.base import BaseSingleLayer
 from netloader.layers.utils import _kernel_shape, _padding
-from netloader.layers.base import BaseLayer
 
 
-class AdaptivePool(BaseLayer):
+class AdaptivePool(BaseSingleLayer):
     """
-    Uses pooling to downscale the input to the desired shape
+    Uses pooling to downscale the input to the desired shape.
 
     Attributes
     ----------
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
+    layers : nn.Sequential
         Layers to loop through in the forward pass
 
     Methods
     -------
-    forward(x) -> Tensor
-        Forward pass of the adaptive pool layer
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
     def __init__(
             self,
             shape: int | list[int],
-            shapes: list[list[int]],
+            shapes: Shapes,
+            *,
             channels: bool = True,
             mode: str = 'average',
             **kwargs: Any) -> None:
@@ -56,7 +56,7 @@ class AdaptivePool(BaseLayer):
         self._mode: str = mode
         adapt_pool: Type[nn.Module]
 
-        self._check_shape(shapes[-1])
+        self._check_pool_shape(shapes[-1])
         shape = self._check_adapt_pool(shapes[-1], shape)
 
         adapt_pool = [
@@ -70,9 +70,9 @@ class AdaptivePool(BaseLayer):
         shapes.append(shapes[-1].copy())
         shapes[-1][self._channels:] = shape
 
-    def _check_shape(self, shape: list[int]) -> None:
+    def _check_pool_shape(self, shape: list[int]) -> None:
         """
-        Checks if the input shape has more than 3 dimensions + channels or fewer than 1 + channels
+        Checks if the input shape has more than 3 dimensions + channels or fewer than 1 + channels.
 
         Parameters
         ----------
@@ -87,7 +87,7 @@ class AdaptivePool(BaseLayer):
     def _check_adapt_pool(self, in_shape: list[int], shape: int | list[int]) -> list[int]:
         """
         Checks if the target shape is compatible with the input shape and calculates the output
-        shape
+        shape.
 
         Parameters
         ----------
@@ -124,7 +124,7 @@ class AdaptivePool(BaseLayer):
         return f'channels={bool(self._channels)}, mode={self._mode}'
 
 
-class Pool(BaseLayer):
+class Pool(BaseSingleLayer):
     """
     Constructs a max or average pooling layer.
 
@@ -135,12 +135,18 @@ class Pool(BaseLayer):
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
+    layers : nn.Sequential
         Layers to loop through in the forward pass
+
+    Methods
+    -------
+    forward(x) -> Tensor
+        Forward pass of the pool layer
     """
     def __init__(
             self,
-            shapes: list[list[int]],
+            shapes: Shapes,
+            *,
             kernel: int | list[int] = 2,
             stride: int | list[int] = 2,
             padding: int | str | list[int] = 0,
@@ -181,13 +187,12 @@ class Pool(BaseLayer):
         self._check_shape(shapes[-1])
         self._check_options('mode', mode, set(modes))
 
-        pool = [
+        pool = cast(list[list[Type[nn.Module]]], [
             [nn.MaxPool1d, nn.AvgPool1d],
             [nn.MaxPool2d, nn.AvgPool2d],
             [nn.MaxPool3d, nn.AvgPool3d],
-        ][len(shapes[-1]) - 2][mode == modes[1]]
+        ])[len(shapes[-1]) - 2][mode == modes[1]]
 
-        assert not isinstance(padding, str)
         shape = _kernel_shape(
             kernel,
             stride,
@@ -205,7 +210,6 @@ class Pool(BaseLayer):
             ).flatten() * 2 + 1] = 1
             shape = shapes[-1].copy()
 
-        assert not isinstance(padding, str)
         self.layers.add_module('Pool', pool(
             kernel_size=kernel,
             stride=stride,
@@ -216,13 +220,12 @@ class Pool(BaseLayer):
 
     def forward(self, x: Tensor, *args: Any, **kwargs: Any) -> Tensor:
         """
-        Forward pass of the pool layer
+        Forward pass of the pool layer.
 
         Parameters
         ----------
-        x : (N,...) Tensor
-            Input tensor with batch size N
-
+        x : Tensor
+            Input tensor of shape (N,...) and type float, where N is the batch size
         *args
             Optional arguments to pass to the parent forward method
         **kwargs
@@ -230,8 +233,8 @@ class Pool(BaseLayer):
 
         Returns
         -------
-        (N,...) Tensor
-            Output tensor with batch size N
+        Tensor
+            Output tensor of shape (N,...) and type float
         """
         x = nn.functional.pad(x, tuple(self._pad))
         return super().forward(x, *args, **kwargs)
@@ -248,13 +251,14 @@ class PoolDownscale(Pool):
     group : int, default = 0
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : Sequential
+    layers : nn.Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
             self,
             scale: int,
-            shapes: list[list[int]],
+            shapes: Shapes,
+            *,
             mode: str = 'max',
             **kwargs: Any) -> None:
         """
