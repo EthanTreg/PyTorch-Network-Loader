@@ -3,7 +3,7 @@ Base dataset classes for use with BaseNetwork
 """
 import logging as log
 from types import ModuleType
-from typing import Any, Generic, Self, Literal, Sequence, Iterator, cast, overload
+from typing import Any, Generic, Self, Literal, Sequence, Iterator, cast, overload  # pylint: disable=unused-import
 
 import torch
 import numpy as np
@@ -41,6 +41,8 @@ class Data(Generic[ArrayTC]):
         Detaches data and uncertainty from the computation graph if they are Tensors
     numpy() -> Data[ndarray]
         Converts data and uncertainty to numpy arrays if they are Tensors
+    tensor() -> Data[Tensor]
+        Converts data and uncertainty to tensors if they are numpy arrays
     to(*args, **kwargs) -> Self
         Move and/or cast the parameters and buffers
     """
@@ -53,6 +55,7 @@ class Data(Generic[ArrayTC]):
         uncertainty : ArrayTC | None, default = None
             Data uncertainty
         """
+        self.shape: tuple[int, ...] = tuple(data.shape)
         self.data: ArrayTC = data
         self.uncertainty: ArrayTC | None = uncertainty
 
@@ -85,6 +88,10 @@ class Data(Generic[ArrayTC]):
             self.data[idx],
             uncertainty=self.uncertainty[idx] if self.uncertainty is not None else None
         )
+
+    def __repr__(self) -> str:
+        return (f'Data(shape={self.data.shape}, type={self.data.__class__.__name__}, '
+                f'uncertainty={self.uncertainty is not None})')
 
     @staticmethod
     @overload
@@ -233,6 +240,21 @@ class Data(Generic[ArrayTC]):
             self.uncertainty
         )
 
+    def tensor(self) -> 'Data[Tensor]':
+        """
+        Converts data and uncertainty to tensors if they are numpy arrays.
+
+        Returns
+        -------
+        Data[Tensor]
+            New Data object with data and uncertainty as tensors
+        """
+        return Data(
+            torch.from_numpy(self.data) if isinstance(self.data, ndarray) else self.data,
+            uncertainty=torch.from_numpy(self.uncertainty) if isinstance(self.uncertainty, ndarray)
+            else self.uncertainty
+        )
+
     def to(self, *args: Any, **kwargs: Any) -> Self:
         """
         Move and/or cast the parameters and buffers.
@@ -285,8 +307,10 @@ class DataList(Generic[DataT]):
         Iterates over each element in the DataList
     len(list_=True) -> int
         Gets the length of the DataList or the length of each element in the DataList
-    numpy() -> DataList[DataLike]
+    numpy() -> DataList[ndarray | Data[ndarray]]
         Converts all tensors to numpy arrays
+    tensor() -> DataList[Tensor | Data[Tensor]]
+        Converts all numpy arrays to tensors
     to(*args, **kwargs) -> DataList[DataLike]
         Move and/or cast the parameters and buffers
     """
@@ -340,6 +364,10 @@ class DataList(Generic[DataT]):
             Iterator over each element in the DataList
         """
         return self.iter(list_=True)
+
+    def __repr__(self) -> str:
+        return (f'DataList(shapes={[tuple(datum.shape) for datum in self._data]}, '
+                f'types={[datum.__class__.__name__ for datum in self._data]})')
 
     @staticmethod
     @overload
@@ -407,9 +435,9 @@ class DataList(Generic[DataT]):
         data : DataT
             Element to append to the DataList
         """
-        if len(self) != len(data):
+        if self.len(list_=False) != len(data):
             raise ValueError(f'Element to append must have the same length as the DataList, got '
-                             f'lengths: {len(self)} and {len(data)}')
+                             f'lengths: {self.len(list_=False)} and {len(data)}')
         self._data.append(data)
 
     def clone(self) -> 'DataList[DataT]':
@@ -533,9 +561,9 @@ class DataList(Generic[DataT]):
         data : DataT
             Element to insert into the DataList
         """
-        if len(self) != len(data):
+        if self.len(list_=False) != len(data):
             raise ValueError(f'Element to insert must have the same length as the DataList, got '
-                             f'lengths: {len(self)} and {len(data)}')
+                             f'lengths: {self.len(list_=False)} and {len(data)}')
         self._data.insert(idx, data)
 
     @overload
@@ -585,7 +613,7 @@ class DataList(Generic[DataT]):
 
     def numpy(self) -> 'DataList[ndarray | Data[ndarray]]':
         """
-        Converts all tensors to numpy arrays
+        Converts all tensors to numpy arrays.
 
         Returns
         -------
@@ -595,6 +623,21 @@ class DataList(Generic[DataT]):
         data: DataT
         return DataList(cast(list[ndarray | Data[ndarray]], [
             data.cpu().numpy() if hasattr(data, 'cpu') else data for data in self
+        ]))
+
+    def tensor(self) -> 'DataList[Tensor | Data[Tensor]]':
+        """
+        Converts all numpy arrays to tensors.
+
+        Returns
+        -------
+        DataList[Tensor | Data[Tensor]]
+            DataList with all numpy arrays converted to tensors
+        """
+        data: DataT
+        return DataList(cast(list[Tensor | Data[Tensor]], [
+            torch.from_numpy(data) if isinstance(data, ndarray) else
+            data.tensor() if isinstance(data, Data) else data for data in self
         ]))
 
     def to(self, *args: Any, **kwargs: Any) -> 'DataList[DataT]':
@@ -662,7 +705,8 @@ class BaseDatasetMeta(type):
         for attribute in ('extra', 'low_dim', 'high_dim'):
             if (getattr(instance, attribute) is not None and
                     len(getattr(instance, attribute)) != len(instance.idxs)):
-                raise ValueError(f'Length of attribute {attribute} ({len(attribute)}) and idxs '
+                raise ValueError(f'Length of attribute {attribute} '
+                                 f'({len(getattr(instance, attribute))}) and idxs '
                                  f'({len(instance.idxs)}) does not match')
         return instance
 

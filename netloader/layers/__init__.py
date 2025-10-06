@@ -16,6 +16,7 @@ from netloader.layers.convolutional import (
     PixelShuffle,
 )
 from netloader.layers.misc import (
+    BatchNorm,
     Checkpoint,
     Concatenate,
     DropPath,
@@ -33,6 +34,7 @@ from netloader.layers.misc import (
 __all__ = [
     'Activation',
     'AdaptivePool',
+    'BatchNorm',
     'Checkpoint',
     'Concatenate',
     'Conv',
@@ -46,9 +48,9 @@ __all__ = [
     'DropPath',
     'Index',
     'LayerNorm',
-    'Pack',
     'Linear',
     'OrderedBottleneck',
+    'Pack',
     'PixelShuffle',
     'Pool',
     'PoolDownscale',

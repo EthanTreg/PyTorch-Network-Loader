@@ -12,6 +12,7 @@ from netloader.utils.utils import (
     safe_globals,
     save_name,
 )
+from netloader.utils import types
 
 __all__ = [
     'Shapes',
@@ -23,4 +24,5 @@ __all__ = [
     'progress_bar',
     'safe_globals',
     'save_name',
+    'types',
 ]

@@ -120,8 +120,6 @@ class ConvNeXt(Network):
         self._max_drop_path = state['max_drop_path']
         self._dims = state['dims']
         self._depths = state['depths']
-        self.group = state['group']
-        self.layer_num = state['layer_num']
         self.shapes = Shapes([state['shapes'][0]])
 
         self._build_net(state['shapes'][-1])
@@ -155,7 +153,7 @@ class ConvNeXt(Network):
         assert isinstance(self.shapes, list)
         drop_paths: list[float]
         depths: list[int] = np.cumsum(self._depths).tolist()
-        kwargs: dict[str, Any] = {'idx': 0, 'check_shapes': []}
+        kwargs: dict[str, Any] = {'check_shapes': []}
         drop_paths = np.linspace(0, self._max_drop_path, depths[-1]).tolist()
 
         # Stem

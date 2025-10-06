@@ -349,7 +349,7 @@ class Upsample(BaseSingleLayer):
         }
 
         # Check for errors
-        self._check_shape(shapes[-1])
+        self._check_shape((2, 4), shapes[-1])
         self._check_upsample(shapes[-1], shape)
         self._check_options('mode', mode, set(modes))
         self._check_mode_dimension(mode, shapes[-1], modes)

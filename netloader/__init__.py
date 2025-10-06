@@ -5,11 +5,15 @@ import logging
 import warnings
 
 
-__version__ = '3.9.0'
+__version__ = '3.9.1'
 __author__ = 'Ethan Tregidga'
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
-warnings.filterwarnings('once', category=DeprecationWarning)
-warnings.filterwarnings('once', category=PendingDeprecationWarning)
+warnings.filterwarnings('once', category=DeprecationWarning, module=r'^netloader(\.|$)')
+warnings.filterwarnings(
+    'once',
+    category=PendingDeprecationWarning,
+    module=r'^netloader(\.|$)',
+)
 
 try:
     import torch

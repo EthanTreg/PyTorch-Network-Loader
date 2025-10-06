@@ -19,8 +19,15 @@ from netloader.utils.types import ArrayT
 class Shapes(list[list[int] | list[list[int]]]):
     """
     Shapes list that allows for indexing of multiple shapes.
+
+    Methods
+    -------
+    check(idx) -> bool
+        Check if the shape at the provided index is a single shape
+    get(idx, list_=True) -> list[int] | list[list[int]] | Shapes
+        Get shape from the shapes list
     """
-    @overload  #  type: ignore[override]
+    @overload  # type: ignore[override]
     def __getitem__(self, idx: int | tuple[int, int]) -> list[int]: ...
 
     @overload
@@ -44,8 +51,69 @@ class Shapes(list[list[int] | list[list[int]]]):
         """
         return self.get(idx, list_=False)
 
+    @overload  # type: ignore[override]
+    def __setitem__(self, idx: slice, value: list[list[int] | list[list[int]]]) -> None: ...
+
+    @overload
+    def __setitem__(self, idx: tuple[int, int], value: list[int]) -> None: ...
+
+    @overload
+    def __setitem__(self, idx: int, value: list[int] | list[list[int]]) -> None: ...
+
+    def __setitem__(
+            self,
+            idx: int | tuple[int, int] | slice,
+            value: list[int] | list[list[int]] | list[list[int] | list[list[int]]]) -> None:
+        """
+        Sets shape in the shapes list.
+
+        Parameters
+        ----------
+        idx : int | tuple[int, int] | slice
+            Index of the shape to set, if tuple then first index is the layer index and second is
+            the shape index if the layer has multiple shapes, if slice, sets multiple shapes
+        value : list[int] | list[list[int]]
+            Shape to set at the provided index
+        """
+        if isinstance(idx, tuple):
+            if not isinstance(self[idx[0]][0], list):
+                raise ValueError(f'Index {idx} does not contain multiple shapes, shape at index '
+                                 f'is {self[idx[0]]}')
+            if not isinstance(value[0], int):
+                raise ValueError(f'Index {idx} requires a single shape, got {value}')
+
+            cast(list[list[int]], self[idx[0]])[idx[1]] = cast(list[int], value)
+        elif isinstance(idx, int):
+            if isinstance(value[0], list) and isinstance(value[0][0], list):
+                raise ValueError(f'If index is an int, value must be a single shape or a list of '
+                                 f'shapes, got {value}')
+            super().__setitem__(idx, cast(list[int] | list[list[int]], value))
+        else:
+            if isinstance(value[0], int):
+                raise ValueError(f'If index is a slice, value must be a list of shapes, got '
+                                 f'{value}')
+            super().__setitem__(idx, cast(list[list[int] | list[list[int]]], value))
+
     def __repr__(self) -> str:
         return f'Shapes({super().__repr__()})'
+
+    def check(self, idx: int) -> bool:
+        """
+        Checks if the shape at the provided index is a single shape.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the shape to check
+
+        Returns
+        -------
+        bool
+            True if the shape at the provided index is a single shape
+        """
+        if isinstance(self.get(idx, list_=True)[0], int):
+            return True
+        return False
 
     @overload
     def get(self, idx: slice, list_: bool) -> 'Shapes': ...
@@ -92,7 +160,7 @@ class Shapes(list[list[int] | list[list[int]]]):
             return Shapes(cast(list[list[int] | list[list[int]]], item))
         if isinstance(idx, tuple) and isinstance(item[0], list):
             return cast(list[int], item[idx[1]])
-        if isinstance(idx, tuple) and idx[1]:
+        if isinstance(idx, tuple):
             raise ValueError(f'Index {idx} does not contain multiple shapes, shape at index is '
                              f'{item}')
         if isinstance(item[0], list) and not list_:

@@ -214,6 +214,9 @@
       "greater": 0
     },
     {
+      "type": "BatchNorm"
+    },
+    {
       "type": "Skip",
       "layer": -4
     },
@@ -274,6 +277,14 @@
       "factor": 1,
       "shape": [-1],
       "bad_param_2": 1
+    },
+    {
+      "type": "Pack",
+      "layer": -2
+    },
+    {
+      "type": "Skip",
+        "layer": -2
     },
     {
       "type": "SplineFlow",

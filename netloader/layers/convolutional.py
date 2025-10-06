@@ -91,7 +91,7 @@ class Conv(BaseSingleLayer):
             padding = _padding(kernel, stride, shapes[-1], shapes[-1])
 
         # Check for errors and calculate number of filters
-        self._check_shape(shape)
+        self._check_shape((2, 4), shape)
         self._check_factor_filters(shape, filters=filters, factor=factor, target=target)
         self._check_groups(shapes[-1][0], shape[0], groups)
         self._check_options('norm', norm, {None, 'batch', 'layer'})
@@ -429,7 +429,7 @@ class ConvTranspose(BaseSingleLayer):
             padding = _padding_transpose(kernel, stride, dilation, shapes[-1], shape)
 
         # Check for errors and calculate number of filters
-        self._check_shape(shape)
+        self._check_shape((2, 4), shape)
         self._check_out_padding(stride, dilation, out_padding)
         self._check_factor_filters(shape, filters=filters, factor=factor, target=target)
         self._check_options('norm', norm, {None, 'batch', 'layer'})

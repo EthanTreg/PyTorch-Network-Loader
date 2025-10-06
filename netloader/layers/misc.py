@@ -2,6 +2,7 @@
 Miscellaneous network layers
 """
 from copy import deepcopy
+from warnings import warn
 from typing import Any, Self, cast
 
 import torch
@@ -12,7 +13,42 @@ from torch import nn, Tensor
 from netloader.utils import Shapes
 from netloader.data import DataList
 from netloader.utils.types import TensorListLike
-from netloader.layers.base import BaseLayer, BaseMultiLayer
+from netloader.layers.base import BaseLayer, BaseSingleLayer, BaseMultiLayer
+
+
+class BatchNorm(BaseSingleLayer):
+    """
+    Batch Normalisation layer
+
+    Attributes
+    ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : nn.Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(self, shapes: Shapes, **kwargs: Any) -> None:
+        """
+        Parameters
+        ----------
+        shapes : Shapes
+            Shape of the outputs from each layer
+
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**kwargs)
+        self._check_shape((1, 4), shapes[-1])
+        self.layers.add_module(
+            'BatchNorm',
+            [
+                nn.BatchNorm1d,
+                nn.BatchNorm2d,
+                nn.BatchNorm3d,
+            ][max(0, len(shapes[-1]) - 2)](shapes[-1][0]),
+        )
+        shapes.append(shapes[-1].copy())
 
 
 class Checkpoint(BaseLayer):
@@ -154,8 +190,8 @@ class Concatenate(BaseMultiLayer):
         shape : list[int]
             Input shape
         """
-        if ((self._target[:self._dim] + self._target[self._dim + 1:] !=
-             shape[:self._dim] + shape[self._dim + 1:]) or
+        if ((self._target[:self._dim] + (self._target[self._dim + 1:] if self._dim != -1 else []) !=
+             shape[:self._dim] + (shape[self._dim + 1:] if self._dim != -1 else [])) or
                 (len(self._target) != len(shape))):
             raise ValueError(f'Input shape {shape} does not match the target shape {self._target} '
                              f"in {'checkpoint' if self._checkpoint else 'layer'} {self._layer} "
@@ -314,18 +350,21 @@ class Index(BaseLayer):
     """
     def __init__(
             self,
-            number: int,
-            *,
+            *args: int,
+            map_: bool = True,
             greater: bool = True,
+            idx: int | slice | None = None,
             shapes: Shapes | None = None,
             **kwargs: Any) -> None:
         """
         Parameters
         ----------
-        number : int
-            Number of values to slice, can be negative
-        greater : bool, default = True
-            If slicing should include all values greater or less than number index
+        idx : int | slice
+            Index or slice to apply to the last dimension of the input tensor(s) or if map_ is
+            False, the DataList itself
+        map_ : bool, default = True
+            If slicing should be applied to each tensor in a DataList, or if the DataList should be
+            sliced itself, only used if input is a DataList
         shapes : Shapes | None, default = None
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
@@ -333,22 +372,66 @@ class Index(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self._greater: bool = greater
-        self._number: int = number
+        number: int
+        shape: list[int]
+        in_shape: list[int] | list[list[int]]
+        self._map: bool = map_
+        self._idx: int | slice
+
+        if args or 'number' in kwargs:
+            warn(
+                'number argument and greater keyword argument are deprecated, please use '
+                'idx instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            number = args[0] if args else kwargs.pop('number')
+            self._idx = slice(number, None) if greater else slice(number)
+        else:
+            assert idx is not None
+            self._idx = idx
 
         # If not used as a layer in a network
         if not shapes:
             return
 
-        shapes.append(shapes[-1].copy())
+        in_shape = cast(list[int] | list[list[int]], deepcopy(shapes.get(-1, list_=True)))
 
         # Length of slice
-        if (self._greater and self._number < 0) or (not self._greater and self._number > 0):
-            shapes[-1][-1] = abs(self._number)
+        if isinstance(in_shape[0], int):
+            in_shape = self._shape_index(cast(list[int], in_shape))
+        elif isinstance(in_shape[0], list) and self._map:
+            in_shape = [self._shape_index(shape) for shape in cast(list[list[int]], in_shape)]
         else:
-            shapes[-1][-1] = shapes[-1][-1] - abs(number)
+            in_shape = cast(list[list[int]], in_shape)[self._idx]
 
-    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
+        shapes.append(in_shape)
+
+    def _shape_index(self, shape: list[int]) -> list[int]:
+        """
+        Returns the output shape after indexing.
+
+        Parameters
+        ----------
+        shape : list[int]
+            Input shape
+
+        Returns
+        -------
+        list[int]
+            Output shape
+        """
+        out_shape: list[int] = shape.copy()
+        idx: tuple[int, int, int]
+
+        if isinstance(self._idx, int):
+            out_shape[-1] = 1
+        else:
+            idx = self._idx.indices(shape[-1])
+            out_shape[-1] = (idx[1] - idx[0] + (idx[2] - 1)) // idx[2]
+        return out_shape
+
+    def forward(self, x: TensorListLike, *_: Any, **__: Any) -> TensorListLike:
         """
         Forward pass of the indexing layer.
 
@@ -362,9 +445,10 @@ class Index(BaseLayer):
         Tensor
             Output tensor of shape (N,...) and type float
         """
-        if self._greater:
-            return x[..., self._number:]
-        return x[..., :self._number]
+        if isinstance(x, DataList) and not self._map:
+            return x.get(self._idx, list_=True) if isinstance(self._idx, int) else (
+                DataList(x.get(self._idx, list_=True)))
+        return x[..., self._idx] if isinstance(x, Tensor) else x[self._idx]
 
     def extra_repr(self) -> str:
         """
@@ -375,7 +459,7 @@ class Index(BaseLayer):
         str
             Layer parameters
         """
-        return f'greater={bool(self._greater)}, number={self._number}'
+        return f'map={bool(self._map)}, idx={self._idx}'
 
 
 class LayerNorm(BaseLayer):
@@ -451,7 +535,7 @@ class LayerNorm(BaseLayer):
         return self._layer(x.permute(0, *permutation)).permute(0, *permutation)
 
 
-class Pack(BaseMultiLayer):
+class Pack(BaseLayer):
     """
     Constructs a packing layer to combine the output from the previous layer with the output from
     a specified layer into a DataList.
@@ -466,21 +550,66 @@ class Pack(BaseMultiLayer):
     -------
     forward(x, outputs, checkpoints) -> DataList[Tensor]
         Forward pass of the pack layer
+    extra_repr() -> str
+        Displays layer parameters when printing the network
     """
     def __init__(
             self,
             net_check: bool,
-            layer: int,
-            shapes: Shapes,
-            check_shapes: Shapes,
-            *,
+            *args: int | Shapes,
             checkpoint: bool = False,
+            layer: int | None = None,
             **kwargs: Any) -> None:
-        super().__init__(net_check, layer, shapes, check_shapes, checkpoint=checkpoint, **kwargs)
-        shapes.append([
-            *deepcopy(shapes[-1:]),
-            *deepcopy((check_shapes if self._checkpoint else shapes)[self._layer:self._layer + 1]),
-        ])
+        """
+        Parameters
+        ----------
+        net_check : bool
+            If layer index should be relative to checkpoint layers
+        shapes : Shapes
+            Shape of the outputs from each layer
+        check_shapes : Shapes
+            Shape of the outputs from each checkpoint
+        checkpoint : bool, default = False
+            If layer index should be relative to checkpoint layers
+        layer : int | None, default = None
+            Layer index to pack with the previous layer, if layer is None, then only the last layer
+            will be packed
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**kwargs)
+        target: list[int] | list[list[int]]
+        out_shape: list[list[int]]
+        shapes: Shapes = kwargs.pop(
+            'shapes',
+            None if not args else args[1] if isinstance(args[0], int) else args[0],
+        )
+        check_shapes: Shapes = kwargs.pop('check_shapes', None if not args else args[-1])
+        self._checkpoint: bool = checkpoint or net_check
+        self._layer: int | None = layer
+
+        if args and isinstance(args[0], int):
+            warn(
+                'Passing layer as a positional argument is deprecated, please use layer=',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._layer = args[0]
+
+        out_shape = [shapes[-1]] if shapes.check(-1) else shapes.get(-1, True)
+
+        if self._layer is not None:
+            target = cast(
+                list[int] | list[list[int]],
+                (check_shapes if self._checkpoint else shapes).get(self._layer, True),
+            )
+
+            if isinstance(target[0], int):
+                out_shape.append(cast(list[int], target))
+            else:
+                out_shape.extend(cast(list[list[int]], target))
+
+        shapes.append(deepcopy(out_shape))
 
     def forward(
             self,
@@ -506,7 +635,12 @@ class Pack(BaseMultiLayer):
         DataList[Tensor]
             Output DataList with tensors of shape (N,...) and type float
         """
-        targets: TensorListLike = (checkpoints if self._checkpoint else outputs)[self._layer]
+        targets: TensorListLike
+
+        if self._layer is None:
+            return DataList([x]) if isinstance(x, Tensor) else x
+
+        targets = (checkpoints if self._checkpoint else outputs)[self._layer]
 
         if isinstance(x, DataList) and isinstance(targets, DataList):
             x.extend(targets)
@@ -518,6 +652,17 @@ class Pack(BaseMultiLayer):
         else:
             x = DataList([x, targets])
         return x
+
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network.
+
+        Returns
+        -------
+        str
+            Layer parameters
+        """
+        return f'layer={self._layer}, checkpoint={bool(self._checkpoint)}'
 
 
 class Reshape(BaseLayer):

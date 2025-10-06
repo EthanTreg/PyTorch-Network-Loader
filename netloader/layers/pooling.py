@@ -109,7 +109,6 @@ class AdaptivePool(BaseSingleLayer):
             raise ValueError(f'Target shape {shape} does not match the input shape {in_shape} if '
                              f'channels is {bool(self._channels)}, output dimensions must be '
                              f'either 1, or {len(in_shape) - self._channels}')
-
         return shape
 
     def extra_repr(self) -> str:
@@ -184,7 +183,7 @@ class Pool(BaseSingleLayer):
             padding = _padding(kernel, stride, shapes[-1], shapes[-1])
 
         # Check for errors
-        self._check_shape(shapes[-1])
+        self._check_shape((1, 4), shapes[-1])
         self._check_options('mode', mode, set(modes))
 
         pool = cast(list[list[Type[nn.Module]]], [

@@ -157,6 +157,7 @@ class Network(nn.Module):
             out_shape: list[int],
             *,
             suppress_warning: bool = False,
+            root: str = '',
             defaults: dict[str, Any] | None = None) -> None:
         """
         Parameters
@@ -171,6 +172,8 @@ class Network(nn.Module):
             Shape of the output tensor, excluding batch size
         suppress_warning : bool, default = False
             If output shape mismatch warning should be suppressed
+        root : str, default = ''
+            Root directory to prepend to config file path
         defaults : dict[str, Any], default = None
             Default values for the parameters for each type of layer
         """
@@ -196,9 +199,9 @@ class Network(nn.Module):
             in_shape if isinstance(in_shape, list) else list(in_shape),
             list(out_shape),
             suppress_warning=suppress_warning,
+            root=root,
             defaults=defaults,
         )
-
         self.name = self.name.replace('.json', '')
 
         # Adds Network class to list of safe PyTorch classes when loading saved networks
@@ -395,6 +398,7 @@ class Composite(BaseLayer):
             *,
             checkpoint: bool = True,
             channels: int | None = None,
+            root: str = '',
             config_dir: str = '',
             shape: list[int] | None = None,
             config: dict[str, Any] | None = None,
@@ -414,6 +418,8 @@ class Composite(BaseLayer):
         channels : int, optional
             Number of output channels, won't be used if out_shape is provided, if channels and
             out_shape aren't provided, the input dimensions will be preserved
+        root : str, default = ''
+            Root directory to prepend to config file path
         config_dir : str, default = ''
             Path to the directory with the network configuration file, won't be used if config is
             provided
@@ -429,7 +435,6 @@ class Composite(BaseLayer):
         super().__init__(**kwargs)
         self._checkpoint: bool
         self.net: Network
-
         self._checkpoint = checkpoint or net_check
         shapes.append(shapes[-1].copy())
 
@@ -449,6 +454,7 @@ class Composite(BaseLayer):
             shapes[-2],
             shapes[-1],
             suppress_warning=True,
+            root=root,
             defaults=defaults | {'checkpoints': self._checkpoint},
         )
         shapes[-1] = self.net.shapes[-1]
@@ -506,6 +512,7 @@ def _create_network(
         out_shape: list[int],
         *,
         suppress_warning: bool = False,
+        root: str = '',
         defaults: dict[str, Any] | None = None,
 ) -> tuple[bool, Shapes, Shapes, dict[str, Any], nn.ModuleList]:
     """
@@ -521,6 +528,8 @@ def _create_network(
         Shape of the output tensor, excluding batch size
     suppress_warning : bool, default = False
         If output shape mismatch warning should be suppressed
+    root : str, default = ''
+        Root directory to prepend to config file path
     defaults : dict[str, Any], default = None
         Default values for the parameters for each type of layer
 
@@ -537,12 +546,11 @@ def _create_network(
     file: TextIO
     logger: log.Logger = log.getLogger(__name__)
     module_list: nn.ModuleList = nn.ModuleList()
-
     defaults = defaults or {}
 
     # Load network configuration file
     if isinstance(config, str):
-        with open(config, 'r', encoding='utf-8') as file:
+        with open(os.path.join(root, config), 'r', encoding='utf-8') as file:
             config = json.load(file)
 
     assert isinstance(config, dict)
@@ -574,6 +582,7 @@ def _create_network(
             module_list.append(layer_class(
                 net_check=net_check,
                 idx=i,
+                root=root,
                 net_out=out_shape,
                 shapes=shapes,
                 check_shapes=check_shapes,
@@ -582,8 +591,6 @@ def _create_network(
         except ValueError:
             logger.error(f"Error in {layer['type']} (layer {i})")
             raise
-
-        cast(BaseLayer, module_list[-1]).initialise_layers()
 
         if layer_class == Composite:
             config['layers'][i]['config'] = cast(Composite, module_list[-1]).net.config

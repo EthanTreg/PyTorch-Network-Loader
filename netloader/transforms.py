@@ -271,7 +271,7 @@ class Index(BaseTransform):
     def __setstate__(self, state: dict[str, Any]) -> None:
         self._shape = state['in_shape']
 
-        if isinstance(state['slice'], slice):
+        if isinstance(state['slice'][0], slice):
             warn(
                 f'{self.__class__.__name__} transform is saved in old non-weights safe '
                 'format and is deprecated, please resave the transform in the new format using '
@@ -279,6 +279,7 @@ class Index(BaseTransform):
                 DeprecationWarning,
                 stacklevel=2,
             )
+            self._slice = state['slice']
         else:
             self._slice = [slice(*s) for s in state['slice']]
 
@@ -657,8 +658,8 @@ class Normalise(BaseTransform):
         if isinstance(data, Tensor):
             data = data.cpu().numpy()
         elif data is None:
-            self.offset = offset or np.array([0])
-            self.scale = scale or np.array([1])
+            self.offset = np.array([0]) if offset is None else offset
+            self.scale = np.array([1]) if scale is None else scale
             return
 
         if mean:

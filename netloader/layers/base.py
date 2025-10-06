@@ -14,35 +14,7 @@ from netloader.utils.types import TensorListLike
 from netloader.utils import Shapes, check_params
 
 
-class DeprecatedMetaclass(type):
-    """
-    Metaclass to warn about deprecated attributes in BaseLayer.
-    """
-    def __getattribute__(cls, item: str) -> Any:
-        """
-        Raises deprecation warnings for deprecated attributes.
-
-        Parameters
-        ----------
-        item : str
-            Attribute name
-
-        Returns
-        -------
-        Any
-            Attribute value
-        """
-        if item == 'layers':
-            warn(
-                'layers attribute is deprecated is BaseLayer, please inherit '
-                'BaseSingleLayer',
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return type.__getattribute__(cls, item)
-
-
-class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
+class BaseLayer(nn.Module):
     """
     Base layer for other layers to inherit.
 
@@ -54,9 +26,6 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
 
     Methods
     -------
-    initialise_layers()
-        Checks if self.layers contains layers and exposes them to the optimiser so that weights can
-        be trained
     forward(x) -> Tensor
         Forward pass for a generic layer
     """
@@ -74,6 +43,7 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
         """
         super().__init__()
         supported_params: list[str] = [
+            'root',
             'net_check',
             'net_out',
             'shapes',
@@ -91,6 +61,29 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
                 supported_params,
                 np.array(list(kwargs.keys())),
             )
+
+    def __getattribute__(self, item: str) -> Any:
+        """
+        Raises deprecation warnings for deprecated attributes.
+
+        Parameters
+        ----------
+        item : str
+            Attribute name
+
+        Returns
+        -------
+        Any
+            Attribute value
+        """
+        if item == 'layers' and not isinstance(self, BaseSingleLayer):
+            warn(
+                f'layers attribute in class {self.__class__.__name__} is deprecated when '
+                f'inheriting from BaseLayer, please inherit BaseSingleLayer',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return super().__getattribute__(item)
 
     @staticmethod
     def _check_options(name: str, value: str | None, options: set[str | None]) -> None:
@@ -159,7 +152,7 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
         return shape
 
     @staticmethod
-    def _check_shape(shape: list[int]) -> None:
+    def _check_shape(dims: tuple[int, int], shape: list[int]) -> None:
         """
         Checks if the input shape has more than 4 dimensions or fewer than 2.
 
@@ -168,9 +161,9 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
         shape : list[int]
             Input shape
         """
-        if not 1 < len(shape) < 5:
-            raise ValueError(f'Tensors with more than 4 dimensions or less than 2 is not '
-                             f'supported, input shape is {shape}')
+        if not dims[0] <= len(shape) <= dims[1]:
+            raise ValueError(f'Tensors with more than {dims[1]} dimensions or less than {dims[0]} '
+                             f'is not supported, input shape is {shape}')
 
     @staticmethod
     def _check_num_outputs(output: TensorListLike, single: bool = True) -> None:
@@ -192,22 +185,6 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
             raise ValueError('Output must be a list of tensors, but a single tensor was '
                              'provided')
 
-    def initialise_layers(self) -> None:
-        """
-        Checks if self.layers contains layers and exposes them to the optimiser so that weights can
-        be trained.
-
-        This is for backwards compatibility with layers being provided as lists, which is
-        deprecated.
-        """
-        if isinstance(self.layers, list) and self.layers:  # type: ignore[unreachable]
-            warn(  # type: ignore[unreachable]
-                'Layers of type list is deprecated, please use nn.Sequential',
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self.layers = nn.Sequential(*self.layers)
-
     def forward(self, x: Any, *_: Any, **__: Any) -> Any:
         """
         Forward pass for a generic layer.
@@ -223,8 +200,8 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
             Output with tensors of shape (N,...) and type float
         """
         warn(
-            'Using forward pass from BaseLayer is deprecated, please inherit '
-            'BaseSingleLayer or implement a custom forward method',
+            f'Using forward pass from BaseLayer in {self.__class__.__name__} is '
+            f'deprecated, please inherit BaseSingleLayer or implement a custom forward method',
             DeprecationWarning,
             stacklevel=2,
         )
@@ -236,7 +213,7 @@ class BaseLayer(nn.Module, metaclass=DeprecatedMetaclass):
         return self
 
 
-class BaseSingleLayer(BaseLayer, metaclass=type):
+class BaseSingleLayer(BaseLayer):
     """
     Base layer for layers that only use the previous layer.
 
@@ -253,19 +230,19 @@ class BaseSingleLayer(BaseLayer, metaclass=type):
     forward(x, outputs, checkpoints) -> Tensor
         Forward pass for a generic layer
     """
-    def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
+    def forward(self, x: Any, *_: Any, **__: Any) -> Any:
         """
         Forward pass for a generic layer.
 
         Parameters
         ----------
-        x : Tensor
-            Input tensor with shape (N,...) and type float, where N is the batch size
+        x : TensorListLike
+            Input with tensors of shape (N,...) and type float, where N is the batch size
 
         Returns
         -------
-        Tensor
-            Output tensor with shape (N,...) and type float
+        TensorListLike
+            Output with tensors of shape (N,...) and type float
         """
         return self.layers(x)
 

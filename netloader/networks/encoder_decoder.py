@@ -591,7 +591,6 @@ class Encoder(BaseEncoder):
 
         if isinstance(self._loss_func_, nn.CrossEntropyLoss):
             output = np.argmax(output, axis=-1, keepdims=True)
-
         return (output,)
 
     def to(self, *args: Any, **kwargs: Any) -> Self:

@@ -495,7 +495,9 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             loss = self._loss_tensor(in_data, target)
 
         self._update(
-            loss if isinstance(loss, Tensor) else torch.sum(torch.cat(list(loss.values()))),
+            loss if isinstance(loss, Tensor) else
+            loss['total'] if 'total' in loss else
+            torch.sum(torch.cat(list(loss.values()))),
         )
 
         if isinstance(loss, dict):
@@ -649,7 +651,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         self.train(False)
         self._plot_active = False
         loss = self._train_val(loaders[1])
-        print(f'\nFinal validation loss: {loss if isinstance(loss, float) else loss['total']:.3e}')
+        print(f"\nFinal validation loss: {loss if isinstance(loss, float) else loss['total']:.3e}")
 
     def save(self) -> None:
         """
