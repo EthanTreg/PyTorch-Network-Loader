@@ -205,7 +205,6 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         dict[str, Any]
             Dictionary containing the state of the network
         """
-        self._param_device(self.optimiser.state, 'cpu')
         return {
             'half': self._half,
             'epoch': self._epoch,
