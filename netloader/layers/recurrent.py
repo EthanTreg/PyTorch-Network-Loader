@@ -1,7 +1,7 @@
 """
 Recurrent network layers
 """
-from typing import Any, Type
+from typing import Any, Type, Literal
 
 import torch
 import numpy as np
@@ -40,9 +40,9 @@ class Recurrent(BaseSingleLayer):
             layers: int = 2,
             filters: int = 1,
             dropout: float = 0,
-            mode: str = 'gru',
+            mode: Literal['gru', 'lstm', 'rnn'] = 'gru',
             activation: str | None = 'ELU',
-            bidirectional: str | None = None,
+            bidirectional: Literal[None, 'sum', 'mean', 'concatenate'] = None,
             **kwargs: Any) -> None:
         """
         Parameters

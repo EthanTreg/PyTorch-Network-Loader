@@ -87,6 +87,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             *,
             overwrite: bool = False,
             mix_precision: bool = False,
+            save_freq: int = 1,
             learning_rate: float = 1e-3,
             description: str = '',
             verbose: str = 'epoch',
@@ -108,6 +109,8 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             exists, an error will be raised
         mix_precision: bool, default = False
             If mixed precision should be used
+        save_freq : int, default = 1
+            Frequency of epochs to save the network
         learning_rate : float, default = 1e-3
             Optimiser initial learning rate
         description : str, default = ''
@@ -129,6 +132,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         self._plot_active: bool = False
         self._half: bool = mix_precision
         self._epoch: int = 0
+        self._save_freq: int = save_freq
         self._verbose: str = verbose
         self._optimiser_kwargs: dict[str, Any] = optimiser_kwargs or {}
         self._scheduler_kwargs: dict[str, Any] = scheduler_kwargs or {}
@@ -205,6 +209,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         return {
             'half': self._half,
             'epoch': self._epoch,
+            'save_freq': self._save_freq,
             'verbose': self._verbose,
             'save_path': self.save_path,
             'description': self.description,
@@ -230,27 +235,31 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         """
         self._train_state = True
         self._plot_active = False
+
+        for key, value in list(state.items()):
+            if key[0] == '_':
+                warn(
+                    'BaseNetwork is saved in old format and is deprecated, please resave '
+                    'using BaseNetwork.save()',
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                state[key.replace('_', '', 1)] = value
+
         self._half = state['half']
         self._epoch = state['epoch']
-        self.version = state['version'] if 'version' in state else '<3.7.1'
+        self._save_freq = state.get('save_freq', 1)
+        self.version = state.get('version', '<3.7.1')
         self._verbose = state['verbose']
         self._device = torch.device('cpu')
         self.save_path = state['save_path']
         self.description = state['description']
         self.losses = state['losses']
-        self._optimiser_kwargs = state['optimiser_kwargs'] if 'optimiser_kwargs' in state else {}
-        self._scheduler_kwargs = state['scheduler_kwargs'] if 'scheduler_kwargs' in state else {}
+        self._optimiser_kwargs = state.get('optimiser_kwargs', {})
+        self._scheduler_kwargs = state.get('scheduler_kwargs', {})
         self.transforms = state['transforms'] if 'transforms' in state else state['header']
         self.idxs = state['idxs'] if state['idxs'] is None else np.array(state['idxs'])
         self.net = state['net']
-        self.optimiser = self.set_optimiser(
-            self.net.parameters(),
-            **state['optimiser_kwargs'] if 'optimiser_kwargs' in state else {},
-        )
-        self.scheduler = self.set_scheduler(
-            self.optimiser,
-            **state['scheduler_kwargs'] if 'scheduler_kwargs' in state else {},
-        )
 
         if 'header' in state:
             warn(
@@ -262,6 +271,14 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             self.transforms['inputs'] = state['in_transform']
 
         if isinstance(state['optimiser'], dict):
+            self.optimiser = self.set_optimiser(
+                self.net.parameters(),
+                **state.get('optimiser_kwargs', {}),
+            )
+            self.scheduler = self.set_scheduler(
+                self.optimiser,
+                **state.get('scheduler_kwargs', {}),
+            )
             self.optimiser.load_state_dict(state['optimiser'])
             self.scheduler.load_state_dict(state['scheduler'])
         else:
@@ -657,9 +674,12 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         """
         Saves the network to the given path.
         """
-        if self.save_path:
-            torch.save(self, self.save_path)
-            self.to(self._device)
+        if self.save_path and (self._epoch - 1) % self._save_freq == 0:
+            try:
+                torch.save(self, self.save_path)
+            except KeyboardInterrupt:
+                print('Program interrupted, finishing network save...')
+                torch.save(self, self.save_path)
 
     def predict(
             self,

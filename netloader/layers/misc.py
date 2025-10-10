@@ -3,7 +3,7 @@ Miscellaneous network layers
 """
 from copy import deepcopy
 from warnings import warn
-from typing import Any, Self, cast
+from typing import Any, Self, cast, overload
 
 import torch
 import numpy as np
@@ -348,18 +348,36 @@ class Index(BaseLayer):
     extra_repr() -> str
         Displays layer parameters when printing the network
     """
+    @overload
+    def __init__(
+            self,
+            *,
+            index: int | list[int | None] | tuple[int | None, ...] | slice,
+            map_: bool = ...,
+            shapes: Shapes | None = ...,
+            **kwargs: Any) -> None: ...
+
+    @overload
+    def __init__(
+            self,
+            number: int,
+            *,
+            map_: bool = True,
+            greater: bool = True,
+            shapes: Shapes | None = None,
+            **kwargs: Any) -> None: ...
+
     def __init__(
             self,
             *args: int,
             map_: bool = True,
-            greater: bool = True,
-            idx: int | slice | None = None,
+            index: int | list[int | None] | tuple[int | None, ...] | slice | None = None,
             shapes: Shapes | None = None,
             **kwargs: Any) -> None:
         """
         Parameters
         ----------
-        idx : int | slice
+        index : int | list[int | None] | tuple[int | None, ...] | slice
             Index or slice to apply to the last dimension of the input tensor(s) or if map_ is
             False, the DataList itself
         map_ : bool, default = True
@@ -381,15 +399,22 @@ class Index(BaseLayer):
         if args or 'number' in kwargs:
             warn(
                 'number argument and greater keyword argument are deprecated, please use '
-                'idx instead',
+                'index instead',
                 DeprecationWarning,
                 stacklevel=2,
             )
             number = args[0] if args else kwargs.pop('number')
-            self._idx = slice(number, None) if greater else slice(number)
+            self._idx = slice(number, None) if kwargs.pop('greater', True) else slice(number)
+        elif index is None and 'idx' in kwargs:
+            warn(
+                'idx argument is deprecated, please use index instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._idx = kwargs['idx']
         else:
-            assert idx is not None
-            self._idx = idx
+            assert index is not None
+            self._idx = slice(*index) if isinstance(index, (tuple, list)) else index
 
         # If not used as a layer in a network
         if not shapes:

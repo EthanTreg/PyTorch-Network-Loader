@@ -1,7 +1,7 @@
 """
 Pooling network layers
 """
-from typing import Any, Type, cast
+from typing import Any, Type, Literal, cast
 
 import numpy as np
 from torch import nn, Tensor
@@ -34,7 +34,7 @@ class AdaptivePool(BaseSingleLayer):
             shapes: Shapes,
             *,
             channels: bool = True,
-            mode: str = 'average',
+            mode: Literal['average', 'max'] = 'average',
             **kwargs: Any) -> None:
         """
         Parameters
@@ -58,6 +58,7 @@ class AdaptivePool(BaseSingleLayer):
 
         self._check_pool_shape(shapes[-1])
         shape = self._check_adapt_pool(shapes[-1], shape)
+        self._check_options('mode', mode, {None, 'average', 'max'})
 
         adapt_pool = [
             [nn.AdaptiveMaxPool1d, nn.AdaptiveAvgPool1d],
@@ -148,8 +149,8 @@ class Pool(BaseSingleLayer):
             *,
             kernel: int | list[int] = 2,
             stride: int | list[int] = 2,
-            padding: int | str | list[int] = 0,
-            mode: str = 'max',
+            padding: int | Literal['same'] | list[int] = 0,
+            mode: Literal['max', 'average'] = 'max',
             **kwargs: Any) -> None:
         """
         Parameters
@@ -160,7 +161,7 @@ class Pool(BaseSingleLayer):
             Size of the kernel
         stride : int | list[int], default = 2
             Stride of the kernel
-        padding : int | str | list[int], default = 0
+        padding : int | {'same'} | list[int], default = 0
             Input padding, can an int or 'same' where 'same' preserves the input shape
         mode : {'max', 'average'}
             Whether to use 'max' or 'average' pooling
@@ -258,7 +259,7 @@ class PoolDownscale(Pool):
             scale: int,
             shapes: Shapes,
             *,
-            mode: str = 'max',
+            mode: Literal['max', 'average'] = 'max',
             **kwargs: Any) -> None:
         """
         Parameters

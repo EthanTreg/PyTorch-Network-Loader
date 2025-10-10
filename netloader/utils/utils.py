@@ -277,7 +277,7 @@ def check_params(name: str, supported_params: list[str] | ndarray, in_params: nd
     supported_params : list[str] | ndarray
         Parameters supported by the function
     in_params : ndarray
-        Input parameters of shape (N), where N is the number of parameters.
+        Input parameters of shape (N), where N is the number of parameters
     """
     bad_params: ndarray = in_params[~np.isin(in_params, supported_params)]
 

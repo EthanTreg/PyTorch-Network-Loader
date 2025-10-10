@@ -14,7 +14,6 @@ from zuko.distributions import NormalizingFlow
 
 import netloader
 from netloader import layers
-from netloader.layers.base import BaseLayer
 from netloader.utils.types import TensorListLike
 from netloader.utils import Shapes, check_params, deep_merge
 
@@ -74,7 +73,7 @@ class CompatibleNetwork(nn.Module):
         return {
             'name': self.name,
             'version': netloader.__version__,
-            'net': self.cpu().state_dict(),
+            'net': self.state_dict(),
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -270,7 +269,7 @@ class Network(nn.Module):
             'version': netloader.__version__,
             'shapes': list(self.shapes),
             'config': self.config,
-            'net': self.cpu().state_dict(),
+            'net': self.state_dict(),
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -287,9 +286,27 @@ class Network(nn.Module):
         self.group = state['group']
         self.layer_num = state['layer_num']
         self.name = state['name']
-        self.version = state['version'] if 'version' in state else '<3.9.0'
+        self.version = state.get('version', '<3.9.0')
         self.checkpoints = []
         self.kl_loss = torch.tensor(0.)
+
+        if 'config' not in state:
+            warn(
+                'Network is saved in old deprecated format and net key in network JSON '
+                'file is lost, please resave the network and update Network.config with the JSON '
+                'file',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self._checkpoints = state['_checkpoints']
+            self.shapes = Shapes(state['shapes'])
+            self.check_shapes = Shapes(state['check_shapes'])
+            self.config = {
+                'net': {'checkpoints': state['checkpoints']},
+                'layers': state['layers'],
+            }
+            self.net = state['_modules']
+            return
 
         self._checkpoints, self.shapes, self.check_shapes, self.config, self.net = _create_network(
             state['config'],
@@ -333,7 +350,7 @@ class Network(nn.Module):
         i: int
         outputs: list[TensorListLike] = []
         e: Exception
-        layer: BaseLayer
+        layer: layers.BaseLayer
         self.checkpoints = []
 
         if not self._checkpoints or any(isinstance(layer, layers.Unpack) for layer in self.net):
@@ -359,10 +376,10 @@ class Network(nn.Module):
         super().to(*args, **kwargs)
         i: int
         checkpoint: TensorListLike
-        layer: BaseLayer
+        layer: layers.BaseLayer
         self.kl_loss = self.kl_loss.to(*args, **kwargs)
 
-        for layer in cast(list[BaseLayer], list(self.net)):
+        for layer in cast(list[layers.BaseLayer], list(self.net)):
             layer.to(*args, **kwargs)
 
         for i, checkpoint in enumerate(self.checkpoints):
@@ -370,7 +387,7 @@ class Network(nn.Module):
         return self
 
 
-class Composite(BaseLayer):
+class Composite(layers.BaseLayer):
     """
     Creates a subnetwork from a configuration file.
 

@@ -210,8 +210,7 @@
     },
     {
       "type": "Index",
-      "number": 128,
-      "greater": 0
+      "index": [null, 128]
     },
     {
       "type": "BatchNorm"

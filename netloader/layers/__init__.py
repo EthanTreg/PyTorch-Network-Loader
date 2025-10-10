@@ -2,6 +2,7 @@
 Collects all classes in the layers module
 """
 from netloader.layers.linear import Activation, Linear, OrderedBottleneck, Sample, Upsample
+from netloader.layers.base import BaseLayer, BaseSingleLayer, BaseMultiLayer
 from netloader.layers.pooling import AdaptivePool, Pool, PoolDownscale
 from netloader.layers.blocks import ConvNeXtBlock
 from netloader.layers.recurrent import Recurrent
@@ -29,11 +30,15 @@ from netloader.layers.misc import (
     Skip,
     Unpack,
 )
+from netloader.layers import utils
 
 
 __all__ = [
     'Activation',
     'AdaptivePool',
+    'BaseLayer',
+    'BaseMultiLayer',
+    'BaseSingleLayer',
     'BatchNorm',
     'Checkpoint',
     'Concatenate',
@@ -62,6 +67,7 @@ __all__ = [
     'Skip',
     'Unpack',
     'Upsample',
+    'utils',
 ]
 
 

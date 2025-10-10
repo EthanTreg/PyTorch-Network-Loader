@@ -38,7 +38,7 @@ class Conv(BaseSingleLayer):
             groups: int = 1,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
-            padding: int | str | list[int] = 0,
+            padding: int | Literal['same'] | list[int] = 0,
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
@@ -65,7 +65,7 @@ class Conv(BaseSingleLayer):
             Size of the kernel
         stride : int | list[int], default = 1
             Stride of the kernel
-        padding : int | str | list[int], default = 0
+        padding : int | {'same'} | list[int], default = 0
             Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
         dropout : float, default = 0
             Probability of dropout
@@ -173,7 +173,7 @@ class ConvDepth(Conv):
             factor: float | None = None,
             kernel: int | list[int] = 3,
             stride: int | list[int] = 1,
-            padding: int | str | list[int] = 0,
+            padding: int | Literal['same'] | list[int] = 0,
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
@@ -197,7 +197,7 @@ class ConvDepth(Conv):
             Size of the kernel
         stride : int | list[int], default = 1
             Stride of the kernel
-        padding : int | str | list[int], default = 0
+        padding : int | {'same'} | list[int], default = 0
             Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
         dropout : float, default = 0
             Probability of dropout
@@ -375,7 +375,7 @@ class ConvTranspose(BaseSingleLayer):
             stride: int | list[int] = 1,
             out_padding: int | list[int] = 0,
             dilation: int | list[int] = 1,
-            padding: int | str | list[int] = 0,
+            padding: int | Literal['same'] | list[int] = 0,
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
@@ -403,7 +403,7 @@ class ConvTranspose(BaseSingleLayer):
             Padding applied to the output
         dilation : int | list[int], default = 1
             Spacing between kernel points
-        padding : int | str | list[int], default = 0
+        padding : int | {'same'} | list[int], default = 0
             Inverse of convolutional padding which removes rows from each dimension in the output
         dropout : float, default =  0
             Probability of dropout
