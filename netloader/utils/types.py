@@ -1,7 +1,7 @@
 """
 Type definitions.
 """
-from typing import Union, TypeVar, Any, Protocol, TYPE_CHECKING
+from typing import Union, TypeVar, Any, Protocol, TypeAlias, TYPE_CHECKING
 
 from torch import Tensor
 from numpy import ndarray
@@ -10,14 +10,14 @@ if TYPE_CHECKING:
     from netloader.data import Data, DataList
 
 
-ArrayLike = ndarray | Tensor
-Param = dict[str, Union[Tensor, 'Param']]
-TensorListLike = Union[Tensor, 'DataList[Tensor]']
-NDArrayListLike = Union[ndarray, 'DataList[ndarray]']
-DataListLike = Union['DataLike', 'DataList[DataLike]']
-DataLike = Union[ndarray, Tensor, 'Data[ndarray]', 'Data[Tensor]']
-TensorLike = Union[Tensor, 'Data[Tensor]', 'DataList[Tensor | Data[Tensor]]']
-NDArrayLike = Union[ndarray, 'Data[ndarray]', 'DataList[ndarray | Data[ndarray]]']
+ArrayLike: TypeAlias = ndarray | Tensor
+Param: TypeAlias = dict[str, Union[Tensor, 'Param']]
+TensorListLike: TypeAlias = Union[Tensor, 'DataList[Tensor]']
+NDArrayListLike: TypeAlias = Union[ndarray, 'DataList[ndarray]']
+DataListLike: TypeAlias = Union['DataLike', 'DataList[DataLike]']
+DataLike: TypeAlias = Union[ndarray, Tensor, 'Data[ndarray]', 'Data[Tensor]']
+TensorLike: TypeAlias = Union[Tensor, 'Data[Tensor]', 'DataList[Tensor | Data[Tensor]]']
+NDArrayLike: TypeAlias = Union[ndarray, 'Data[ndarray]', 'DataList[ndarray | Data[ndarray]]']
 
 T = TypeVar('T')
 DataT = TypeVar('DataT', bound=DataLike)
@@ -28,6 +28,7 @@ DataListT = TypeVar('DataListT', bound=DataListLike)
 DatasetT = TypeVar('DatasetT', bound='DatasetProtocol')
 TensorListT = TypeVar('TensorListT', bound=TensorListLike)
 
+ArrayCT = TypeVar('ArrayCT', ndarray, Tensor)
 ArrayTC = TypeVar('ArrayTC', ndarray, Tensor)
 LossCT = TypeVar('LossCT', float, dict[str, float])
 TensorLossCT = TypeVar('TensorLossCT', Tensor, dict[str, Tensor])
@@ -72,6 +73,7 @@ __all__ = [
     'DataListT',
     'TensorListT',
     'LossCT',
+    'ArrayCT',
     'ArrayTC',
     'TensorLossCT',
 ]

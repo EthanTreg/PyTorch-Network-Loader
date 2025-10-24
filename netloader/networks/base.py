@@ -5,7 +5,7 @@ import os
 import logging as log
 from time import time
 from warnings import warn
-from typing import Any, Self, Generic, cast
+from typing import Any, Self, Generic, Literal, cast
 
 import torch
 import numpy as np
@@ -60,10 +60,14 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     Methods
     -------
+    extra_repr() -> str
+        Additional representation of the architecture
     get_device() -> torch.device
         Gets the device of the network
     get_epochs() -> int
         Returns the number of epochs the network has been trained for
+    get_hyperparams() -> dict[str, Any]
+        Returns the hyperparameters of the network
     train(train)
         Flips the train/eval state of the network
     training(epoch, loaders)
@@ -76,8 +80,6 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         Generates predictions for the given data batch
     to(*args, **kwargs) -> Self
         Move and/or cast the parameters and buffers
-    extra_repr() -> str
-        Additional representation of the architecture
     """
     def __init__(
             self,
@@ -90,7 +92,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             save_freq: int = 1,
             learning_rate: float = 1e-3,
             description: str = '',
-            verbose: str = 'epoch',
+            verbose: Literal['epoch', 'full', 'plot', 'progress', None] = 'epoch',
             transform: list[BaseTransform] | BaseTransform | None = None,
             in_transform: list[BaseTransform] | BaseTransform | None = None,
             optimiser_kwargs: dict[str, Any] | None = None,
@@ -133,7 +135,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         self._half: bool = mix_precision
         self._epoch: int = 0
         self._save_freq: int = save_freq
-        self._verbose: str = verbose
+        self._verbose: Literal['epoch', 'full', 'plot', 'progress', None] = verbose
         self._optimiser_kwargs: dict[str, Any] = optimiser_kwargs or {}
         self._scheduler_kwargs: dict[str, Any] = scheduler_kwargs or {}
         self._logger: log.Logger = log.getLogger(__name__)
@@ -590,6 +592,17 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         """
         self._epoch += 1
 
+    def extra_repr(self) -> str:
+        """
+        Additional representation of the architecture.
+
+        Returns
+        -------
+        str
+            Architecture specific representation
+        """
+        return ''
+
     def get_device(self) -> torch.device:
         """
         Gets the device of the network.
@@ -611,6 +624,29 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             Number of epochs
         """
         return self._epoch
+
+    def get_hyperparams(self) -> dict[str, Any]:
+        """
+        Returns the hyperparameters of the network.
+
+        Returns
+        -------
+        dict[str, Any]
+            Hyperparameters of the network
+        """
+        return {
+            'mix_precision': self._half,
+            'save_freq': self._save_freq,
+            'verbose': self._verbose,
+            'optimiser_kwargs': self._optimiser_kwargs,
+            'scheduler_kwargs': self._scheduler_kwargs,
+            'architecture_name': self.__class__.__name__,
+            'description': self.description,
+            'net_name': self.net.name,
+            'version': self.version,
+            'optimiser': self.optimiser.__class__.__name__,
+            'scheduler': self.scheduler.__class__.__name__,
+        }
 
     def train(self, train: bool) -> None:
         """
@@ -820,17 +856,6 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         self._param_device(self.optimiser.state, *args, **kwargs)
         self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)  # pylint: disable=protected-access
         return self
-
-    def extra_repr(self) -> str:
-        """
-        Additional representation of the architecture.
-
-        Returns
-        -------
-        str
-            Architecture specific representation
-        """
-        return ''
 
 
 def load_net(num: int | str, states_dir: str, net_name: str, **kwargs: Any) -> BaseNetwork:

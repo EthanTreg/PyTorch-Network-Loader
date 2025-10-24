@@ -11,10 +11,10 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader, Subset
 from numpy import ndarray
 
-from netloader.utils.types import DataLike, ArrayLike, DataT, ArrayT, DatasetT, DataListT, ArrayTC
+from netloader.utils.types import DataLike, ArrayLike, DataT, ArrayT, DatasetT, DataListT, ArrayCT
 
 
-class Data(Generic[ArrayTC]):
+class Data(Generic[ArrayCT]):
     """
     Stores data with uncertainties for uncertainty handling in BaseNetwork.
 
@@ -22,18 +22,18 @@ class Data(Generic[ArrayTC]):
     ----------
     data : ArrayTC
         Data
-    uncertainty : ArrayTC | None, default = None
+    uncertainty : ArrayCT | None, default = None
         Data uncertainty
 
     Methods
     -------
-    collate(data, data_field=True) -> ArrayTC | Data[ArrayTC]
+    collate(data, data_field=True) -> ArrayCT | Data[ArrayCT]
         Collates a list of Data objects into a single Data object
-    clone() -> Data[ArrayTC]
+    clone() -> Data[ArrayCT]
         Clones the data and uncertainty
-    concat(dim=0) -> ArrayTC
+    concat(dim=0) -> ArrayCT
         Concatenates data and uncertainty for passing into a network
-    copy() -> Data[ArrayTC]
+    copy() -> Data[ArrayCT]
         Copies the data and uncertainty
     cpu() -> Self
         Moves data and uncertainty to CPU if they are Tensors
@@ -46,18 +46,18 @@ class Data(Generic[ArrayTC]):
     to(*args, **kwargs) -> Self
         Move and/or cast the parameters and buffers
     """
-    def __init__(self, data: ArrayTC, uncertainty: ArrayTC | None = None) -> None:
+    def __init__(self, data: ArrayCT, uncertainty: ArrayCT | None = None) -> None:
         """
         Parameters
         ----------
         data : ArrayTC
             Data
-        uncertainty : ArrayTC | None, default = None
+        uncertainty : ArrayCT | None, default = None
             Data uncertainty
         """
         self.shape: tuple[int, ...] = tuple(data.shape)
-        self.data: ArrayTC = data
-        self.uncertainty: ArrayTC | None = uncertainty
+        self.data: ArrayCT = data
+        self.uncertainty: ArrayCT | None = uncertainty
 
     def __len__(self) -> int:
         """
@@ -70,7 +70,7 @@ class Data(Generic[ArrayTC]):
         """
         return len(self.data)
 
-    def __getitem__(self, idx: int | slice) -> 'Data[ArrayTC]':
+    def __getitem__(self, idx: int | slice) -> 'Data[ArrayCT]':
         """
         Gets a subset of the data and uncertainty.
 
@@ -95,21 +95,21 @@ class Data(Generic[ArrayTC]):
 
     @staticmethod
     @overload
-    def collate(data: list['Data[ArrayTC]'], *, data_field: Literal[True]) -> 'Data[ArrayTC]': ...
+    def collate(data: list['Data[ArrayCT]'], *, data_field: Literal[True]) -> 'Data[ArrayCT]': ...
 
     @staticmethod
     @overload
-    def collate(data: list['Data[ArrayTC]'], *, data_field: Literal[False]) -> ArrayTC: ...
+    def collate(data: list['Data[ArrayCT]'], *, data_field: Literal[False]) -> ArrayCT: ...
 
     @staticmethod
     @overload
-    def collate(data: list['Data[ArrayTC]'], *, data_field: bool) -> 'ArrayTC | Data[ArrayTC]': ...
+    def collate(data: list['Data[ArrayCT]'], *, data_field: bool) -> 'ArrayCT | Data[ArrayCT]': ...
 
     @staticmethod
     def collate(
-            data: list['Data[ArrayTC]'],
+            data: list['Data[ArrayCT]'],
             *,
-            data_field: bool = True) -> 'ArrayTC | Data[ArrayTC]':
+            data_field: bool = True) -> 'ArrayCT | Data[ArrayCT]':
         """
         Collates a list of Data objects into a single Data object.
 
@@ -126,7 +126,7 @@ class Data(Generic[ArrayTC]):
             Collated ArrayLike or Data object
         """
         module: ModuleType = torch if isinstance(data[0].data, Tensor) else np
-        new_data: ArrayTC
+        new_data: ArrayCT
         datum: Data[Any]
 
         if data[0].uncertainty is None:
@@ -136,7 +136,7 @@ class Data(Generic[ArrayTC]):
         new_data = module.concat([datum.concat() for datum in data])
         return Data(*new_data.swapaxes(0, 1)) if data_field else new_data
 
-    def clone(self) -> 'Data[ArrayTC]':
+    def clone(self) -> 'Data[ArrayCT]':
         """
         Clones the data and uncertainty.
 
@@ -147,8 +147,8 @@ class Data(Generic[ArrayTC]):
         Data[ArrayTC]
             Cloned Data
         """
-        data: ArrayTC
-        uncertainty: ArrayTC | None
+        data: ArrayCT
+        uncertainty: ArrayCT | None
 
         if isinstance(self.data, ndarray):
             data = self.data.copy()
@@ -158,7 +158,7 @@ class Data(Generic[ArrayTC]):
             uncertainty = self.uncertainty.clone() if self.uncertainty is not None else None
         return Data(data, uncertainty=uncertainty)
 
-    def concat(self, dim: int = 0) -> ArrayTC:
+    def concat(self, dim: int = 0) -> ArrayCT:
         """
         Concatenates data and uncertainty for passing into a network.
 
@@ -180,7 +180,7 @@ class Data(Generic[ArrayTC]):
             return module.concat((self.data, self.uncertainty), **kwargs)
         return self.data
 
-    def copy(self) -> 'Data[ArrayTC]':
+    def copy(self) -> 'Data[ArrayCT]':
         """
         Copies the data and uncertainty.
 
@@ -882,9 +882,9 @@ def loader_init(
 
 @overload
 def data_collation(
-        data: list[ArrayTC] | ArrayTC,
+        data: list[ArrayCT] | ArrayCT,
         *,
-        data_field: bool) -> ArrayTC: ...
+        data_field: bool) -> ArrayCT: ...
 
 @overload
 def data_collation(
@@ -900,21 +900,21 @@ def data_collation(
 
 @overload
 def data_collation(
-        data: list[Data[ArrayTC]],
+        data: list[Data[ArrayCT]],
         *,
-        data_field: Literal[True]) -> Data[ArrayTC]: ...
+        data_field: Literal[True]) -> Data[ArrayCT]: ...
 
 @overload
 def data_collation(
-        data: list[Data[ArrayTC]],
+        data: list[Data[ArrayCT]],
         *,
-        data_field: Literal[False]) -> ArrayTC: ...
+        data_field: Literal[False]) -> ArrayCT: ...
 
 def data_collation(  # type: ignore
-        data: list[ArrayTC] | list[Data[ArrayTC]] | list[DataList[DataT]] | ArrayTC,
+        data: list[ArrayCT] | list[Data[ArrayCT]] | list[DataList[DataT]] | ArrayCT,
         *,
         data_field: bool = True,
-) -> ArrayTC | Data[ArrayTC] | DataList[ArrayT] | DataList[DataT]:
+) -> ArrayCT | Data[ArrayCT] | DataList[ArrayT] | DataList[DataT]:
     """
     Collates a list of ArrayLike, Data, or DataList objects into a single object.
 

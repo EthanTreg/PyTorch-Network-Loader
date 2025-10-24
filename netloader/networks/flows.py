@@ -1,7 +1,7 @@
 """
 Classes that contain multiple types of networks
 """
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import torch
 import numpy as np
@@ -182,7 +182,7 @@ class NormFlowEncoder(BaseEncoder):
             mix_precision: bool = False,
             net_checkpoint: int | None = None,
             description: str = '',
-            verbose: str = 'epoch',
+            verbose: Literal['epoch', 'full', 'plot', 'progress', None] = 'epoch',
             train_epochs: tuple[int, int] = (0, -1),
             learning_rate: tuple[float, float] = (1e-3,) * 2,
             classes: Tensor | None = None,
@@ -355,6 +355,38 @@ class NormFlowEncoder(BaseEncoder):
             self._train_encoder = False
             self.net.net[:-1].requires_grad_(False)
 
+    def extra_repr(self) -> str:
+        """
+        Additional representation of the architecture.
+
+        Returns
+        -------
+        str
+            Architecture specific representation
+        """
+        return (f'{super().extra_repr()}, '
+                f'train_epochs: {self._epochs}, '
+                f'flow_weight: {self.flow_loss}, '
+                f'encoder_weight: {self.encoder_loss}')
+
+    def get_hyperparams(self) -> dict[str, Any]:
+        """
+        Get the hyperparameters of the normalising flow encoder.
+
+        Returns
+        -------
+        dict[str, Any]
+            Hyperparameters of the normalising flow encoder
+        """
+        return super().get_hyperparams() | {
+            'checkpoint': self._checkpoint,
+            'train_epochs': self._epochs,
+            'flow_weight': self.flow_loss,
+            'encoder_weight': self.encoder_loss,
+            'classes': int(self.classes.size(0)) if self.classes is not None else None,
+            'loss_func': self._loss_func_.__class__.__name__,
+        }
+
     def predict(
             self,
             loader: DataLoader[Any],
@@ -464,17 +496,3 @@ class NormFlowEncoder(BaseEncoder):
         return (None if output is None else
                 cast(NDArrayListLike, output.detach().cpu().numpy()),
                 samples)
-
-    def extra_repr(self) -> str:
-        """
-        Additional representation of the architecture.
-
-        Returns
-        -------
-        str
-            Architecture specific representation
-        """
-        return (f'{super().extra_repr()}, '
-                f'train_epochs: {self._epochs}, '
-                f'flow_weight: {self.flow_loss}, '
-                f'encoder_weight: {self.encoder_loss}')

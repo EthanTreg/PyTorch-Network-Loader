@@ -2,7 +2,7 @@
 Classes for encoder, decoder, or autoencoder type architectures
 """
 from warnings import warn
-from typing import Any, Self, cast
+from typing import Any, Self, Literal, cast
 
 import torch
 import numpy as np
@@ -57,7 +57,7 @@ class BaseEncoder(BaseNetwork):
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
-            verbose: str = 'epoch',
+            verbose: Literal['epoch', 'full', 'plot', 'progress', None] = 'epoch',
             classes: Tensor | None = None,
             loss_func: BaseLoss | None = None,
             transform: list[BaseTransform] | BaseTransform | None = None,
@@ -169,6 +169,20 @@ class BaseEncoder(BaseNetwork):
             target = label_change(target.squeeze(), self.classes)
         return self._loss_func_(self.net(in_data), target)
 
+    def get_hyperparams(self) -> dict[str, Any]:
+        """
+        Get the hyperparameters of the encoder.
+
+        Returns
+        -------
+        dict[str, Any]
+            Hyperparameters of the encoder
+        """
+        return super().get_hyperparams() | {
+            'classes': int(self.classes.size(0)) if self.classes is not None else None,
+            'loss_func': self._loss_func_.__class__.__name__,
+        }
+
 
 class Autoencoder(BaseNetwork):
     """
@@ -224,7 +238,7 @@ class Autoencoder(BaseNetwork):
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
-            verbose: str = 'epoch',
+            verbose: Literal['epoch', 'full', 'plot', 'progress', None] = 'epoch',
             transform: list[BaseTransform] | BaseTransform | None = None,
             latent_transform: list[BaseTransform] | BaseTransform | None = None,
             optimiser_kwargs: dict[str, Any] | None = None,
@@ -382,6 +396,24 @@ class Autoencoder(BaseNetwork):
                 f'reconstruct_func: {self.reconstruct_func}, '
                 f'latent_func: {self.latent_func}')
 
+    def get_hyperparams(self) -> dict[str, Any]:
+        """
+        Get the hyperparameters of the autoencoder.
+
+        Returns
+        -------
+        dict[str, Any]
+            Hyperparameters of the autoencoder
+        """
+        return super().get_hyperparams() | {
+            'reconstruct_loss': self.reconstruct_loss,
+            'latent_loss': self.latent_loss,
+            'bound_loss': self.bound_loss,
+            'kl_loss': self.kl_loss,
+            'reconstruct_func': self.reconstruct_func.__class__.__name__,
+            'latent_func': self.latent_func.__class__.__name__,
+        }
+
 
 class Decoder(BaseNetwork):
     """
@@ -425,7 +457,7 @@ class Decoder(BaseNetwork):
             mix_precision: bool = False,
             learning_rate: float = 1e-3,
             description: str = '',
-            verbose: str = 'epoch',
+            verbose: Literal['epoch', 'full', 'plot', 'progress', None] = 'epoch',
             transform: BaseTransform | None = None,
             in_transform: BaseTransform | None = None,
             optimiser_kwargs: dict[str, Any] | None = None,
@@ -535,6 +567,19 @@ class Decoder(BaseNetwork):
             Architecture specific representation
         """
         return f'loss_func: {self.loss_func}'
+
+    def get_hyperparams(self) -> dict[str, Any]:
+        """
+        Get the hyperparameters of the decoder.
+
+        Returns
+        -------
+        dict[str, Any]
+            Hyperparameters of the decoder
+        """
+        return super().get_hyperparams() | {
+            'loss_func': self.loss_func.__class__.__name__,
+        }
 
 
 class Encoder(BaseEncoder):
