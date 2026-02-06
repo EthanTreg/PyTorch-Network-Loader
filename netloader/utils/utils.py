@@ -6,12 +6,14 @@ import sys
 import inspect
 import logging as log
 from types import ModuleType
-from typing import Any, Literal, cast, overload
+from contextlib import contextmanager
+from typing import Any, Literal, Generator, cast, overload
 
 import torch
 import numpy as np
 from torch import Tensor
 from numpy import ndarray
+from packaging.version import Version
 
 from netloader.utils.types import ArrayT
 
@@ -285,6 +287,27 @@ def check_params(name: str, supported_params: list[str] | ndarray, in_params: nd
         log.getLogger(__name__).warning(f'Unknown parameters for {name}: {bad_params}')
 
 
+def compare_versions(cur_ver: str, min_ver: str) -> bool:
+    """
+    Compares two version strings.
+
+    Parameters
+    ----------
+    cur_ver : str
+        Current version
+    min_ver : str
+        Minimum version
+
+    Returns
+    -------
+    bool
+        True if current version is greater than or equal to minimum version
+    """
+    if not bool(cur_ver):
+        return True
+    return not '<' in cur_ver and Version(cur_ver) >= Version(min_ver)
+
+
 def deep_merge(base: dict, new: dict) -> dict:
     """
     Performs a deep merge of two dictionaries, equivalent to recursive base | new
@@ -311,6 +334,131 @@ def deep_merge(base: dict, new: dict) -> dict:
         else:
             merged[key] = value
     return merged
+
+
+def dict_list_append(
+        dict1: dict[str, Any],
+        dict2: dict[str, Any],
+        concat: bool = False,
+        balance: bool = False) -> dict[str, Any]:
+    """
+    Merges two dictionaries.
+    If a key exists in both dictionaries and not concat, the data type must match.
+    If data type is list or ndarray, the values are extended.
+    If data type is any other type and not concat, the value from the second dictionary overrides
+    the first, else if concat, the values are converted to a list and appended.
+    If balance is True, all lists and ndarrays in each dictionary must have the same length, if a
+    key is missing from one dictionary, it is added with None values to match the length of the
+    other lists/ndarrays in that dictionary.
+
+    Parameters
+    ----------
+    dict1 : dict[str, Any]
+        Primary dict to merge secondary dict into
+    dict2 : dict[str, Any]
+        Secondary dict to merge into primary dict
+    concat : bool, default = False
+        If true, concatenates non list/ndarray types instead of overriding them
+    balance : bool, default = False
+        If true, balances the lengths of lists/ndarrays in each dictionary so that each list/ndarray
+        in the returning dictionary has the same length
+
+    Returns
+    -------
+    dict[str, Any]
+        First dict with second dict merged into it
+    """
+    dict1_len: int = 0
+    dict2_len: int = 0
+    key: str
+
+    if not concat:
+        for key in np.intersect1d(list(dict1.keys()), list(dict2.keys())).tolist():
+            if not isinstance(dict1[key], type(dict2[key])):
+                raise TypeError(f'Type mismatch for key "{key}": {type(dict1[key])} != '
+                                f'{type(dict2[key])}')
+
+    if balance:
+        # If primary dict is not empty, find the length of a list/ndarray in the dictionary
+        if len(dict1) > 0:
+            for value in dict1.values():
+                if isinstance(value, (list, ndarray)):
+                    dict1_len = len(value)
+                    break
+
+        if any(len(value) != dict1_len for value in dict1.values()
+               if isinstance(value, (list, ndarray))):
+            raise ValueError('All lists/ndarrays in dict1 must have the same length')
+
+        # If secondary dict is not empty, find the length of a list/ndarray in the dictionary
+        if len(dict2) > 0:
+            for value in dict2.values():
+                if isinstance(value, (list, ndarray)):
+                    dict2_len = len(value)
+                    break
+
+        if any(len(value) != dict2_len for value in dict2.values()
+               if isinstance(value, (list, ndarray))):
+            raise ValueError('All lists/ndarrays in dict2 must have the same length')
+
+    # Merge two dictionaries
+    for key in np.unique(list(dict1.keys()) + list(dict2.keys())).tolist():
+        # If the secondary dict has a key not in the primary, pad with Nones
+        if key in dict1 or not balance:
+            pass
+        elif isinstance(dict2[key], ndarray):
+            dict1[key] = np.full(
+                [dict1_len] + (list(dict2[key][0].shape) if dict2[key].ndim > 1 else []),
+                None,
+            )
+        elif isinstance(dict2[key], list) or concat:
+            dict1[key] = [None] * dict1_len
+
+        if concat and key in dict1 and not isinstance(dict1[key], (list, ndarray)):
+            dict1[key] = [dict1[key]]
+
+        if concat and key in dict2 and not isinstance(dict2[key], (list, ndarray)):
+            dict2[key] = [dict2[key]]
+
+        # If the primary dict has a key not in the secondary dict, pad with Nones, else merge dicts
+        if key not in dict2 and not balance:
+            continue
+        if key not in dict1:
+            dict1[key] = dict2[key]
+        elif balance and key not in dict2 and isinstance(dict1[key], ndarray):
+            dict1[key] = np.concat(
+                (dict1[key], [np.full(  # type: ignore[arg-type]
+                    dict1[key][0].shape,
+                    None,
+                ) if dict1[key].ndim > 1 else None] * dict2_len),
+                axis=0,
+            )
+        elif balance and key not in dict2 and isinstance(dict1[key], list):
+            dict1[key].extend([None] * dict2_len)
+        elif isinstance(dict1[key], ndarray):
+            dict1[key] = np.concatenate((dict1[key], dict2[key]), axis=0)
+        elif isinstance(dict1[key], list):
+            dict1[key].extend(dict2[key])
+        elif key in dict2:
+            dict1[key] = dict2[key]
+    return dict1
+
+
+def dict_list_convert(data: dict[str, list[Any] | ndarray]) -> list[dict[str, Any]]:
+    """
+    Converts a dictionary of lists to a list of dictionaries.
+
+    Parameters
+    ----------
+    data : dict[str, list[Any] | ndarray]
+        Dictionary of lists to convert
+
+    Returns
+    -------
+    list[dict[str, Any]]
+        List of dictionaries
+    """
+    return [{key: data[key][i:i + 1] for key in data} for i in range(len(list(data.values())[0]))]
 
 
 def get_device() -> tuple[dict[str, Any], torch.device]:
@@ -389,6 +537,36 @@ def label_change(
     return cast(ArrayT, out_data.to(data.device) if isinstance(out_data, Tensor) else out_data)
 
 
+def list_dict_convert(
+        data: list[dict[str, Any]],
+        balance: bool = False,
+        concat: bool = False) -> dict[str, list[Any]]:
+    """
+    Converts a list of dictionaries to a dictionary of lists
+
+    Parameters
+    ----------
+    data : list[dict[str, float | ndarray]]
+        List of dictionaries to convert
+    balance : bool, default = False
+        If true, balances the lengths of lists/ndarrays in each dictionary so that each list/ndarray
+        in the returning dictionary has the same length
+    concat : bool, default = False
+        If true, concatenates non list/ndarray types instead of overriding them
+
+    Returns
+    -------
+    dict[str, list[float | None] | list[ndarray]]
+        Dictionary of lists
+    """
+    value: dict[str, float | ndarray]
+    new_data: dict[str, list[float] | list[ndarray]] = {}
+
+    for value in data:
+        dict_list_append(new_data, value, concat=concat, balance=balance)
+    return new_data
+
+
 def progress_bar(i: int, total: int, *, text: str = '', **kwargs: Any) -> None:
     """
     Terminal progress bar.
@@ -462,3 +640,23 @@ def save_name(num: int | str, states_dir: str, name: str) -> str:
         Path to the network save file
     """
     return os.path.join(states_dir, f'{name}_{num}.pth')
+
+@contextmanager
+def suppress_logger_warnings(logger_name: str) -> Generator[None, None, None]:
+    """
+    Suppresses warnings from a specified logger.
+
+    Parameters
+    ----------
+    logger_name : str
+        Name of the logger to suppress warnings from
+    """
+    level: int
+    logger: log.Logger = log.getLogger(logger_name)
+    level = logger.level
+    logger.setLevel(log.ERROR)
+
+    try:
+        yield
+    finally:
+        logger.setLevel(level)

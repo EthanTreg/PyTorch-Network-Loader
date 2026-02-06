@@ -71,6 +71,13 @@ class AdaptivePool(BaseSingleLayer):
         shapes.append(shapes[-1].copy())
         shapes[-1][self._channels:] = shape
 
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'channels': self._channels,
+            'mode': self._mode,
+            'shapes': self.layers.AdaptivePool.output_size,  # type: ignore[union-attr]
+        }
+
     def _check_pool_shape(self, shape: list[int]) -> None:
         """
         Checks if the input shape has more than 3 dimensions + channels or fewer than 1 + channels.
@@ -151,6 +158,7 @@ class Pool(BaseSingleLayer):
             stride: int | list[int] = 2,
             padding: int | Literal['same'] | list[int] = 0,
             mode: Literal['max', 'average'] = 'max',
+            pool_kwargs: dict[str, Any] | None = None,
             **kwargs: Any) -> None:
         """
         Parameters
@@ -165,17 +173,21 @@ class Pool(BaseSingleLayer):
             Input padding, can an int or 'same' where 'same' preserves the input shape
         mode : {'max', 'average'}
             Whether to use 'max' or 'average' pooling
+        pool_kwargs : dict[str, Any] | None, default = None
+            Additional keyword arguments to pass to the pooling layer
 
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        self._pad: np.ndarray = np.zeros(2 * len(shapes[-1][1:]), dtype=int)
+        self._mode: Literal['max', 'average'] = mode
+        self._pad: tuple[int, ...]
+        self._kwargs: dict[str, Any] = pool_kwargs or {}
         padding_: int | str | list[int] = padding
         shape: list[int]
         modes: tuple[str, str] = ('max', 'average')
-        avg_kwargs: dict[str, bool] = {}
         pool: Type[nn.Module]
+        pad: np.ndarray = np.zeros(2 * len(shapes[-1][1:]), dtype=int)
 
         # Check for errors and calculate same padding
         if isinstance(padding, str):
@@ -185,13 +197,13 @@ class Pool(BaseSingleLayer):
 
         # Check for errors
         self._check_shape((1, 4), shapes[-1])
-        self._check_options('mode', mode, set(modes))
+        self._check_options('mode', self._mode, set(modes))
 
         pool = cast(list[list[Type[nn.Module]]], [
             [nn.MaxPool1d, nn.AvgPool1d],
             [nn.MaxPool2d, nn.AvgPool2d],
             [nn.MaxPool3d, nn.AvgPool3d],
-        ])[len(shapes[-1]) - 2][mode == modes[1]]
+        ])[len(shapes[-1]) - 2][self._mode == modes[1]]
 
         shape = _kernel_shape(
             kernel,
@@ -200,12 +212,12 @@ class Pool(BaseSingleLayer):
             shapes[-1],
         )
 
-        if mode == modes[1]:
-            avg_kwargs = {'count_include_pad': False}
+        if self._mode == modes[1]:
+            self._kwargs = {'count_include_pad': False} | self._kwargs
 
         # Correct same padding for one-sided padding
         if padding_ == 'same' and shape != shapes[-1]:
-            self._pad[np.argwhere(
+            pad[np.argwhere(
                 np.array(shape[1:]) != np.array(shapes[-1][1:])
             ).flatten() * 2 + 1] = 1
             shape = shapes[-1].copy()
@@ -214,9 +226,19 @@ class Pool(BaseSingleLayer):
             kernel_size=kernel,
             stride=stride,
             padding=padding,
-            **avg_kwargs,
+            **self._kwargs,
         ))
+        self._pad = tuple(pad.tolist())
         shapes.append(shape)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'kernel': self.layers.Pool.kernel_size,  # type: ignore[union-attr]
+            'stride': self.layers.Pool.stride,
+            'padding': self._pad,
+            'mode': self._mode,
+            'pool_kwargs': self._kwargs,
+        }
 
     def forward(self, x: Tensor, *args: Any, **kwargs: Any) -> Tensor:
         """
@@ -236,7 +258,7 @@ class Pool(BaseSingleLayer):
         Tensor
             Output tensor of shape (N,...) and type float
         """
-        x = nn.functional.pad(x, tuple(self._pad))
+        x = nn.functional.pad(x, self._pad)
         return super().forward(x, *args, **kwargs)
 
 
@@ -275,3 +297,8 @@ class PoolDownscale(Pool):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(shapes=shapes, kernel=scale, stride=scale, padding=0, mode=mode, **kwargs)
+
+    def __getstate__(self) -> dict[str, Any]:
+        state: dict[str, Any] = super().__getstate__()
+        state.pop('padding', None)
+        return state

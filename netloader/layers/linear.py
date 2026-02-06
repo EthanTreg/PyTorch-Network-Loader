@@ -3,13 +3,14 @@ Linear network layers
 """
 from __future__ import annotations
 import logging as log
-from typing import TYPE_CHECKING, Any, Self, Literal
+from inspect import signature
+from typing import TYPE_CHECKING, Any, Self, Literal, cast
 
 import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.utils import Shapes
+from netloader.utils import Shapes, compare_versions
 from netloader.layers.base import BaseLayer, BaseSingleLayer
 
 if TYPE_CHECKING:
@@ -46,13 +47,19 @@ class Activation(BaseSingleLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
-        self.layers.add_module('Activation', getattr(nn, activation)())
+        self.layers.add_module('Activation', getattr(nn, activation)(
+            **{'inplace': True} if 'inplace' in signature(getattr(nn, activation)).parameters
+            else {},
+        ))
 
         # If not used as a layer in a network
         if not shapes:
             return
 
         shapes.append(shapes[-1].copy())
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'activation': self.layers.Activation.__class__.__name__}
 
 
 class Linear(BaseSingleLayer):
@@ -132,7 +139,10 @@ class Linear(BaseSingleLayer):
 
         # Optional layers
         if activation:
-            self.layers.add_module('Activation', getattr(nn, activation)())
+            self.layers.add_module('Activation', getattr(nn, activation)(
+                **{'inplace': True} if 'inplace' in signature(getattr(nn, activation)).parameters
+                else {},
+            ))
 
         if batch_norm:
             self.layers.add_module('BatchNorm', nn.BatchNorm1d(shape[0]))
@@ -141,6 +151,15 @@ class Linear(BaseSingleLayer):
             self.layers.add_module('Dropout', nn.Dropout(dropout))
 
         shapes.append(shape)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'features': self.layers.Linear.out_features,  # type: ignore[union-attr]
+            'batch_norm': 'BatchNorm' in self.layers._modules,
+            'dropout': self.layers.Dropout.p if 'Dropout' in self.layers._modules else 0,  # type: ignore[union-attr]
+            'activation': self.layers.Activation.__class__.__name__
+                if 'Activation' in self.layers._modules else None,
+        }
 
 
 class OrderedBottleneck(BaseLayer):
@@ -178,8 +197,12 @@ class OrderedBottleneck(BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
+        self._offset: bool = compare_versions(self._ver, '3.10.0')
         self.min_size: int = min_size
         shapes.append(shapes[-1].copy())
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'min_size': self.min_size}
 
     def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
@@ -200,9 +223,17 @@ class OrderedBottleneck(BaseLayer):
         if not self.training or self.min_size >= x.size(-1):
             return x
 
-        idx: int = np.random.randint(self.min_size, x.size(-1))
-        gate: Tensor = torch.zeros(x.size(-1)).to(self._device)
-        gate[:idx + 1] = 1
+        idx: Tensor = torch.randint(
+            self.min_size,
+            x.size(-1) + int(self._offset),
+            (1,),
+            device=x.device,
+        )
+        gate: Tensor = torch.where(
+            torch.arange(x.size(-1), device=x.device) < idx + int(not self._offset),
+            torch.ones_like(idx),
+            torch.zeros_like(idx),
+        )
         return x * gate
 
     def extra_repr(self) -> str:
@@ -372,6 +403,14 @@ class Upsample(BaseSingleLayer):
             scale_factor=None if shape else scale,
             mode=mode,
         ))
+
+    def __getstate__(self) -> dict[str, Any]:
+        layer: nn.Upsample = cast(nn.Upsample, self.layers.Upsample)
+        return super().__getstate__() | {
+            'shape': list(shape) if isinstance(shape := layer.size, tuple) else shape,
+            'scale': layer.scale_factor,
+            'mode': layer.mode,
+        }
 
     @staticmethod
     def _check_mode_dimension(mode: str, shape: list[int], modes: dict[str, list[int]]) -> None:

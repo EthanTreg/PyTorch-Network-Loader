@@ -135,6 +135,7 @@ def main():
         states_dir,
         network,
         overwrite=True,
+        mix_precision=True,
         learning_rate=1e-4,
         verbose='plot',
         transform=low_transform,
@@ -143,6 +144,34 @@ def main():
     net.training(4, loaders)
     net = nets.load_net(1, states_dir, net.net.name).to(device)
     net.training(10, loaders)
+    net.predict(loaders[1])
+
+    print('Testing Autoencoder training...')
+    try:
+        net = nets.load_net(1, states_dir, 'test_autoencoder', map_location=device)
+        net.training(net.get_epochs() + 1, loaders)
+    except FileNotFoundError:
+        pass
+
+    network = Network(
+        'test_autoencoder',
+        nets_dir,
+        in_shape[1:],
+        in_shape[1:],
+    ).to(device)
+    net = nets.Autoencoder(
+        1,
+        states_dir,
+        network,
+        overwrite=True,
+        learning_rate=1e-4,
+        verbose='epoch',
+        transform=high_transform,
+        latent_transform=low_transform,
+    ).to(device)
+    net.training(2, loaders)
+    net = nets.load_net(1, states_dir, net.net.name).to(device)
+    net.training(4, loaders)
     net.predict(loaders[1])
 
     # Test Decoder training

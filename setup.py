@@ -16,11 +16,11 @@ setup(
     packages=[
         'netloader',
         'netloader.layers',
-        'netloader.utils',
-        'netloader.networks',
         'netloader.models',
+        'netloader.networks',
+        'netloader.utils',
     ],
-    install_requires=['numpy', 'torch'],
+    install_requires=['numpy', 'torch', 'packaging'],
     extras_require={
         'flows': ['zuko']
     }

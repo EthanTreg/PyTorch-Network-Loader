@@ -10,9 +10,9 @@ from torch.utils.data import DataLoader
 from zuko.distributions import NormalizingFlow
 from numpy import ndarray
 
+from netloader.data import Data
 from netloader.network import Network
 from netloader.utils import label_change
-from netloader.data import Data
 from netloader.loss_funcs import BaseLoss
 from netloader.transforms import BaseTransform
 from netloader.networks.base import BaseNetwork
@@ -28,10 +28,8 @@ class NormFlow(BaseNetwork):
 
     Attributes
     ----------
-    net : nn.Module | Network | CompatibleNetwork
+    net : Network | CompatibleNetwork
         Neural spline flow
-    save_path : str
-        Path to the network save file
     description : str
         Description of the network
     losses : tuple[list[LossCT], list[LossCT]]
@@ -129,21 +127,13 @@ class NormFlow(BaseNetwork):
 
 class NormFlowEncoder(BaseEncoder):
     """
-    Calculates the loss for a network and normalizing flow that takes high-dimensional data
+    Calculates the loss for a network and normalising flow that takes high-dimensional data
     and predicts a low-dimensional data distribution.
 
-    Requires the normalizing flow to be the last layer in the network.
+    Requires the normalising flow to be the last layer in the network.
 
     Attributes
     ----------
-    net : nn.Module | Network | CompatibleNetwork
-        Neural network
-    flow_loss : float
-        Loss weight for the normalizing flow
-    encoder_loss : float
-        Loss weight for the output of the encoder
-    save_path : str
-        Path to the network save file
     description : str
         Description of the network
     losses : tuple[list[LossCT], list[LossCT]]
@@ -160,17 +150,19 @@ class NormFlowEncoder(BaseEncoder):
         Network optimiser
     scheduler : optim.lr_scheduler.LRScheduler
         Optimiser scheduler
+    net : Network | CompatibleNetwork
+        Neural network
 
     Methods
     -------
-    set_optimiser(*args, **kwargs)
-        Sets the optimiser for the network
-    predict(loader, bin_num=100, path='', num=[1e3], header=[...]) -> dict[str, NDArrayLike]
-        Generates probability distributions for a dataset and can save to a file
     batch_predict(data, num=[1e3]) -> tuple[NDArrayListLike | None, ndarray | None]
         Generates probability distributions for the given data batch
     extra_repr() -> str
-        Additional representation of the architecture.
+        Additional representation of the architecture
+    get_hyperparams() -> dict[str, Any]
+        Returns the hyperparameters of the network
+    predict(loader, bin_num=100, path='', num=[1e3], header=[...]) -> dict[str, NDArrayLike]
+        Generates probability distributions for a dataset and can save to a file
     """
     def __init__(
             self,
@@ -253,11 +245,10 @@ class NormFlowEncoder(BaseEncoder):
         self._train_encoder: bool
         self._checkpoint: int | None = net_checkpoint
         self._epochs: tuple[int, int] = train_epochs
-        self.flow_loss: float = 1
-        self.encoder_loss: float = 1
 
         self._train_flow = not self._epochs[0]
         self._train_encoder = bool(self._epochs[-1])
+        self._loss_weights = {'flow': 1, 'encoder': 1}
         self.transforms |= {
             'distributions': transform,
             'probs': None,
@@ -288,8 +279,6 @@ class NormFlowEncoder(BaseEncoder):
             'train_encoder': self._train_encoder,
             'checkpoint': self._checkpoint,
             'epochs': self._epochs,
-            'flow_loss': self.flow_loss,
-            'encoder_loss': self.encoder_loss,
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -298,8 +287,17 @@ class NormFlowEncoder(BaseEncoder):
         self._train_encoder = state['train_encoder']
         self._checkpoint = state['checkpoint']
         self._epochs = state['epochs']
-        self.flow_loss = state['flow_loss']
-        self.encoder_loss = state['encoder_loss']
+        self._loss_weights = state.get(
+            'loss_weights',
+            {'flow': state.get('flow_loss', 1), 'encoder': state.get('encoder_loss', 1)},
+        )
+
+    def __getattr__(self, item: str) -> Any:
+        if item == 'flow_loss':
+            return self._loss_weights.get('flow', 0)
+        if item == 'encoder_loss':
+            return self._loss_weights.get('encoder', 0)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
 
     def _loss_tensor(
             self,
@@ -327,18 +325,19 @@ class NormFlowEncoder(BaseEncoder):
             raise ValueError(f'{self.__class__.__name__} requires target to be a Tensor, got '
                              f'{type(target)}')
 
-        if isinstance(output, NormalizingFlow) and self.flow_loss:
-            loss['flow'] = self.flow_loss * -output.log_prob(target).mean()
+        if isinstance(output, NormalizingFlow) and self.get_loss_weights('flow'):
+            loss['flow'] = -output.log_prob(target).mean()
 
         if isinstance(output, NormalizingFlow) and self._checkpoint:
             output = self.net.checkpoints[self._checkpoint]
 
         # Default shape is (N, L), but cross entropy expects (N)
-        if self.encoder_loss and self.classes is not None and isinstance(output, Tensor):
+        if self.get_loss_weights('encoder') and self.classes is not None and \
+                isinstance(output, Tensor):
             target = label_change(target.squeeze(), self.classes)
 
-        if self.encoder_loss and isinstance(output, Tensor):
-            loss['encoder'] = self.encoder_loss * self._loss_func_(output, target)
+        if self.get_loss_weights('encoder') and isinstance(output, Tensor):
+            loss['encoder'] = self._loss_func_(output, target)
         return loss
 
     def _update_epoch(self) -> None:
@@ -355,6 +354,52 @@ class NormFlowEncoder(BaseEncoder):
             self._train_encoder = False
             self.net.net[:-1].requires_grad_(False)
 
+    def batch_predict(
+            self,
+            data: TensorListLike,
+            *,
+            num: list[int] | None = None,
+            **_: Any) -> tuple[NDArrayListLike | None, ndarray | None]:
+        """
+        Generates probability distributions for the data batch
+
+        Parameters
+        ----------
+        data : TensorListLike
+            Data of shape (N,...) and type float to generate distributions for, where N is the batch
+            size
+        num : list[int] | None, default = [1e3]
+            Number of samples, S, to generate
+
+        Returns
+        -------
+        tuple[NDArrayListLike | None, ndarray | None]
+            Network output with shape (N,...) and type float and samples of shape (N,S) and type
+            float from each probability distribution
+        """
+        samples: ndarray | None = None
+        output: NormalizingFlow | TensorListLike | None = self.net(data)
+
+        if num is None:
+            num = [int(1e3)]
+
+        # Generate samples
+        if isinstance(output, NormalizingFlow):
+            samples = torch.transpose(
+                output.sample(num).squeeze(-1),
+                0,
+                1,
+            ).detach().cpu().numpy()
+            output = None
+
+        if output is None and self._checkpoint:
+            output = self.net.checkpoints[self._checkpoint]
+
+        assert not isinstance(output, NormalizingFlow)
+        return (None if output is None else
+                cast(NDArrayListLike, output.detach().cpu().numpy()),
+                samples)
+
     def extra_repr(self) -> str:
         """
         Additional representation of the architecture.
@@ -364,10 +409,7 @@ class NormFlowEncoder(BaseEncoder):
         str
             Architecture specific representation
         """
-        return (f'{super().extra_repr()}, '
-                f'train_epochs: {self._epochs}, '
-                f'flow_weight: {self.flow_loss}, '
-                f'encoder_weight: {self.encoder_loss}')
+        return f'{super().extra_repr()}, train_epochs: {self._epochs}'
 
     def get_hyperparams(self) -> dict[str, Any]:
         """
@@ -381,10 +423,6 @@ class NormFlowEncoder(BaseEncoder):
         return super().get_hyperparams() | {
             'checkpoint': self._checkpoint,
             'train_epochs': self._epochs,
-            'flow_weight': self.flow_loss,
-            'encoder_weight': self.encoder_loss,
-            'classes': int(self.classes.size(0)) if self.classes is not None else None,
-            'loss_func': self._loss_func_.__class__.__name__,
         }
 
     def predict(
@@ -450,49 +488,3 @@ class NormFlowEncoder(BaseEncoder):
         data['meds'] = np.median(data['distributions'], axis=-1)
         self._save_predictions(path, data)
         return data
-
-    def batch_predict(
-            self,
-            data: TensorListLike,
-            *,
-            num: list[int] | None = None,
-            **_: Any) -> tuple[NDArrayListLike | None, ndarray | None]:
-        """
-        Generates probability distributions for the data batch
-
-        Parameters
-        ----------
-        data : TensorListLike
-            Data of shape (N,...) and type float to generate distributions for, where N is the batch
-            size
-        num : list[int] | None, default = [1e3]
-            Number of samples, S, to generate
-
-        Returns
-        -------
-        tuple[NDArrayListLike | None, ndarray | None]
-            Network output with shape (N,...) and type float and samples of shape (N,S) and type
-            float from each probability distribution
-        """
-        samples: ndarray | None = None
-        output: NormalizingFlow | TensorListLike | None = self.net(data)
-
-        if num is None:
-            num = [int(1e3)]
-
-        # Generate samples
-        if isinstance(output, NormalizingFlow):
-            samples = torch.transpose(
-                output.sample(num).squeeze(-1),
-                0,
-                1,
-            ).detach().cpu().numpy()
-            output = None
-
-        if output is None and self._checkpoint:
-            output = self.net.checkpoints[self._checkpoint]
-
-        assert not isinstance(output, NormalizingFlow)
-        return (None if output is None else
-                cast(NDArrayListLike, output.detach().cpu().numpy()),
-                samples)

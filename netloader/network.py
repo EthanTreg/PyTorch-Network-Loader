@@ -5,17 +5,18 @@ import os
 import json
 import logging as log
 from warnings import warn
+from contextlib import nullcontext
 from typing import Any, TextIO, Self, Iterator, cast, overload
 
 import torch
-import numpy as np
 from torch import nn, Tensor
 from zuko.distributions import NormalizingFlow
 
 import netloader
 from netloader import layers
+from netloader.utils.configs import Config
 from netloader.utils.types import TensorListLike
-from netloader.utils import Shapes, check_params, deep_merge
+from netloader.utils import configs, Shapes, deep_merge, suppress_logger_warnings
 
 
 class CompatibleNetwork(nn.Module):
@@ -42,24 +43,31 @@ class CompatibleNetwork(nn.Module):
     forward(x) -> TensorListLike
         Forward pass of the network
     """
-    def __init__(self, net: nn.Module) -> None:
+    def __init__(self, net: nn.Module | nn.ModuleList, *, name: str = '') -> None:
         """
         Parameters
         ----------
-        net : nn.Module
-            The neural network module to wrap
+        net : nn.Module | nn.ModuleList
+            The neural network module to wrap or list of layers in the network
+        name : str, default = ''
+            Name of the network, used for saving
         """
         super().__init__()
         self.name: str
         self.version: str = netloader.__version__
         self.checkpoints: list[TensorListLike] = []
         self.kl_loss: Tensor = torch.tensor(0.)
-        self.net: nn.ModuleList = nn.ModuleList(net.children())
+        self.net: nn.ModuleList = nn.ModuleList(net.children()) \
+            if isinstance(net, nn.Module) else net
 
-        if hasattr(net, 'name') and isinstance(net.name, str):
+        if name:
+            self.name = name
+        elif hasattr(net, 'name') and isinstance(net.name, str):
             self.name = net.name
+        elif isinstance(net, nn.ModuleList):
+            self.name = self.__class__.__name__
         else:
-            self.name = type(net).__name__
+            self.name = net.__class__.__name__
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -87,7 +95,7 @@ class CompatibleNetwork(nn.Module):
         """
         super().__init__()
         self.name = state['name']
-        self.version = state['version'] if 'version' in state else '<3.8.1'
+        self.version = state['version'] if 'version' in state else '<3.9.0'
         self.checkpoints = []
         self.kl_loss = torch.tensor(0.)
         self.load_state_dict(state['net'])
@@ -130,8 +138,6 @@ class Network(nn.Module):
     checkpoints : list[TensorListLike]
         Outputs from each checkpoint with each Tensor having shape (N,...) and type float, where N
         is the batch size
-    config : dict[str, Any]
-        Network configuration
     kl_loss : Tensor
         KL divergence loss on the latent space of shape (1) and type float, if using a sample layer
     net : nn.ModuleList
@@ -140,6 +146,8 @@ class Network(nn.Module):
         Checkpoint output shapes
     shapes : Shapes
         Layer output shapes
+    config : Config
+        Network configuration
 
     Methods
     -------
@@ -151,7 +159,7 @@ class Network(nn.Module):
     def __init__(
             self,
             name: str,
-            config: str | dict[str, Any],
+            config: str | Config,
             in_shape: list[int] | list[list[int]] | tuple[int, ...],
             out_shape: list[int],
             *,
@@ -163,8 +171,8 @@ class Network(nn.Module):
         ----------
         name : str
             Name of the network configuration file
-        config : str | dict[str, Any]
-            Path to the network config directory or configuration dictionary
+        config : str | Config
+            Path to the network _config directory or configuration dictionary
         in_shape : list[int] | list[list[int]] | tuple[int, ...]
             Shape of the input tensor(s), excluding batch size
         out_shape : list[int]
@@ -172,7 +180,7 @@ class Network(nn.Module):
         suppress_warning : bool, default = False
             If output shape mismatch warning should be suppressed
         root : str, default = ''
-            Root directory to prepend to config file path
+            Root directory to prepend to _config file path
         defaults : dict[str, Any], default = None
             Default values for the parameters for each type of layer
         """
@@ -182,18 +190,19 @@ class Network(nn.Module):
         self.layer_num: int | None = None
         self.name: str = name
         self.version: str = netloader.__version__
-        self.config: dict[str, Any]
         self.checkpoints: list[TensorListLike] = []
         self.kl_loss: Tensor = torch.tensor(0.)
         self.net: nn.ModuleList
         self.shapes: Shapes
         self.check_shapes: Shapes
+        self._config: Config
+        layer: layers.BaseLayer
 
         if '.json' not in self.name:
             self.name += '.json'
 
         # Construct layers in network
-        self._checkpoints, self.shapes, self.check_shapes, self.config, self.net = _create_network(
+        self.net, self.shapes, self.check_shapes, self._config = _create_network(
             os.path.join(config, self.name) if isinstance(config, str) else config,
             in_shape if isinstance(in_shape, list) else list(in_shape),
             list(out_shape),
@@ -201,7 +210,9 @@ class Network(nn.Module):
             root=root,
             defaults=defaults,
         )
+        self._checkpoints = self._config.net.checkpoints
         self.name = self.name.replace('.json', '')
+        self._config.layers = [layer.__getstate__() for layer in self.net]
 
         # Adds Network class to list of safe PyTorch classes when loading saved networks
         torch.serialization.add_safe_globals([self.__class__])
@@ -268,7 +279,7 @@ class Network(nn.Module):
             'name': self.name,
             'version': netloader.__version__,
             'shapes': list(self.shapes),
-            'config': self.config,
+            'config': self.get_config(True),
             'net': self.state_dict(),
         }
 
@@ -293,7 +304,7 @@ class Network(nn.Module):
         if 'config' not in state:
             warn(
                 'Network is saved in old deprecated format and net key in network JSON '
-                'file is lost, please resave the network and update Network.config with the JSON '
+                'file is lost, please resave the network and update Network._config with the JSON '
                 'file',
                 DeprecationWarning,
                 stacklevel=2,
@@ -301,19 +312,20 @@ class Network(nn.Module):
             self._checkpoints = state['_checkpoints']
             self.shapes = Shapes(state['shapes'])
             self.check_shapes = Shapes(state['check_shapes'])
-            self.config = {
+            self._config = Config.from_dict({
                 'net': {'checkpoints': state['checkpoints']},
                 'layers': state['layers'],
-            }
+            })
             self.net = state['_modules']
             return
 
-        self._checkpoints, self.shapes, self.check_shapes, self.config, self.net = _create_network(
-            state['config'],
-            shapes[0],
+        self.net, self.shapes, self.check_shapes, self._config = _create_network(
+            Config.from_dict(state['config']),
+            shapes.get(0, True),
             shapes[-1],
             suppress_warning=True,
         )
+        self._checkpoints = self._config.net.checkpoints
 
         try:
             self.load_state_dict(state['net'])
@@ -330,6 +342,40 @@ class Network(nn.Module):
                                         'to match weights.')
 
             self.load_state_dict(dict(zip(self.state_dict(), state['net'].values())))
+
+    def __getattr__(self, item: str) -> Any:
+        """
+        Returns the attribute of the network.
+
+        Parameters
+        ----------
+        item : str
+            Name of the attribute to return
+
+        Returns
+        -------
+        Any
+            Attribute of the network
+        """
+        if item == 'config':
+            warn(
+                'Network.config is deprecated, please use Network.get_config() instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self.get_config(True)
+        return super().__getattr__(item)
+
+    def get_config(self, dict_: bool = True) -> dict[str, Any] | Config:
+        """
+        Returns the network configuration.
+
+        Returns
+        -------
+        dict[str, Any] | Config
+            Network configuration
+        """
+        return self._config.to_dict() if dict_ else self._config
 
     def forward(self, x: TensorListLike) -> NormalizingFlow | TensorListLike:
         """
@@ -366,7 +412,7 @@ class Network(nn.Module):
             try:
                 x = layer(x, outputs=outputs, checkpoints=self.checkpoints, net=self)
             except Exception as e:
-                raise type(e)(f'Error in {layer.__class__.__name__} (layer {i}):\n{e}') from e
+                raise type(e)(f'{e}\nError in {layer.__class__.__name__} (layer {i})') from e
 
             if not self._checkpoints:
                 outputs.append(x)
@@ -383,7 +429,11 @@ class Network(nn.Module):
             layer.to(*args, **kwargs)
 
         for i, checkpoint in enumerate(self.checkpoints):
-            self.checkpoints[i] = checkpoint.to(*args, **kwargs)
+            if hasattr(checkpoint, 'to'):
+                self.checkpoints[i] = checkpoint.to(*args, **kwargs)
+            else:
+                log.getLogger().warning(f'Failed to move checkpoint '
+                                        f'{checkpoint.__class__.__name__} to device')
         return self
 
 
@@ -418,8 +468,8 @@ class Composite(layers.BaseLayer):
             root: str = '',
             config_dir: str = '',
             shape: list[int] | None = None,
-            config: dict[str, Any] | None = None,
             defaults: dict[str, Any] | None = None,
+            config: Config | None = None,
             **kwargs: Any) -> None:
         """
         Parameters
@@ -433,19 +483,19 @@ class Composite(layers.BaseLayer):
         checkpoint : bool, default = True
             If layer index should be relative to checkpoint layers
         channels : int, optional
-            Number of output channels, won't be used if out_shape is provided, if channels and
-            out_shape aren't provided, the input dimensions will be preserved
+            Number of output channels, won't be used if shape is provided, if channels and
+            shape aren't provided, the input dimensions will be preserved
         root : str, default = ''
-            Root directory to prepend to config file path
+            Root directory to prepend to _config file path
         config_dir : str, default = ''
-            Path to the directory with the network configuration file, won't be used if config is
+            Path to the directory with the network configuration file, won't be used if _config is
             provided
         shape : list[int], optional
             Output shape of the block, will be used if provided; otherwise, channels will be used
-        config : dict[str, Any] | None, default = None
-            Network configuration dictionary
         defaults : dict[str, Any], default = None
             Default values for the parameters for each type of layer
+        config : Config | None, default = None
+            Network configuration dictionary
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -475,6 +525,14 @@ class Composite(layers.BaseLayer):
             defaults=defaults | {'checkpoints': self._checkpoint},
         )
         shapes[-1] = self.net.shapes[-1]
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'checkpoint': self._checkpoint,
+            'name': self.net.name,
+            'shape': self.net.shapes[-1],
+            'config': self.net.get_config(True),
+        }
 
     def forward(
             self,
@@ -519,25 +577,23 @@ class Composite(layers.BaseLayer):
         str
             Layer parameters
         """
-        return (f'name={self.net.name}, checkpoint={self._checkpoint}, '
-                f'out_shape={self.net.shapes[-1]}')
+        return f'name={self.net.name}, checkpoint={self._checkpoint}, shape={self.net.shapes[-1]}'
 
 
 def _create_network(
-        config: str | dict[str, Any],
+        config: str | Config,
         in_shape: list[int] | list[list[int]],
         out_shape: list[int],
         *,
         suppress_warning: bool = False,
         root: str = '',
-        defaults: dict[str, Any] | None = None,
-) -> tuple[bool, Shapes, Shapes, dict[str, Any], nn.ModuleList]:
+        defaults: dict[str, Any] | None = None) -> tuple[nn.ModuleList, Shapes, Shapes, Config]:
     """
     Creates a network from a config file
 
     Parameters
     ----------
-    config : str | dict[str, Any]
+    config : str | dict[str, list[dict[str, Any]] | dict[str, Any]]
         Path to the config file or configuration dictionary
     in_shape : list[int] | list[list[int]]
         Shape of the input tensor(s), excluding batch size
@@ -552,43 +608,47 @@ def _create_network(
 
     Returns
     -------
-    tuple[bool, Shapes, Shapes, dict[str, Any], nn.ModuleList]
-        If layer outputs should not be saved, layer output shapes, checkpoint shapes,
-        layers in the network with parameters and network construction
+    module_list : nn.ModuleList
+        Layers in the network with parameters
+    shapes : Shapes
+        Layer output shapes
+    check_shapes : Shapes
+        Checkpoint output shapes
+    config : Config
+        Network construction
     """
-    net_check: bool = False
-    config_path: str = config if isinstance(config, str) else 'config'
-    check_shapes: Shapes = Shapes([])
-    shapes: Shapes = Shapes([in_shape])
+    layer: dict[str, Any]
     file: TextIO
     logger: log.Logger = log.getLogger(__name__)
     module_list: nn.ModuleList = nn.ModuleList()
+    shapes: Shapes = Shapes([in_shape])
+    check_shapes: Shapes = Shapes([])
     defaults = defaults or {}
 
     # Load network configuration file
     if isinstance(config, str):
-        with open(os.path.join(root, config), 'r', encoding='utf-8') as file:
-            config = json.load(file)
+        config += '' if '.json' in config else '.json'
 
-    assert isinstance(config, dict)
+        with (suppress_logger_warnings(configs.__name__) if suppress_warning else nullcontext(),
+              open(os.path.join(root, config), 'r', encoding='utf-8') as file):
+            config = Config.from_dict(json.load(file), new_fields=True)
 
-    if 'checkpoints' in config['net']:
-        net_check = config['net']['checkpoints']
-
-    config['net'] = deep_merge(config['net'], defaults)
-
-    # Check for unknown net parameters
-    if not suppress_warning:
-        check_params(
-            f"'net' in {config_path.split('/')[-1]}",
-            ['checkpoints', 'Composite', 'description', 'paper', 'github'] + dir(layers),
-            np.array(list(config['net'].keys())),
+    if isinstance(config, dict):
+        config = Config.from_dict(config, new_fields=True)
+        warn(
+            'Passing configuration as a dictionary is deprecated, please pass a Config '
+            'object or path to the configuration file instead',
+            DeprecationWarning,
+            stacklevel=2,
         )
 
+    assert isinstance(config, Config)
+    config.net.layers = deep_merge(config.net.layers, defaults)
+
     # Create layers
-    for i, layer in enumerate(config['layers'].copy()):
-        if layer['type'] in config['net']:
-            layer = config['net'][layer['type']] | layer
+    for i, layer in enumerate(config.layers.copy()):
+        if layer['type'] in config.net.layers:
+            layer = config.net.layers[layer['type']] | layer
 
         if layer['type'] == 'Composite':
             layer_class = Composite
@@ -597,7 +657,7 @@ def _create_network(
 
         try:
             module_list.append(layer_class(
-                net_check=net_check,
+                net_check=config.net.checkpoints,
                 idx=i,
                 root=root,
                 net_out=out_shape,
@@ -610,11 +670,11 @@ def _create_network(
             raise
 
         if layer_class == Composite:
-            config['layers'][i]['config'] = cast(Composite, module_list[-1]).net.config
+            config.layers[i]['config'] = cast(Composite, module_list[-1]).net.get_config(True)
 
     # Check network output dimensions
     if not suppress_warning and shapes[-1] != out_shape:
         logger.warning(
             f'Network output shape {shapes[-1]} != data output shape {out_shape}'
         )
-    return net_check, shapes, check_shapes, config, module_list
+    return module_list, shapes, check_shapes, config

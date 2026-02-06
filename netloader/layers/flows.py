@@ -1,5 +1,5 @@
 """
-Normalizing flow network layers
+Normalising flow network layers
 """
 from typing import Any
 
@@ -67,6 +67,8 @@ class SplineFlow(BaseLayer):
         """
         super().__init__(**kwargs)
         self._context: bool = context
+        self._transforms: int = transforms
+        self._hidden_features: list[int] = hidden_features
         self._layer: NSF
         context_: int
         shape: list[int] = shapes[-1].copy()
@@ -92,6 +94,14 @@ class SplineFlow(BaseLayer):
         )
 
         shapes.append(shape)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'context': self._context,
+            'transforms': self._transforms,
+            'features': self._layer.transform.transforms[0].passes,
+            'hidden_features': self._hidden_features,
+        }
 
     def forward(self, x: Tensor, *_: Any, **__: Any) -> NormalizingFlow:
         """

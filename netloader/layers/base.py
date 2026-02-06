@@ -2,13 +2,14 @@
 Base classes for network layers
 """
 import logging as log
-from warnings import warn
+from copy import deepcopy
 from typing import Any, Self
 
 import torch
 import numpy as np
 from torch import nn, Tensor
 
+import netloader
 from netloader.data import DataList
 from netloader.utils.types import TensorListLike
 from netloader.utils import Shapes, check_params
@@ -29,7 +30,7 @@ class BaseLayer(nn.Module):
     forward(x) -> Tensor
         Forward pass for a generic layer
     """
-    def __init__(self, *, idx: int = 0, group: int = 0, **kwargs: Any) -> None:
+    def __init__(self, *, idx: int = 0, group: int = 0, version: str = '', **kwargs: Any) -> None:
         """
         Parameters
         ----------
@@ -38,22 +39,24 @@ class BaseLayer(nn.Module):
         group : int, default = 0
             Which group the layer belongs to, if 0 it will always be used, else it will only be used
             if the Network group matches the layer's group
+        version : str, default = ''
+            Version of the network
         **kwargs
             Leftover parameters for checking if they are valid
         """
         super().__init__()
         supported_params: list[str] = [
+            'type',
             'root',
             'net_check',
             'net_out',
             'shapes',
             'check_shapes',
-            'type',
         ]
-        self.group: int = group
-        self.layers: nn.Sequential = nn.Sequential()
+        self._ver: str = version or netloader.__version__
         self._device: torch.device = torch.device('cpu')
         self._logger: log.Logger = log.getLogger(__name__)
+        self.group: int = group
 
         if kwargs:
             check_params(
@@ -62,28 +65,16 @@ class BaseLayer(nn.Module):
                 np.array(list(kwargs.keys())),
             )
 
-    def __getattribute__(self, item: str) -> Any:
+    def __getstate__(self) -> dict[str, Any]:
         """
-        Raises deprecation warnings for deprecated attributes.
-
-        Parameters
-        ----------
-        item : str
-            Attribute name
+        Gets the state of the layer for saving.
 
         Returns
         -------
-        Any
-            Attribute value
+        dict[str, Any]
+            State of the layer
         """
-        if item == 'layers' and not isinstance(self, BaseSingleLayer):
-            warn(
-                f'layers attribute in class {self.__class__.__name__} is deprecated when '
-                f'inheriting from BaseLayer, please inherit BaseSingleLayer',
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return super().__getattribute__(item)
+        return {'type': self.__class__.__name__, 'version': self._ver, 'group': self.group}
 
     @staticmethod
     def _check_options(name: str, value: str | None, options: set[str | None]) -> None:
@@ -199,13 +190,7 @@ class BaseLayer(nn.Module):
         Tensor
             Output with tensors of shape (N,...) and type float
         """
-        warn(
-            f'Using forward pass from BaseLayer in {self.__class__.__name__} is '
-            f'deprecated, please inherit BaseSingleLayer or implement a custom forward method',
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.layers(x)
+        return NotImplementedError
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
@@ -230,6 +215,16 @@ class BaseSingleLayer(BaseLayer):
     forward(x, outputs, checkpoints) -> Tensor
         Forward pass for a generic layer
     """
+    def __init__(self, **kwargs: Any) -> None:
+        """
+        Parameters
+        ----------
+        **kwargs
+            Leftover parameters for checking if they are valid
+        """
+        super().__init__(**kwargs)
+        self.layers: nn.Sequential = nn.Sequential()
+
     def forward(self, x: Any, *_: Any, **__: Any) -> Any:
         """
         Forward pass for a generic layer.
@@ -290,13 +285,16 @@ class BaseMultiLayer(BaseLayer):
         super().__init__(**kwargs)
         self._checkpoint: bool = checkpoint or net_check
         self._layer: int = layer
-        self._target: list[int]
+        self._target: list[int] | list[list[int]]
 
         # If checkpoints are being used
         if self._checkpoint:
-            self._target = check_shapes[self._layer].copy()
+            self._target = deepcopy(check_shapes.get(self._layer, True))
         else:
-            self._target = shapes[self._layer].copy()
+            self._target = deepcopy(shapes.get(self._layer, True))
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'checkpoint': self._checkpoint, 'layer': self._layer}
 
     def extra_repr(self) -> str:
         """

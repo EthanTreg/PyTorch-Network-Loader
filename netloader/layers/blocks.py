@@ -16,6 +16,8 @@ class ConvNeXtBlock(BaseSingleLayer):
     """
     ConvNeXt block using BaseLayer.
 
+    Original paper implementation: arXiv:2201.03545.
+
     Attributes
     ----------
     group : int, default = 0
@@ -56,6 +58,8 @@ class ConvNeXtBlock(BaseSingleLayer):
             Leftover parameters for checking if they are valid
         """
         super().__init__(**kwargs)
+        self._drop_path: float = drop_path
+        self._layer_scale: float = layer_scale
         self.shapes: Shapes = shapes[-1:]
         self.check_shapes: Shapes = Shapes([])
 
@@ -93,8 +97,8 @@ class ConvNeXtBlock(BaseSingleLayer):
                 activation=None,
                 **kwargs,
             )),
-            ('Scale', Scale(1, layer_scale, self.shapes, **kwargs)),
-            ('DropPath', DropPath(drop_path, shapes=self.shapes, **kwargs)),
+            ('Scale', Scale(1, self._layer_scale, self.shapes, **kwargs)),
+            ('DropPath', DropPath(self._drop_path, shapes=self.shapes, **kwargs)),
             ('Shortcut', Shortcut(
                 True,
                 -1,
@@ -103,7 +107,13 @@ class ConvNeXtBlock(BaseSingleLayer):
                 **kwargs | {'checkpoint': True},
             )),
         ]))
-        shapes.append(self.shapes[-1])
+        shapes.append(self.shapes[-1].copy())
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'drop_path': self._drop_path,
+            'layer_scale': self._layer_scale,
+        }
 
     def forward(
             self,

@@ -86,8 +86,8 @@ class Checkpoint(BaseLayer):
         """
         super().__init__(**kwargs)
         self._check_num: int = len(check_shapes)
-        shapes.append(shapes[-1].copy())
-        check_shapes.append(shapes[-1].copy())
+        shapes.append(deepcopy(shapes.get(-1, True)))
+        check_shapes.append(deepcopy(shapes.get(-1, True)))
 
     def forward(
             self,
@@ -174,12 +174,17 @@ class Concatenate(BaseMultiLayer):
         super().__init__(net_check, layer, shapes, check_shapes, checkpoint=checkpoint, **kwargs)
         self._dim: int = dim
         shape: list[int] = shapes[-1].copy()
+        assert isinstance(self._target[0], int)
+        self._target = cast(list[int], self._target)
 
         # If tensors cannot be concatenated along the specified dimension
         self._check_concatenation(shape)
 
         shape[self._dim] = shape[self._dim] + self._target[self._dim]
         shapes.append(shape)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'dim': self._dim}
 
     def _check_concatenation(self, shape: list[int]) -> None:
         """
@@ -248,6 +253,48 @@ class Concatenate(BaseMultiLayer):
         return f'{super().extra_repr()}, dim={self._dim}'
 
 
+class Dropout(BaseSingleLayer):
+    """
+    Constructs a dropout layer to randomly zero out elements of the input tensor.
+
+    Attributes
+    ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+    layers : nn.Sequential
+        Layers to loop through in the forward pass
+    """
+    def __init__(
+            self,
+            prob: float,
+            *,
+            shapes: Shapes | None = None,
+            **kwargs: Any) -> None:
+        """
+        Parameters
+        ----------
+        prob : float
+            Probability of dropout
+        shapes : Shapes | None, default = None
+            Shape of the outputs from each layer, only required if tracking layer outputs is
+            necessary
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**kwargs)
+        self.layers.add_module('Dropout', nn.Dropout(prob))
+
+        # If not used as a layer in a network
+        if not shapes:
+            return
+
+        shapes.append(shapes[-1].copy())
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'prob': self.layers.Dropout.p}  # type: ignore[union-attr]
+
+
 class DropPath(BaseLayer):
     """
     Constructs a drop path layer to drop samples in a batch.
@@ -294,6 +341,9 @@ class DropPath(BaseLayer):
             return
 
         shapes.append(shapes[-1].copy())
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'prob': 1 - self._keep_prob}
 
     def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
@@ -420,7 +470,7 @@ class Index(BaseLayer):
         if not shapes:
             return
 
-        in_shape = cast(list[int] | list[list[int]], deepcopy(shapes.get(-1, list_=True)))
+        in_shape = cast(list[int] | list[list[int]], deepcopy(shapes.get(-1, True)))
 
         # Length of slice
         if isinstance(in_shape[0], int):
@@ -431,6 +481,9 @@ class Index(BaseLayer):
             in_shape = cast(list[list[int]], in_shape)[self._idx]
 
         shapes.append(in_shape)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'map_': self._map, 'index': self._idx}
 
     def _shape_index(self, shape: list[int]) -> list[int]:
         """
@@ -542,6 +595,9 @@ class LayerNorm(BaseLayer):
 
         shapes.append(shapes[-1].copy())
 
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'shape': self._layer.normalized_shape}
+
     def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the layer normalisation layer.
@@ -556,7 +612,7 @@ class LayerNorm(BaseLayer):
         Tensor
             Output Tensor of shape (N,...) and type float
         """
-        permutation: ndarray = np.arange(x.ndim - 1, 0, -1)
+        permutation: list[int] = list(range(x.ndim - 1, 0, -1))
         return self._layer(x.permute(0, *permutation)).permute(0, *permutation)
 
 
@@ -635,6 +691,12 @@ class Pack(BaseLayer):
                 out_shape.extend(cast(list[list[int]], target))
 
         shapes.append(deepcopy(out_shape))
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'checkpoint': self._checkpoint,
+            'layer': self._layer,
+        }
 
     def forward(
             self,
@@ -768,6 +830,9 @@ class Reshape(BaseLayer):
         # If input tensor cannot be reshaped into output shape
         self._check_reshape(shapes[-2], shapes[-1])
 
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'shape': self._shape}
+
     @staticmethod
     def _check_reshape(in_shape: list[int], out_shape: list[int]) -> None:
         """
@@ -864,6 +929,13 @@ class Scale(BaseLayer):
 
         shapes.append(shapes[-1].copy())
 
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'first': self._first,
+            'dims': len(self._scale),
+            'scale': self._scale.detach().cpu().tolist()[0],
+        }
+
     def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
         Forward pass of the scale layer.
@@ -935,6 +1007,7 @@ class Shortcut(BaseMultiLayer):
         target: ndarray = np.array(self._target)
         shape: ndarray = np.array(shapes[-1].copy())
         mask: ndarray = (shape != 1) & (self._target != 1)
+        assert isinstance(self._target[0], int)
         self._check_addition(shape, mask)
 
         # If input has any dimensions of length one, output will take the target dimension
@@ -1063,10 +1136,7 @@ class Skip(BaseMultiLayer):
         TensorListLike
             Output with tensors of shape (N,...) and type float
         """
-        self._check_num_outputs(
-            checkpoints[self._layer] if self._checkpoint else outputs[self._layer],
-        )
-        return cast(Tensor, (checkpoints if self._checkpoint else outputs)[self._layer])
+        return (checkpoints if self._checkpoint else outputs)[self._layer]
 
 
 class Unpack(BaseLayer):
@@ -1115,6 +1185,13 @@ class Unpack(BaseLayer):
         self._layer: int = layer
         self._idx: int = index
         shapes.append((check_shapes if self._checkpoint else shapes)[(self._layer, self._idx)])
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'checkpoint': self._checkpoint,
+            'layer': self._layer,
+            'index': self._idx,
+        }
 
     def forward(
             self,

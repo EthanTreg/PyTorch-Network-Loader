@@ -1,14 +1,15 @@
 """
 Convolutional network layers
 """
+from inspect import signature
 from typing import Any, Type, Literal
 
 import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.utils import Shapes
 from netloader.layers.misc import LayerNorm
+from netloader.utils import Shapes, compare_versions
 from netloader.layers.base import BaseLayer, BaseSingleLayer
 from netloader.layers.utils import _int_list_conversion, _kernel_shape, _padding
 
@@ -42,6 +43,7 @@ class Conv(BaseSingleLayer):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
+            padding_mode: Literal[None, 'replicate', 'zeros', 'reflect', 'circular'] = None,
             **kwargs: Any) -> None:
         """
         Parameters
@@ -71,8 +73,11 @@ class Conv(BaseSingleLayer):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use from PyTorch
-        norm : {None, 'batch', 'layer'}, default = None
+        norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
+        padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
+            Padding mode to use from PyTorch, if None zero padding is used if version is >3.9.4 else
+            replication padding is used
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -89,6 +94,10 @@ class Conv(BaseSingleLayer):
             self._check_options('padding', padding, {'same'})
             self._check_stride(stride)
             padding = _padding(kernel, stride, shapes[-1], shapes[-1])
+
+        if padding_mode is None:
+            padding_mode = 'zeros' if compare_versions(self._ver, '3.10.0') else \
+                'replicate'
 
         # Check for errors and calculate number of filters
         self._check_shape((2, 4), shape)
@@ -109,12 +118,15 @@ class Conv(BaseSingleLayer):
             stride=stride,
             padding=padding_,
             groups=groups,
-            padding_mode='replicate',
+            padding_mode=padding_mode,
         ))
 
         # Optional layers
         if activation:
-            self.layers.add_module('Activation', getattr(nn, activation)())
+            self.layers.add_module('Activation', getattr(nn, activation)(
+                **{'inplace': True} if 'inplace' in signature(getattr(nn, activation)).parameters
+                else {},
+            ))
 
         if norm == 'batch':
             self.layers.add_module('BatchNorm', batch_norm_(shape[0]))
@@ -128,6 +140,21 @@ class Conv(BaseSingleLayer):
             shapes.append(shape)
         else:
             shapes.append(_kernel_shape(kernel, stride, padding, shape))
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'filters': self.layers.Conv.out_channels,  # type: ignore[union-attr]
+            'groups': self.layers.Conv.groups,  # type: ignore[union-attr]
+            'kernel': self.layers.Conv.kernel_size,  # type: ignore[union-attr]
+            'stride': self.layers.Conv.stride,
+            'padding': self.layers.Conv.padding,  # type: ignore[union-attr]
+            'dropout': self.layers.Dropout.p if hasattr(self.layers, 'Dropout') else 0,  # type: ignore[union-attr]
+            'activation': self.layers.Activation.__class__.__name__
+                if hasattr(self.layers, 'Activation') else None,
+            'norm': 'batch' if hasattr(self.layers, 'BatchNorm') else
+                'layer' if hasattr(self.layers, 'LayerNorm') else None,
+            'padding_mode': self.layers.Conv.padding_mode,  # type: ignore[union-attr]
+        }
 
     @staticmethod
     def _check_groups(in_channels: int, out_channels: int, groups: int) -> None:
@@ -177,6 +204,7 @@ class ConvDepth(Conv):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
+            padding_mode: Literal[None, 'zeros', 'reflect', 'replicate', 'circular'] = None,
             **kwargs: Any) -> None:
         """
         Parameters
@@ -203,8 +231,11 @@ class ConvDepth(Conv):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
-        norm : {None, 'batch', 'layer'}, default = None
+        norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
+        padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
+            Padding mode to use from PyTorch, if None zero padding is used if version is >3.9.4 else
+            replication padding is used
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -221,8 +252,14 @@ class ConvDepth(Conv):
             dropout=dropout,
             activation=activation,
             norm=norm,
+            padding_mode=padding_mode,
             **kwargs,
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        state: dict[str, Any] = super().__getstate__()
+        state.pop('groups', None)
+        return state
 
 
 class ConvDepthDownscale(Conv):
@@ -245,6 +282,7 @@ class ConvDepthDownscale(Conv):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
+            padding_mode: Literal[None, 'zeros', 'reflect', 'replicate', 'circular'] = None,
             **kwargs: Any) -> None:
         """
         Parameters
@@ -257,8 +295,11 @@ class ConvDepthDownscale(Conv):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
-        norm : {None, 'batch', 'layer'}, default = None
+        norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
+        padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
+            Padding mode to use from PyTorch, if None zero padding is used if version is >3.9.4 else
+            replication padding is used
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -272,8 +313,17 @@ class ConvDepthDownscale(Conv):
             dropout=dropout,
             activation=activation,
             norm=norm,
+            padding_mode=padding_mode,
             **kwargs,
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        state: dict[str, Any] = super().__getstate__()
+        state.pop('filters', None)
+        state.pop('stride', None)
+        state.pop('kernel', None)
+        state.pop('padding', None)
+        return state
 
 
 class ConvDownscale(Conv):
@@ -323,7 +373,7 @@ class ConvDownscale(Conv):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
-        norm : {None, 'batch', 'layer'}, default = None
+        norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -342,6 +392,13 @@ class ConvDownscale(Conv):
             norm=norm,
             **kwargs,
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        state: dict[str, Any] = super().__getstate__()
+        state.pop('padding', None)
+        state['scale'] = state.pop('stride')
+        state.pop('kernel', None)
+        return state
 
 
 class ConvTranspose(BaseSingleLayer):
@@ -377,6 +434,7 @@ class ConvTranspose(BaseSingleLayer):
             dilation: int | list[int] = 1,
             padding: int | Literal['same'] | list[int] = 0,
             dropout: float = 0,
+            padding_mode: Literal['zeros', 'reflect', 'replicate', 'circular'] = 'zeros',
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
             **kwargs: Any) -> None:
@@ -407,9 +465,11 @@ class ConvTranspose(BaseSingleLayer):
             Inverse of convolutional padding which removes rows from each dimension in the output
         dropout : float, default =  0
             Probability of dropout
+        padding_mode : {'zeros', 'reflect', 'replicate', 'circular'}
+            Padding mode to use from PyTorch
         activation : str | None, default = 'ELU'
             Which activation function to use
-        norm : {None, 'batch', 'layer'}, default = None
+        norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -461,12 +521,16 @@ class ConvTranspose(BaseSingleLayer):
             stride=stride,
             padding=padding,
             output_padding=out_padding,
+            padding_mode=padding_mode,
             dilation=dilation,
         ))
 
         # Optional layers
         if activation:
-            self.layers.add_module('Activation', getattr(nn, activation)())
+            self.layers.add_module('Activation', getattr(nn, activation)(
+                **{'inplace': True} if 'inplace' in signature(getattr(nn, activation)).parameters
+                else {},
+            ))
 
         if norm == 'batch':
             self.layers.add_module('BatchNorm', batch_norm_(shape[0]))
@@ -477,6 +541,22 @@ class ConvTranspose(BaseSingleLayer):
             self.layers.add_module('Dropout', dropout_(dropout))
 
         shapes.append(shape)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'filters': self.layers.Transpose.out_channels,  # type: ignore[union-attr]
+            'kernel': self.layers.Transpose.kernel_size,  # type: ignore[union-attr]
+            'stride': self.layers.Transpose.stride,
+            'out_padding': self.layers.Transpose.output_padding,  # type: ignore[union-attr]
+            'dilation': self.layers.Transpose.dilation,  # type: ignore[union-attr]
+            'padding': self.layers.Transpose.padding,  # type: ignore[union-attr]
+            'dropout': self.layers.Dropout.p if hasattr(self.layers, 'Dropout') else 0,  # type: ignore[union-attr]
+            'padding_mode': self.layers.Transpose.padding_mode,  # type: ignore[union-attr]
+            'activation': self.layers.Activation.__class__.__name__
+                if hasattr(self.layers, 'Activation') else None,
+            'norm': 'batch' if hasattr(self.layers, 'BatchNorm') else
+                'layer' if hasattr(self.layers, 'LayerNorm') else None,
+        }
 
     @staticmethod
     def _check_out_padding(
@@ -569,7 +649,7 @@ class ConvTransposeUpscale(ConvTranspose):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
-        norm : {None, 'batch', 'layer'}, default = None
+        norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -589,6 +669,11 @@ class ConvTransposeUpscale(ConvTranspose):
             norm=norm,
             **kwargs,
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        state: dict[str, Any] = super().__getstate__()
+        state.pop('padding', None)
+        return state
 
 
 class ConvUpscale(Conv):
@@ -622,6 +707,7 @@ class ConvUpscale(Conv):
             dropout: float = 0,
             activation: str | None = 'ELU',
             norm: Literal[None, 'batch', 'layer'] = None,
+            padding_mode: Literal[None, 'zeros', 'reflect', 'replicate', 'circular'] = None,
             **kwargs: Any) -> None:
         """
         Parameters
@@ -646,8 +732,11 @@ class ConvUpscale(Conv):
             Probability of dropout
         activation : str | None, default = 'ELU'
             Which activation function to use
-        norm : {None, 'batch', 'layer'}, default = None
+        norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
+        padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
+            Padding mode to use from PyTorch, if None zero padding is used if version is >3.9.4 else
+            replicate padding is used
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -668,6 +757,7 @@ class ConvUpscale(Conv):
             stride=1,
             padding='same',
             dropout=dropout,
+            padding_mode=padding_mode,
             activation=activation,
             norm=norm,
             **kwargs,
@@ -677,6 +767,12 @@ class ConvUpscale(Conv):
         self.layers.add_module('PixelShuffle', PixelShuffle(scale))
         shapes[-1][0] = shapes[-1][0] // filters_scale
         shapes[-1][1:] = [length * scale for length in shapes[-1][1:]]
+
+    def __getstate__(self) -> dict[str, Any]:
+        state: dict[str, Any] = super().__getstate__()
+        state.pop('stride', None)
+        state.pop('padding', None)
+        return state
 
 
 class PixelShuffle(BaseLayer):
@@ -724,6 +820,9 @@ class PixelShuffle(BaseLayer):
         shapes.append(shapes[-1].copy())
         shapes[-1][0] = shapes[-1][0] // filters_scale
         shapes[-1][1:] = [length * self._scale for length in shapes[-1][1:]]
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'scale': self._scale}
 
     @staticmethod
     def _check_filters(filters_scale: int, shape: list[int]) -> None:

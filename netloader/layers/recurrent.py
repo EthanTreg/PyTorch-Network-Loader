@@ -79,7 +79,7 @@ class Recurrent(BaseSingleLayer):
             'lstm': nn.LSTM,
             'gru': nn.GRU,
         }
-        recurrent: nn.Module
+        recurrent: nn.RNNBase
 
         self._check_options('bidirectional', self._bidirectional, set(self._options))
         self._check_options('mode', mode, set(modes))
@@ -112,6 +112,18 @@ class Recurrent(BaseSingleLayer):
             self.layers.add_module('BatchNorm', nn.BatchNorm1d(shape[0]))
 
         shapes.append(shape)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'batch_norm': hasattr(self.layers, 'BatchNorm'),
+            'layers': self.layers.Recurrent.num_layers,  # type: ignore[union-attr]
+            'filters': self.layers.Recurrent.hidden_size,  # type: ignore[union-attr]
+            'dropout': self.layers.Recurrent.dropout,  # type: ignore[union-attr]
+            'mode': self.layers.Recurrent.__class__.__name__.lower(),
+            'activation': self.layers.Activation.__class__.__name__
+                if hasattr(self.layers, 'Activation') else None,
+            'bidirectional': self._bidirectional,
+        }
 
     def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         r"""

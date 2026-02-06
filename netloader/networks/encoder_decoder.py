@@ -24,10 +24,6 @@ class BaseEncoder(BaseNetwork):
 
     Attributes
     ----------
-    net : nn.Module | Network | CompatibleNetwork
-        Neural network
-    save_path : str
-        Path to the network save file
     description : str
         Description of the network
     version : str
@@ -46,6 +42,17 @@ class BaseEncoder(BaseNetwork):
         Network optimiser
     scheduler : optim.lr_scheduler.LRScheduler
         Optimiser scheduler
+    net : Network | CompatibleNetwork
+        Neural network
+
+    Methods
+    -------
+    extra_repr() -> str
+        Additional representation of the architecture
+    get_hyperparams() -> dict[str, Any]
+        Returns the hyperparameters of the network
+    to(*args, **kwargs) -> Self
+        Move and/or cast the parameters and buffers
     """
     def __init__(
             self,
@@ -183,6 +190,24 @@ class BaseEncoder(BaseNetwork):
             'loss_func': self._loss_func_.__class__.__name__,
         }
 
+    def extra_repr(self) -> str:
+        """
+        Additional representation of the architecture.
+
+        Returns
+        -------
+        str
+            Architecture specific representation
+        """
+        return f'loss_func: {self._loss_func_}'
+
+    def to(self, *args: Any, **kwargs: Any) -> Self:
+        super().to(*args, **kwargs)
+
+        if self.classes is not None:
+            self.classes = self.classes.to(self._device)
+        return self
+
 
 class Autoencoder(BaseNetwork):
     """
@@ -190,18 +215,6 @@ class Autoencoder(BaseNetwork):
 
     Attributes
     ----------
-    net : nn.Module | Network | CompatibleNetwork
-        Neural network
-    reconstruct_loss : float
-        Loss weight for the reconstruction MSE loss
-    latent_loss : float
-        Loss weight for the latent MSE loss
-    bound_loss : float
-        Loss weight for the latent bounds loss
-    kl_loss : float
-        Relative weight for KL divergence loss on the latent space
-    save_path : str
-        Path to the network save file
     description : str
         Description of the network
     losses : tuple[list[LossCT], list[LossCT]]
@@ -216,6 +229,8 @@ class Autoencoder(BaseNetwork):
         Network optimiser
     scheduler : optim.lr_scheduler.LRScheduler
         Optimiser scheduler
+    net : Network | CompatibleNetwork
+        Neural network
     reconstruct_func : BaseLoss
         Loss function for the reconstruction loss
     latent_func : BaseLoss
@@ -226,7 +241,9 @@ class Autoencoder(BaseNetwork):
     batch_predict(data) -> tuple[NDArrayListLike | None, ...]
         Generates predictions for the given data
     extra_repr() -> str
-        Additional representation of the architecture.
+        Additional representation of the architecture
+    get_hyperparams() -> dict[str, Any]
+        Returns the hyperparameters of the network
     """
     def __init__(
             self,
@@ -287,36 +304,42 @@ class Autoencoder(BaseNetwork):
             optimiser_kwargs=optimiser_kwargs,
             scheduler_kwargs=scheduler_kwargs,
         )
-        self.reconstruct_loss: float = 1
-        self.latent_loss: float = 1e-2
-        self.bound_loss: float = 1e-3
-        self.kl_loss: float = 1e-1
         self.reconstruct_func: BaseLoss = MSELoss()
         self.latent_func: BaseLoss = MSELoss()
 
+        self._loss_weights = {'reconstruct': 1, 'latent': 1e-2, 'bound': 1e-3, 'kl': 1e-1}
         self.transforms['latent'] = latent_transform
         self.transforms['targets'] = latent_transform
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
-            'reconstruct_loss': self.reconstruct_loss,
-            'latent_loss': self.latent_loss,
-            'bound_loss': self.bound_loss,
-            'kl_loss': self.kl_loss,
             'reconstruct_func': self.reconstruct_func,
             'latent_func': self.latent_func,
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         super().__setstate__(state)
-        self.reconstruct_loss = state['reconstruct_loss']
-        self.latent_loss = state['latent_loss']
-        self.bound_loss = state['bound_loss']
-        self.kl_loss = state['kl_loss']
+        self._loss_weights = state.get('loss_weights', {
+            'reconstruct': state.get('reconstruct_loss', 1),
+            'latent': state.get('latent_loss', 1),
+            'bound': state.get('bound_loss', 1),
+            'kl': state.get('kl_loss', 1),
+        })
         self.reconstruct_func = state['reconstruct_func']
         self.latent_func = state['latent_func']
 
-    def _loss_tensor(self, in_data: TensorListLike, target: TensorListLike) -> Any:
+    def __getattr__(self, item: str) -> Any:
+        if item in {'reconstruct_loss', 'latent_loss', 'bound_loss', 'kl_loss'}:
+            warn(
+                'Accessing loss weights directly is deprecated, please use '
+                'Autoencoder.get_loss_weights() instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self._loss_weights[item.replace('_loss', '')]
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
+
+    def _loss_tensor(self, in_data: TensorListLike, target: TensorListLike) -> dict[str, Tensor]:
         """
         Calculates the loss from the autoencoder's predictions.
 
@@ -329,10 +352,10 @@ class Autoencoder(BaseNetwork):
 
         Returns
         -------
-        Tensor
-            Loss from the autoencoder's predictions
+        dict[str, Tensor]
+            Loss function terms from the autoencoder's predictions
         """
-        loss: Tensor
+        loss: dict[str, Tensor] = {}
         latent: Tensor | None = None
         bounds: Tensor = torch.tensor([0., 1.]).to(self._device)
         output: Tensor = self.net(in_data)
@@ -343,19 +366,20 @@ class Autoencoder(BaseNetwork):
         if self.net.checkpoints:
             latent = cast(Tensor, self.net.checkpoints[-1])
 
-        loss = self.reconstruct_loss * self.reconstruct_func(output, in_data)
+        if self.get_loss_weights('reconstruct'):
+            loss['reconstruct'] = self.reconstruct_func(output, in_data)
 
-        if self.latent_loss and latent is not None:
-            loss += self.latent_loss * self.latent_func(latent, target)
+        if self.get_loss_weights('latent') and latent is not None:
+            loss['latent'] = self.latent_func(latent, target)
 
-        if self.bound_loss and latent is not None:
-            loss += self.bound_loss * torch.mean(torch.cat((
+        if self.get_loss_weights('bound') and latent is not None:
+            loss['bound'] = torch.mean(torch.cat((
                 (bounds[0] - latent) ** 2 * (latent < bounds[0]),
                 (latent - bounds[1]) ** 2 * (latent > bounds[1]),
             )))
 
-        if self.kl_loss:
-            loss += self.kl_loss * self.net.kl_loss
+        if self.get_loss_weights('kl'):
+            loss['kl'] = self.net.kl_loss
         return loss
 
     def batch_predict(self, data: TensorListLike, **_: Any) -> tuple[NDArrayListLike | None, ...]:
@@ -389,12 +413,7 @@ class Autoencoder(BaseNetwork):
         str
             Architecture specific representation
         """
-        return (f'reconstruct_weight: {self.reconstruct_loss}, '
-                f'latent_weight: {self.latent_loss}, '
-                f'bound_weight: {self.bound_loss}, '
-                f'kl_weight: {self.kl_loss}, '
-                f'reconstruct_func: {self.reconstruct_func}, '
-                f'latent_func: {self.latent_func}')
+        return f'reconstruct_func: {self.reconstruct_func}, latent_func: {self.latent_func}'
 
     def get_hyperparams(self) -> dict[str, Any]:
         """
@@ -406,10 +425,6 @@ class Autoencoder(BaseNetwork):
             Hyperparameters of the autoencoder
         """
         return super().get_hyperparams() | {
-            'reconstruct_loss': self.reconstruct_loss,
-            'latent_loss': self.latent_loss,
-            'bound_loss': self.bound_loss,
-            'kl_loss': self.kl_loss,
             'reconstruct_func': self.reconstruct_func.__class__.__name__,
             'latent_func': self.latent_func.__class__.__name__,
         }
@@ -421,10 +436,6 @@ class Decoder(BaseNetwork):
 
     Attributes
     ----------
-    net : nn.Module | Network | CompatibleNetwork
-        Neural network
-    save_path : str
-        Path to the network save file
     description : str
         Description of the network
     losses : tuple[list[LossCT], list[LossCT]]
@@ -441,11 +452,15 @@ class Decoder(BaseNetwork):
         Network optimiser
     scheduler : optim.lr_scheduler.LRScheduler
         Optimiser scheduler
+    net : Network | CompatibleNetwork
+        Neural network
 
     Methods
     -------
     extra_repr() -> str
-        Additional representation of the architecture.
+        Additional representation of the architecture
+    get_hyperparams() -> dict[str, Any]
+        Returns the hyperparameters of the network
     """
     def __init__(
             self,
@@ -577,9 +592,7 @@ class Decoder(BaseNetwork):
         dict[str, Any]
             Hyperparameters of the decoder
         """
-        return super().get_hyperparams() | {
-            'loss_func': self.loss_func.__class__.__name__,
-        }
+        return super().get_hyperparams() | {'loss_func': self.loss_func.__class__.__name__}
 
 
 class Encoder(BaseEncoder):
@@ -588,10 +601,6 @@ class Encoder(BaseEncoder):
 
     Attributes
     ----------
-    net : nn.Module | Network | CompatibleNetwork
-        Neural network
-    save_path : str
-        Path to the network save file
     description : str
         Description of the network
     losses : tuple[list[LossCT], list[LossCT]]
@@ -608,13 +617,13 @@ class Encoder(BaseEncoder):
         Network optimiser
     scheduler : optim.lr_scheduler.LRScheduler
         Optimiser scheduler
+    net : Network | CompatibleNetwork
+        Neural network
 
     Methods
     -------
     batch_predict(data) -> tuple[ndarray | DataList[ndarray] | None]
         Generates predictions for the given data
-    extra_repr() -> str
-        Additional representation of the architecture.
     """
     def batch_predict(self, data: TensorListLike, **_: Any) -> tuple[NDArrayListLike | None, ...]:
         """
@@ -637,22 +646,3 @@ class Encoder(BaseEncoder):
         if isinstance(self._loss_func_, nn.CrossEntropyLoss):
             output = np.argmax(output, axis=-1, keepdims=True)
         return (output,)
-
-    def to(self, *args: Any, **kwargs: Any) -> Self:
-        super().to(*args, **kwargs)
-
-        if self.classes is not None:
-            self.classes = self.classes.to(self._device)
-
-        return self
-
-    def extra_repr(self) -> str:
-        """
-        Additional representation of the architecture.
-
-        Returns
-        -------
-        str
-            Architecture specific representation
-        """
-        return f'loss_func: {self._loss_func_}'

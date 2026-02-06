@@ -1,6 +1,7 @@
 """
 Type definitions.
 """
+from warnings import warn
 from typing import Union, TypeVar, Any, Protocol, TypeAlias, TYPE_CHECKING
 
 from torch import Tensor
@@ -29,7 +30,6 @@ DatasetT = TypeVar('DatasetT', bound='DatasetProtocol')
 TensorListT = TypeVar('TensorListT', bound=TensorListLike)
 
 ArrayCT = TypeVar('ArrayCT', ndarray, Tensor)
-ArrayTC = TypeVar('ArrayTC', ndarray, Tensor)
 LossCT = TypeVar('LossCT', float, dict[str, float])
 TensorLossCT = TypeVar('TensorLossCT', Tensor, dict[str, Tensor])
 
@@ -74,6 +74,15 @@ __all__ = [
     'TensorListT',
     'LossCT',
     'ArrayCT',
-    'ArrayTC',
     'TensorLossCT',
 ]
+
+def __getattr__(name: str) -> Any:
+    if name == 'ArrayTC':
+        warn(
+            'ArrayTC is deprecated, use ArrayCT instead',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return ArrayCT
+    raise AttributeError(f"module {__name__} has no attribute {name}")

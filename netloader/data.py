@@ -336,7 +336,7 @@ class DataList(Generic[DataT]):
         int
             Number of elements in the DataList
         """
-        return self.len(list_=True)
+        return self.len(list_=False)
 
     def __getitem__(self, idx: int | slice) -> 'DataList[DataT]':
         """
@@ -415,7 +415,7 @@ class DataList(Generic[DataT]):
         new_data: list[DataLike] = []
         datum: 'DataList[DataT]'
 
-        for i in range(len(data[0])):
+        for i in range(data[0].len(True)):
             element_data = [datum.get(i, list_=True) for datum in data]
             new_data.append(
                 Data.collate(cast(list[Data], element_data), data_field=data_field)
@@ -591,7 +591,7 @@ class DataList(Generic[DataT]):
         """
         i: int
 
-        for i in range(len(self)):
+        for i in range(self.len(True)):
             yield self.get(i, list_=list_)
 
     def len(self, list_: bool = True) -> int:
@@ -698,7 +698,7 @@ class BaseDatasetMeta(type):
             instance.idxs = np.arange(len(instance.high_dim))
         elif len(instance.idxs) != len(instance.high_dim):
             log.getLogger(__name__).warning(f'Length of idxs ({len(instance.idxs)}) and length of '
-                                            f'high_dim ({len(instance.high_dim)} does not match, '
+                                            f'high_dim ({len(instance.high_dim)}) does not match, '
                                             f'idxs will be sent to a range of high_dim length')
             instance.idxs = np.arange(len(instance.high_dim))
 
@@ -888,6 +888,12 @@ def data_collation(
 
 @overload
 def data_collation(
+        data: DataList[DataT],
+        *,
+        data_field: bool) -> DataList[DataT]: ...
+
+@overload
+def data_collation(
         data: list[DataList[DataT]],
         *,
         data_field: Literal[True]) -> DataList[DataT]: ...
@@ -911,7 +917,8 @@ def data_collation(
         data_field: Literal[False]) -> ArrayCT: ...
 
 def data_collation(  # type: ignore
-        data: list[ArrayCT] | list[Data[ArrayCT]] | list[DataList[DataT]] | ArrayCT,
+        data: list[ArrayCT] | list[Data[ArrayCT]] | list[DataList[DataT]] | ArrayCT |
+              DataList[DataT],
         *,
         data_field: bool = True,
 ) -> ArrayCT | Data[ArrayCT] | DataList[ArrayT] | DataList[DataT]:
@@ -920,8 +927,8 @@ def data_collation(  # type: ignore
 
     Parameters
     ----------
-    data : list[ArrayTC] | list[Data[ArrayTC]] | list[DataList[DataT]] | ArrayTC
-        List of ArrayLike, Data, or DataList objects to collate, or if ArrayLike,
+    data : list[ArrayTC] | list[Data[ArrayTC]] | list[DataList[DataT]] | ArrayTC | DataList[DataT]
+        List of ArrayLike, Data, or DataList objects to collate, or if ArrayLike or DataList,
         will return as is, with shape (N,...)
     data_field : bool, default = True
         If Datas should return Data else ArrayLike
@@ -932,7 +939,7 @@ def data_collation(  # type: ignore
         Collated Data or DataList object, or ArrayLike if data_field is False or input is
         ArrayLike, with shape (N,...)
     """
-    if isinstance(data, (Tensor, ndarray)):
+    if isinstance(data, (Tensor, ndarray, DataList)):
         return data
     if isinstance(data[0], (Tensor, ndarray)):
         return torch.concat(cast(list[Tensor], data)) if isinstance(data[0], Tensor) else \

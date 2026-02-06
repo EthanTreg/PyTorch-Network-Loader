@@ -1,7 +1,7 @@
 """
 PyTorch-Network-Loader Python implementation of ConvNeXt.
 See the ConvNeXt paper: arXiv:2201.03545.
-See the ConvNeXt GitHub: https://github.com/facebookresearch/ConvNeXt
+See the ConvNeXt GitHub: https://github.com/facebookresearch/ConvNeXt.
 """
 from typing import Any
 
@@ -9,14 +9,16 @@ import numpy as np
 from torch import nn
 
 from netloader import layers
-from netloader.utils import Shapes
 from netloader.network import Network
+from netloader.utils import Config, Shapes
 from netloader.layers.base import BaseLayer
 
 
 class ConvNeXt(Network):
     """
     ConvNeXt network using Network.
+
+    Original paper implementation: arXiv:2201.03545.
 
     Attributes
     ----------
@@ -40,6 +42,7 @@ class ConvNeXt(Network):
     shapes : Shapes
         Layer output shapes
     check_shapes : Shapes
+        Checkpoint output shapes
     """
     def __init__(
             self,
@@ -72,7 +75,7 @@ class ConvNeXt(Network):
         """
         super().__init__(
             name,
-            {'net': {}, 'layers': []},
+            Config(),
             in_shape,
             [],
             suppress_warning=True,
@@ -111,7 +114,7 @@ class ConvNeXt(Network):
         """
         super().__init__(
             state['name'],
-            {'net': {}, 'layers': []},
+            Config(),
             state['shapes'][0],
             [],
             suppress_warning=True,
@@ -157,15 +160,7 @@ class ConvNeXt(Network):
         drop_paths = np.linspace(0, self._max_drop_path, depths[-1]).tolist()
 
         # Stem
-        self.net.append(layers.ConvDownscale(
-            out_shape,
-            self.shapes,
-            filters=self._dims[0],
-            scale=4,
-            activation=None if self.version != '<3.8.1' else 'ELU',
-            norm='layer',
-            **kwargs,
-        ))
+        self.net.extend(self._stem(out_shape, **kwargs))
 
         # Main body
         for dim, in_depth, out_depth in zip(self._dims, [0, *depths], depths):
@@ -225,12 +220,43 @@ class ConvNeXt(Network):
             ),
         ]
 
+    def _stem(self, out_shape: list[int], **kwargs: Any) -> list[BaseLayer]:
+        """
+        Stem of ConvNeXt for initial downscaling of the input.
+
+        Parameters
+        ----------
+        out_shape : list[int]
+            shape of the output tensor, excluding batch size
+
+        **kwargs
+            Global network parameters
+
+        Returns
+        -------
+        list[BaseLayer]
+            Layers used in the stem
+        """
+        return [
+            layers.ConvDownscale(
+                out_shape,
+                self.shapes,
+                filters=self._dims[0],
+                scale=4,
+                activation=None if self.version != '<3.8.1' else 'ELU',
+                norm='layer',
+                **kwargs,
+            ),
+        ]
+
 
 class ConvNeXtTiny(ConvNeXt):
     """
     Tiny version of ConvNeXt with the number of convolutional filters in each downscaled section
     following [96, 192, 384, 768] with the number of ConvNeXt blocks in each downscaled section
     following [3, 3, 9, 3].
+
+    Original paper implementation: arXiv:2201.03545.
 
     Attributes
     ----------
@@ -291,6 +317,8 @@ class ConvNeXtSmall(ConvNeXt):
     following [96, 192, 384, 768] with the number of ConvNeXt blocks in each downscaled section
     following [3, 3, 27, 3].
 
+    Original paper implementation: arXiv:2201.03545.
+
     Attributes
     ----------
     layer_num : int, default = None
@@ -350,6 +378,8 @@ class ConvNeXtBase(ConvNeXt):
     Base version of ConvNeXt with the number of convolutional filters in each downscaled section
     following [128, 256, 512, 1024] with the number of ConvNeXt blocks in each downscaled section
     following [3, 3, 27, 3].
+
+    Original paper implementation: arXiv:2201.03545.
 
     Attributes
     ----------
@@ -412,6 +442,8 @@ class ConvNeXtLarge(ConvNeXt):
     following [192, 384, 768, 1536] with the number of ConvNeXt blocks in each downscaled section
     following [3, 3, 27, 3].
 
+    Original paper implementation: arXiv:2201.03545.
+
     Attributes
     ----------
     layer_num : int, default = None
@@ -472,6 +504,8 @@ class ConvNeXtXLarge(ConvNeXt):
     Extra large version of ConvNeXt with the number of convolutional filters in each downscaled
     section following [256, 512, 1024, 2048] with the number of ConvNeXt blocks in each downscaled
     section following [3, 3, 27, 3].
+
+    Original paper implementation: arXiv:2201.03545.
 
     Attributes
     ----------

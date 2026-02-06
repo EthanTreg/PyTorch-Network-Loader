@@ -11,10 +11,10 @@ from torch import Tensor
 from numpy import ndarray
 
 from netloader.data import Data
-from netloader.utils.types import ArrayLike, DataT, ArrayT
+from netloader.utils.types import ArrayLike, ArrayT, ArrayCT
 
 
-class BaseTransform(Generic[DataT, ArrayT]):
+class BaseTransform(Generic[ArrayT]):
     """
     Base transformation class that other types of transforms build from
 
@@ -40,7 +40,7 @@ class BaseTransform(Generic[DataT, ArrayT]):
         ...
 
     @overload
-    def __call__(self, x: DataT, *, back: bool = ...) -> DataT:
+    def __call__(self, x: Data[ArrayCT], *, back: bool = ...) -> Data[ArrayCT]:
         ...
 
     @overload
@@ -54,10 +54,10 @@ class BaseTransform(Generic[DataT, ArrayT]):
 
     def __call__(
             self,
-            x: ArrayT | DataT,
+            x: ArrayT | Data[ArrayCT],
             *,
             back: bool = False,
-            uncertainty: ArrayT | None = None) -> ArrayT | DataT | tuple[ArrayT, ArrayT]:
+            uncertainty: ArrayT | None = None) -> ArrayT | Data[ArrayCT] | tuple[ArrayT, ArrayT]:
         """
         Calling function returns the forward, backwards or uncertainty propagation of the
         transformation
@@ -79,9 +79,12 @@ class BaseTransform(Generic[DataT, ArrayT]):
             (N,...)  if provided
         """
         if isinstance(x, Data):
-            return cast(DataT, Data(*self._call(x.data, back=back, uncertainty=x.uncertainty)))
-        x, uncertainty = cast(ArrayT, x), cast(ArrayT, uncertainty)
-        return cast(DataT, self._call(x, back=back, uncertainty=uncertainty))
+            return Data(*self._call(
+                cast(ArrayT, x.data),
+                back=back,
+                uncertainty=cast(ArrayT, x.uncertainty),
+            ))
+        return self._call(x, back=back, uncertainty=uncertainty)
 
     def __repr__(self) -> str:
         """
@@ -668,6 +671,8 @@ class Normalise(BaseTransform):
         else:
             self.offset = np.amin(data, axis=dim, keepdims=True)
             self.scale = np.amax(data, axis=dim, keepdims=True) - self.offset
+
+        self.scale = np.where(self.scale == 0, 1, self.scale)
 
     def __getstate__(self) -> dict[str, Any]:
         return {'offset': self.offset.tolist(), 'scale': self.scale.tolist()}
