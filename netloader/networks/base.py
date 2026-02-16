@@ -202,14 +202,14 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             String representation of the network
         """
         return (f'Architecture: {self.__class__.__name__}\n'
-                f'Name: {self.net.name}\n'
+                f'Name: {os.path.basename(self._save_path).split(".")[0]}\n'
                 f'Description: {self.description}\n'
                 f'Version: {self.version}\n'
                 f'Network: {self.net.name}\n'
                 f'Epoch: {self._epoch}\n'
                 f'Optimiser: {self.optimiser.__class__.__name__}\n'
-                f'Scheduler: {self.scheduler.__class__.__name__ if self.scheduler else None}\n'
-                f'Loss Weights: {self._loss_weights}\n' if self._loss_weights else ''
+                f'Scheduler: {self.scheduler.__class__.__name__ if self.scheduler else None}\n' +
+                (f'Loss Weights: {self._loss_weights}\n' if self._loss_weights else '') +
                 f'Args: ({self.extra_repr()})')
 
     def __getstate__(self) -> dict[str, Any]:
@@ -268,6 +268,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         self._loss_weights = state.get('loss_weights', {})
         self._optimiser_kwargs = state.get('optimiser_kwargs', {})
         self._scheduler_kwargs = state.get('scheduler_kwargs', {})
+        self._logger = log.getLogger(__name__)
         self.transforms = state['transforms'] if 'transforms' in state else state['header']
         self.idxs = state['idxs'] if state['idxs'] is None else np.array(state['idxs'])
         self.net = state['net']
@@ -332,6 +333,30 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             self.set_save_path(str(value), overwrite=True)
         else:
             super().__setattr__(key, value)
+
+    def __getattr__(self, key: str) -> Any:
+        """
+        Gets attributes of the network, with deprecation warning for save_path.
+
+        Parameters
+        ----------
+        key : str
+            Attribute name
+
+        Returns
+        -------
+        Any
+            Attribute value
+        """
+        if key == 'save_path':
+            warn(
+                'save_path attribute is deprecated, please use get_save_path method '
+                'instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self._save_path
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
 
     def _batch_print(
             self,
@@ -669,16 +694,23 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         """
         return (self.net(data).detach().cpu().numpy(),)
 
-    def compile(self, **kwargs: Any) -> None:
+    def compile(self, level: Literal['net', 'loss'] = 'net', **kwargs: Any) -> None:
         """
         Compiles the network using torch.compile for faster training and prediction.
 
         Parameters
         ----------
+        level : {'net', 'loss'}, default = 'net'
+            If 'net', compiles the network, if 'loss', compiles the loss function
         **kwargs
             Optional keyword arguments to pass to torch.compile
         """
-        self.net = cast(Network | CompatibleNetwork, torch.compile(self.net, **kwargs))
+        if level == 'net':
+            self.net = cast(Network | CompatibleNetwork, torch.compile(self.net, **kwargs))
+        elif level == 'loss':
+            self._loss_tensor = torch.compile(self._loss_tensor, **kwargs)  # type: ignore[method-assign] # pylint: disable=attribute-defined-outside-init
+        else:
+            raise ValueError(f'Invalid compile level ({level}), must be "net" or "loss"')
 
     def extra_repr(self) -> str:
         """
@@ -780,6 +812,17 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             Weight for the specified loss term or all loss term weights
         """
         return self._loss_weights[name] if name else self._loss_weights
+
+    def get_save_path(self) -> str:
+        """
+        Gets the path to save the network.
+
+        Returns
+        -------
+        str
+            Path to save the network
+        """
+        return self._save_path
 
     def train(self, train: bool) -> None:
         """
@@ -977,10 +1020,15 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             If saving can overwrite an existing save file, if False and file with the same name
             exists, an error will be raised
         """
+        old_save: str = self._save_path
+
         if states_dir:
             self._save_path = utils.save_name(name, states_dir, self.net.name)
         else:
             self._save_path = name
+
+        if old_save == self._save_path:
+            return
 
         if os.path.exists(self._save_path) and overwrite:
             self._logger.warning(f'{self._save_path} already exists and will be overwritten if '
@@ -1012,7 +1060,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             if key in self._loss_weights:
                 self._loss_weights[key] = value
             else:
-                self._logger.warning(f'Loss weight {key} not found in network architecture loss '
+                self._logger.warning(f'Loss weight ({key}) not found in network architecture loss '
                                      f'weights, skipping...')
 
     def to(self, *args: Any, **kwargs: Any) -> Self:

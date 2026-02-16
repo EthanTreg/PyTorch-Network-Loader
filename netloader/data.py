@@ -1,9 +1,21 @@
 """
 Base dataset classes for use with BaseNetwork
 """
+from __future__ import annotations
 import logging as log
 from types import ModuleType
-from typing import Any, Generic, Self, Literal, Sequence, Iterator, cast, overload  # pylint: disable=unused-import
+from typing import (
+    Any,
+    Generic,
+    Self,
+    Literal,
+    Sequence,
+    Iterator,
+    Callable,
+    Protocol,
+    cast,
+    overload,
+)
 
 import torch
 import numpy as np
@@ -12,6 +24,29 @@ from torch.utils.data import Dataset, DataLoader, Subset
 from numpy import ndarray
 
 from netloader.utils.types import DataLike, ArrayLike, DataT, ArrayT, DatasetT, DataListT, ArrayCT
+
+
+class ApplyFunc(Protocol[DataT]):
+    """
+    Protocol for functions that can be applied to Data objects in the apply method of Data and
+    DataList.
+    """
+    def __call__(self, data: DataT, /, *args: Any, **kwargs: Any) -> DataT:
+        """
+        Parameters
+        ----------
+        data : DataT
+            Data to apply the function to
+        *args
+            Optional arguments to pass to the function
+        **kwargs
+            Optional keyword arguments to pass to the function
+
+        Returns
+        -------
+        DataT
+            Result of applying the function to the data
+        """
 
 
 class Data(Generic[ArrayCT]):
@@ -29,6 +64,8 @@ class Data(Generic[ArrayCT]):
     -------
     collate(data, data_field=True) -> ArrayCT | Data[ArrayCT]
         Collates a list of Data objects into a single Data object
+    apply(func, *args, types, **kwargs) -> Self
+        Applies a function or method to the data and uncertainty
     clone() -> Data[ArrayCT]
         Clones the data and uncertainty
     concat(dim=0) -> ArrayCT
@@ -70,7 +107,7 @@ class Data(Generic[ArrayCT]):
         """
         return len(self.data)
 
-    def __getitem__(self, idx: int | slice) -> 'Data[ArrayCT]':
+    def __getitem__(self, idx: int | slice) -> Data[ArrayCT]:
         """
         Gets a subset of the data and uncertainty.
 
@@ -95,21 +132,21 @@ class Data(Generic[ArrayCT]):
 
     @staticmethod
     @overload
-    def collate(data: list['Data[ArrayCT]'], *, data_field: Literal[True]) -> 'Data[ArrayCT]': ...
+    def collate(data: list[Data[ArrayCT]], *, data_field: Literal[True]) -> Data[ArrayCT]: ...
 
     @staticmethod
     @overload
-    def collate(data: list['Data[ArrayCT]'], *, data_field: Literal[False]) -> ArrayCT: ...
+    def collate(data: list[Data[ArrayCT]], *, data_field: Literal[False]) -> ArrayCT: ...
 
     @staticmethod
     @overload
-    def collate(data: list['Data[ArrayCT]'], *, data_field: bool) -> 'ArrayCT | Data[ArrayCT]': ...
+    def collate(data: list[Data[ArrayCT]], *, data_field: bool) -> ArrayCT | Data[ArrayCT]: ...
 
     @staticmethod
     def collate(
-            data: list['Data[ArrayCT]'],
+            data: list[Data[ArrayCT]],
             *,
-            data_field: bool = True) -> 'ArrayCT | Data[ArrayCT]':
+            data_field: bool = True) -> ArrayCT | Data[ArrayCT]:
         """
         Collates a list of Data objects into a single Data object.
 
@@ -136,7 +173,42 @@ class Data(Generic[ArrayCT]):
         new_data = module.concat([datum.concat() for datum in data])
         return Data(*new_data.swapaxes(0, 1)) if data_field else new_data
 
-    def clone(self) -> 'Data[ArrayCT]':
+    def apply(
+            self,
+            func: str | ApplyFunc[ArrayCT],
+            *args: Any,
+            types: tuple[type[ArrayLike], ...] = (Tensor, ndarray),
+            **kwargs: Any) -> Self:
+        """
+        Applies a function or method to the data and uncertainty.
+
+        Parameters
+        ----------
+        func : str | ApplyFunc[ArrayCT]
+            Function, or method if string, to apply to the data and uncertainty
+        *args
+            Arguments to pass to the function or method
+        types : tuple[type[ArrayLike], ...], default = (Tensor, ndarray)
+            Types to apply the function or method to, if data and uncertainty is not an instance of
+            types, then data and uncertainty are returned unchanged
+        **kwargs
+            Keyword arguments to pass to the function or method
+
+        Returns
+        -------
+        Self
+            Self with function or method applied to the data and uncertainty
+        """
+        if not isinstance(self.data, types):
+            return self
+
+        func_: Callable[..., ArrayCT] = lambda data: getattr(data, func)(*args, **kwargs) \
+            if isinstance(func, str) else func(data, *args, **kwargs)
+        self.data = func_(self.data)
+        self.uncertainty = func_(self.uncertainty)
+        return self
+
+    def clone(self) -> Data[ArrayCT]:
         """
         Clones the data and uncertainty.
 
@@ -180,18 +252,7 @@ class Data(Generic[ArrayCT]):
             return module.concat((self.data, self.uncertainty), **kwargs)
         return self.data
 
-    def copy(self) -> 'Data[ArrayCT]':
-        """
-        Copies the data and uncertainty.
-
-        Identical to Data.clone().
-
-        Returns
-        -------
-        Data[ArrayTC]
-            Copied Data
-        """
-        return self.clone()
+    copy = clone
 
     def cpu(self) -> Self:
         """
@@ -207,7 +268,7 @@ class Data(Generic[ArrayCT]):
 
         if isinstance(self.uncertainty, Tensor):
             self.uncertainty = self.uncertainty.cpu()
-        return self
+        return self.apply('cpu')
 
     def detach(self) -> Self:
         """
@@ -225,7 +286,7 @@ class Data(Generic[ArrayCT]):
             self.uncertainty = self.uncertainty.detach()
         return self
 
-    def numpy(self) -> 'Data[ndarray]':
+    def numpy(self) -> Data[ndarray]:
         """
         Converts data and uncertainty to numpy arrays if they are Tensors.
 
@@ -240,7 +301,7 @@ class Data(Generic[ArrayCT]):
             self.uncertainty
         )
 
-    def tensor(self) -> 'Data[Tensor]':
+    def tensor(self) -> Data[Tensor]:
         """
         Converts data and uncertainty to tensors if they are numpy arrays.
 
@@ -289,13 +350,15 @@ class DataList(Generic[DataT]):
         Collates a list of DataList objects into a single DataList object
     append(data) -> None
         Appends an element to the DataList
-    cpu() -> DataList[DataLike]
-        Moves all tensors to CPU
+    apply(func, *args, types, **kwargs) -> Self
+        Applies a function or method to each element in the DataList
     clone() -> DataList[DataT]
         Clones the DataList
     copy() -> DataList[DataT]
         Copies the DataList
-    detach() -> DataList[DataLike]
+    cpu() -> Self
+        Moves all tensors to CPU
+    detach() -> Self
         Detaches all tensors from the computation graph
     extend(data) -> None
         Extends the DataList by appending elements from the iterable
@@ -338,7 +401,7 @@ class DataList(Generic[DataT]):
         """
         return self.len(list_=False)
 
-    def __getitem__(self, idx: int | slice) -> 'DataList[DataT]':
+    def __getitem__(self, idx: int | slice) -> DataList[DataT]:
         """
         Gets a subset of each element in the DataList.
 
@@ -372,29 +435,29 @@ class DataList(Generic[DataT]):
     @staticmethod
     @overload
     def collate(
-            data: list['DataList[DataT]'],
+            data: list[DataList[DataT]],
             *,
-            data_field: Literal[True]) -> 'DataList[DataT]': ...
+            data_field: Literal[True]) -> DataList[DataT]: ...
 
     @staticmethod
     @overload
     def collate(
-            data: list['DataList[DataT]'],
+            data: list[DataList[DataT]],
             *,
-            data_field: Literal[False]) -> 'DataList[ArrayT]': ...
+            data_field: Literal[False]) -> DataList[ArrayT]: ...
 
     @staticmethod
     @overload
     def collate(
-            data: list['DataList[DataT]'],
+            data: list[DataList[DataT]],
             *,
-            data_field: bool) -> 'DataList[ArrayT] | DataList[DataT]': ...
+            data_field: bool) -> DataList[ArrayT] | DataList[DataT]: ...
 
     @staticmethod
     def collate(
-            data: list['DataList[DataT]'],
+            data: list[DataList[DataT]],
             *,
-            data_field: bool = True) -> 'DataList[ArrayT] | DataList[DataT]':
+            data_field: bool = True) -> DataList[ArrayT] | DataList[DataT]:
         """
         Collates a list of DataList objects into a single DataList object.
 
@@ -413,7 +476,7 @@ class DataList(Generic[DataT]):
         i: int
         element_data: list[DataLike]
         new_data: list[DataLike] = []
-        datum: 'DataList[DataT]'
+        datum: DataList[DataT]
 
         for i in range(data[0].len(True)):
             element_data = [datum.get(i, list_=True) for datum in data]
@@ -440,7 +503,42 @@ class DataList(Generic[DataT]):
                              f'lengths: {self.len(list_=False)} and {len(data)}')
         self._data.append(data)
 
-    def clone(self) -> 'DataList[DataT]':
+    def apply(
+            self,
+            func: str | ApplyFunc[DataT],
+            *args: Any,
+            types: tuple[type[DataLike], ...] = (Data, Tensor, ndarray),
+            **kwargs: Any) -> Self:
+        """
+        Applies a function or method to each element in the DataList.
+
+        Parameters
+        ----------
+        func : str | ApplyFunc[DataT]
+            Function, or method if string, to apply to each element in the DataList
+        *args
+            Arguments to pass to the function or method
+        types : tuple[type[DataLike], ...], default = (Data, Tensor, ndarray)
+            Types to apply the function or method to, if an element is not an instance of types,
+            then that element is returned unchanged
+        **kwargs
+            Keyword arguments to pass to the function or method
+
+        Returns
+        -------
+        Self
+            Self with function or method applied to each element in the DataList
+        """
+        datum: DataT
+        func_: Callable[..., DataT] = lambda data: data if not isinstance(data, types) else \
+            getattr(data, func)(*args, **kwargs) if isinstance(func, str) else \
+                func(data, *args, **kwargs)
+        self._data = [
+            datum.apply(func_) if isinstance(datum, Data) else func_(datum) for datum in self._data
+        ]
+        return self
+
+    def clone(self) -> DataList[DataT]:
         """
         Clones the DataList.
 
@@ -457,48 +555,31 @@ class DataList(Generic[DataT]):
             for data in self._data
         ])
 
-    def copy(self) -> 'DataList[DataT]':
-        """
-        Copies the DataList.
+    copy = clone
 
-        Identical to DataList.clone().
-
-        Returns
-        -------
-        DataList[DataT]
-            Copied DataList
-        """
-        return self.clone()
-
-    def cpu(self) -> 'DataList[DataT]':
+    def cpu(self) -> Self:
         """
         Moves all tensors to CPU
 
         Returns
         -------
-        DataList[DataT]
-            DataList with all tensors moved to CPU
+        Self
+            Self with all tensors moved to CPU
         """
-        data: DataT
-        return DataList(cast(list[DataT], [
-            data.cpu() if isinstance(data, (Tensor, Data)) else data for data in self
-        ]))
+        return self.apply('cpu', types=(Tensor, Data))
 
-    def detach(self) -> 'DataList[DataT]':
+    def detach(self) -> Self:
         """
         Detaches all tensors from the computation graph
 
         Returns
         -------
-        DataList[DataT]
-            DataList with all tensors detached from the computation graph
+        Self
+            Self with all tensors detached from the computation graph
         """
-        data: DataT
-        return DataList(cast(list[DataT], [
-            data.detach() if isinstance(data, (Tensor, Data)) else data for data in self
-        ]))
+        return self.apply('detach', types=(Tensor, Data))
 
-    def extend(self, data: 'Sequence[DataT] | DataList[DataT]') -> None:
+    def extend(self, data: Sequence[DataT] | DataList[DataT]) -> None:
         """
         Extends the DataList by appending elements from the iterable.
 
@@ -519,15 +600,15 @@ class DataList(Generic[DataT]):
     def get(self, idx: slice, list_: Literal[True]) -> list[DataT]: ...
 
     @overload
-    def get(self, idx: int | slice, list_: Literal[False]) -> 'DataList[DataT]': ...
+    def get(self, idx: int | slice, list_: Literal[False]) -> DataList[DataT]: ...
 
     @overload
-    def get(self, idx: int, list_: bool) -> 'DataT | DataList[DataT]': ...
+    def get(self, idx: int, list_: bool) -> DataT | DataList[DataT]: ...
 
     @overload
-    def get(self, idx: slice, list_: bool) -> 'list[DataT] | DataList[DataT]': ...
+    def get(self, idx: slice, list_: bool) -> list[DataT] | DataList[DataT]: ...
 
-    def get(self, idx: int | slice, list_: bool = False) -> 'DataT | list[DataT] | DataList[DataT]':
+    def get(self, idx: int | slice, list_: bool = False) -> DataT | list[DataT] | DataList[DataT]:
         """
         Gets a subset of the DataList or a subset of each element in the DataList.
 
@@ -570,12 +651,12 @@ class DataList(Generic[DataT]):
     def iter(self, list_: Literal[True]) -> Iterator[DataT]: ...
 
     @overload
-    def iter(self, list_: Literal[False]) -> Iterator['DataList[DataT]']: ...
+    def iter(self, list_: Literal[False]) -> Iterator[DataList[DataT]]: ...
 
     @overload
-    def iter(self, list_: bool) -> Iterator[DataT] | Iterator['DataList[DataT]']: ...
+    def iter(self, list_: bool) -> Iterator[DataT] | Iterator[DataList[DataT]]: ...
 
-    def iter(self, list_: bool = True) -> Iterator[DataT] | Iterator['DataList[DataT]']:
+    def iter(self, list_: bool = True) -> Iterator[DataT] | Iterator[DataList[DataT]]:
         """
         Iterates over each element in the DataList.
 
@@ -611,13 +692,13 @@ class DataList(Generic[DataT]):
         """
         return len(self._data) if list_ else len(self._data[0])
 
-    def numpy(self) -> 'DataList[ndarray | Data[ndarray]]':
+    def numpy(self) -> DataList[ndarray | Data[ndarray]]:
         """
         Converts all tensors to numpy arrays.
 
         Returns
         -------
-        DataList[ndarray | Data]
+        DataList[ndarray | Data[ndarray]]
             DataList with all tensors converted to numpy arrays
         """
         data: DataT
@@ -625,7 +706,7 @@ class DataList(Generic[DataT]):
             data.cpu().numpy() if hasattr(data, 'cpu') else data for data in self
         ]))
 
-    def tensor(self) -> 'DataList[Tensor | Data[Tensor]]':
+    def tensor(self) -> DataList[Tensor | Data[Tensor]]:
         """
         Converts all numpy arrays to tensors.
 
@@ -640,7 +721,7 @@ class DataList(Generic[DataT]):
             data.tensor() if isinstance(data, Data) else data for data in self
         ]))
 
-    def to(self, *args: Any, **kwargs: Any) -> 'DataList[DataT]':
+    def to(self, *args: Any, **kwargs: Any) -> Self:
         """
         Move and/or cast the parameters and buffers.
 
@@ -653,13 +734,10 @@ class DataList(Generic[DataT]):
 
         Returns
         -------
-        DataList[DataT]
-            DataList with all elements moved and/or cast
+        Self
+            Self with all elements moved and/or cast
         """
-        data: DataT
-        return DataList(cast(list[DataT], [
-            data.to(*args, **kwargs) if hasattr(data, 'to') else data for data in self
-        ]))
+        return self.apply('to', *args, types=(Tensor, Data), **kwargs)
 
 
 class BaseDatasetMeta(type):

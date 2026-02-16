@@ -469,7 +469,7 @@ class Composite(layers.BaseLayer):
             config_dir: str = '',
             shape: list[int] | None = None,
             defaults: dict[str, Any] | None = None,
-            config: Config | None = None,
+            config: dict[str, Any] | Config | None = None,
             **kwargs: Any) -> None:
         """
         Parameters
@@ -494,7 +494,7 @@ class Composite(layers.BaseLayer):
             Output shape of the block, will be used if provided; otherwise, channels will be used
         defaults : dict[str, Any], default = None
             Default values for the parameters for each type of layer
-        config : Config | None, default = None
+        config : dict[str, Any] | Config | None, default = None
             Network configuration dictionary
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -517,7 +517,7 @@ class Composite(layers.BaseLayer):
         # Create subnetwork
         self.net = Network(
             name,
-            config or config_dir,
+            Config.from_dict(config) if isinstance(config, dict) else (config or config_dir),
             shapes[-2],
             shapes[-1],
             suppress_warning=True,
@@ -654,6 +654,9 @@ def _create_network(
             layer_class = Composite
         else:
             layer_class = getattr(layers, layer['type'])
+
+        if layer['type'] == 'AdaptivePool' and 'shapes' in layer:
+            layer['shape'] = layer.pop('shapes')
 
         try:
             module_list.append(layer_class(

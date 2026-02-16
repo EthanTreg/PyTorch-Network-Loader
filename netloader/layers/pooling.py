@@ -3,11 +3,11 @@ Pooling network layers
 """
 from typing import Any, Type, Literal, cast
 
-import numpy as np
 from torch import nn, Tensor
 
-from netloader.utils import Shapes
+from netloader.layers.misc import Pad
 from netloader.layers.base import BaseSingleLayer
+from netloader.utils import Shapes, compare_versions
 from netloader.layers.utils import _kernel_shape, _padding
 
 
@@ -75,7 +75,7 @@ class AdaptivePool(BaseSingleLayer):
         return super().__getstate__() | {
             'channels': self._channels,
             'mode': self._mode,
-            'shapes': self.layers.AdaptivePool.output_size,  # type: ignore[union-attr]
+            'shape': self.layers.AdaptivePool.output_size,  # type: ignore[union-attr]
         }
 
     def _check_pool_shape(self, shape: list[int]) -> None:
@@ -181,55 +181,51 @@ class Pool(BaseSingleLayer):
         """
         super().__init__(**kwargs)
         self._mode: Literal['max', 'average'] = mode
-        self._pad: tuple[int, ...]
+        self._pad: int | Literal['same'] | list[int] = padding
         self._kwargs: dict[str, Any] = pool_kwargs or {}
-        padding_: int | str | list[int] = padding
-        shape: list[int]
+        asymmetric: bool = False
+        padding_: int | list[int]
+        shape: list[int] = shapes[-1].copy()
         modes: tuple[str, str] = ('max', 'average')
         pool: Type[nn.Module]
-        pad: np.ndarray = np.zeros(2 * len(shapes[-1][1:]), dtype=int)
 
         # Check for errors and calculate same padding
-        if isinstance(padding, str):
-            self._check_options('padding', padding, {'same'})
+        if isinstance(self._pad, str):
+            self._check_options('padding', self._pad, {'same'})
             self._check_stride(stride)
-            padding = _padding(kernel, stride, shapes[-1], shapes[-1])
+            asymmetric, padding_ = _padding(kernel, stride, shape, shape)
+        else:
+            padding_ = self._pad
+
+        if asymmetric and compare_versions(self._ver, '3.10.1'):
+            assert isinstance(padding_, list)
+            self.layers.add_module('Pad', Pad(tuple(padding_)))
+            padding_ = 0
 
         # Check for errors
-        self._check_shape((1, 4), shapes[-1])
+        self._check_shape((1, 4), shape)
         self._check_options('mode', self._mode, set(modes))
 
         pool = cast(list[list[Type[nn.Module]]], [
             [nn.MaxPool1d, nn.AvgPool1d],
             [nn.MaxPool2d, nn.AvgPool2d],
             [nn.MaxPool3d, nn.AvgPool3d],
-        ])[len(shapes[-1]) - 2][self._mode == modes[1]]
-
-        shape = _kernel_shape(
-            kernel,
-            stride,
-            padding,
-            shapes[-1],
-        )
+        ])[len(shape) - 2][self._mode == modes[1]]
 
         if self._mode == modes[1]:
             self._kwargs = {'count_include_pad': False} | self._kwargs
 
-        # Correct same padding for one-sided padding
-        if padding_ == 'same' and shape != shapes[-1]:
-            pad[np.argwhere(
-                np.array(shape[1:]) != np.array(shapes[-1][1:])
-            ).flatten() * 2 + 1] = 1
-            shape = shapes[-1].copy()
-
         self.layers.add_module('Pool', pool(
             kernel_size=kernel,
             stride=stride,
-            padding=padding,
+            padding=padding_,
             **self._kwargs,
         ))
-        self._pad = tuple(pad.tolist())
-        shapes.append(shape)
+
+        if self._pad == 'same' or asymmetric:
+            shapes.append(shape)
+        else:
+            shapes.append(_kernel_shape(kernel, stride, padding_, shape))
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
@@ -258,7 +254,6 @@ class Pool(BaseSingleLayer):
         Tensor
             Output tensor of shape (N,...) and type float
         """
-        x = nn.functional.pad(x, self._pad)
         return super().forward(x, *args, **kwargs)
 
 

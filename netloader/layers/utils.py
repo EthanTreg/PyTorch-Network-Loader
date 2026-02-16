@@ -124,7 +124,7 @@ def _padding(
         kernel: int | list[int],
         strides: int | list[int],
         in_shape: list[int],
-        out_shape: list[int]) -> list[int]:
+        out_shape: list[int]) -> tuple[bool, list[int]]:
     """
     Calculates the padding required for specific output shape.
 
@@ -141,9 +141,15 @@ def _padding(
 
     Returns
     -------
+    bool
+        Whether the padding is asymmetric
     list[int]
-        Required padding for specific output shape
+        Required padding for specific output shape, if padding is asymmetric, then list will contain
+        padding for both sides of the input, otherwise list will contain padding for one side of the
+        input
     """
+    asymmetric: bool = False
+    pad: int
     padding: list[int] = []
     strides, kernel = _int_list_conversion(len(in_shape[1:]), [strides, kernel])
 
@@ -153,6 +159,7 @@ def _padding(
             in_shape[1:],
             out_shape[1:],
     ):
-        padding.append((stride * (out_length - 1) + kernel_length - in_length) // 2)
-
-    return padding
+        pad = stride * (out_length - 1) + kernel_length - in_length
+        asymmetric = asymmetric or bool(pad % 2)
+        padding.extend([pad // 2, pad // 2 + int(asymmetric)])
+    return asymmetric, padding if asymmetric else padding[::2]

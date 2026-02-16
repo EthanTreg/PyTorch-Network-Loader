@@ -8,7 +8,7 @@ import torch
 import numpy as np
 from torch import nn, Tensor
 
-from netloader.layers.misc import LayerNorm
+from netloader.layers.misc import LayerNorm, Pad
 from netloader.utils import Shapes, compare_versions
 from netloader.layers.base import BaseLayer, BaseSingleLayer
 from netloader.layers.utils import _int_list_conversion, _kernel_shape, _padding
@@ -82,7 +82,9 @@ class Conv(BaseSingleLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
-        padding_: int | str | list[int] = padding
+        self._pad: int | Literal['same'] | list[int] = padding
+        asymmetric: bool = False
+        padding_: int | list[int]
         shape: list[int] = shapes[-1].copy()
         target: list[int] = shapes[layer] if layer is not None else net_out
         conv: Type[nn.Module]
@@ -90,14 +92,24 @@ class Conv(BaseSingleLayer):
         batch_norm_: Type[nn.Module]
 
         # Check for errors and calculate same padding
-        if isinstance(padding, str):
-            self._check_options('padding', padding, {'same'})
+        if isinstance(self._pad, str):
+            self._check_options('padding', self._pad, {'same'})
             self._check_stride(stride)
-            padding = _padding(kernel, stride, shapes[-1], shapes[-1])
+            asymmetric, padding_ = _padding(kernel, stride, shape, shape)
+        else:
+            padding_ = self._pad
 
         if padding_mode is None:
             padding_mode = 'zeros' if compare_versions(self._ver, '3.10.0') else \
                 'replicate'
+
+        if asymmetric and compare_versions(self._ver, '3.10.1'):
+            assert isinstance(padding_, list)
+            self.layers.add_module('Pad', Pad(
+                tuple(padding_),
+                mode='constant' if padding_mode == 'zeros' else padding_mode,
+            ))
+            self._pad = 0
 
         # Check for errors and calculate number of filters
         self._check_shape((2, 4), shape)
@@ -116,7 +128,7 @@ class Conv(BaseSingleLayer):
             out_channels=shape[0],
             kernel_size=kernel,
             stride=stride,
-            padding=padding_,
+            padding=self._pad,
             groups=groups,
             padding_mode=padding_mode,
         ))
@@ -136,10 +148,10 @@ class Conv(BaseSingleLayer):
         if dropout:
             self.layers.add_module('Dropout', dropout_(dropout))
 
-        if padding_ == 'same':
+        if self._pad == 'same' or asymmetric:
             shapes.append(shape)
         else:
-            shapes.append(_kernel_shape(kernel, stride, padding, shape))
+            shapes.append(_kernel_shape(kernel, stride, padding_, shape))
 
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
@@ -147,7 +159,7 @@ class Conv(BaseSingleLayer):
             'groups': self.layers.Conv.groups,  # type: ignore[union-attr]
             'kernel': self.layers.Conv.kernel_size,  # type: ignore[union-attr]
             'stride': self.layers.Conv.stride,
-            'padding': self.layers.Conv.padding,  # type: ignore[union-attr]
+            'padding': self._pad,
             'dropout': self.layers.Dropout.p if hasattr(self.layers, 'Dropout') else 0,  # type: ignore[union-attr]
             'activation': self.layers.Activation.__class__.__name__
                 if hasattr(self.layers, 'Activation') else None,
@@ -938,7 +950,7 @@ def _padding_transpose(
         in_shape: list[int],
         out_shape: list[int]) -> list[int]:
     """
-    Calculates the padding required for specific output shape
+    Calculates the padding required for specific output shape.
 
     Parameters
     ----------

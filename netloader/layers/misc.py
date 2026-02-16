@@ -470,7 +470,7 @@ class Index(BaseLayer):
         if not shapes:
             return
 
-        in_shape = cast(list[int] | list[list[int]], deepcopy(shapes.get(-1, True)))
+        in_shape = deepcopy(shapes.get(-1, True))
 
         # Length of slice
         if isinstance(in_shape[0], int):
@@ -677,13 +677,11 @@ class Pack(BaseLayer):
             )
             self._layer = args[0]
 
-        out_shape = [shapes[-1]] if shapes.check(-1) else shapes.get(-1, True)
+        out_shape = [shapes[-1]] if shapes.check(-1) else \
+            cast(list[list[int]], shapes.get(-1, True))
 
         if self._layer is not None:
-            target = cast(
-                list[int] | list[list[int]],
-                (check_shapes if self._checkpoint else shapes).get(self._layer, True),
-            )
+            target = (check_shapes if self._checkpoint else shapes).get(self._layer, True)
 
             if isinstance(target[0], int):
                 out_shape.append(cast(list[int], target))
@@ -750,6 +748,177 @@ class Pack(BaseLayer):
             Layer parameters
         """
         return f'layer={self._layer}, checkpoint={bool(self._checkpoint)}'
+
+
+class Pad(BaseLayer):
+    """
+    Constructs a padding layer to pad the output from the previous layer.
+
+    Attributes
+    ----------
+    group : int, default = 0
+        Layer group, if 0 it will always be used, else it will only be used if its group matches the
+        Networks
+
+    Methods
+    -------
+    forward(x) -> Tensor
+        Forward pass of the padding layer
+    extra_repr() -> str
+        Displays layer parameters when printing the network
+    """
+    @overload
+    def __init__(
+            self,
+            pad: list[int] | list[tuple[int, int]] | tuple[int, ...],
+            *,
+            shapes: Shapes | None = ...,
+            pad_kwargs: dict[str, Any] | None = ...,
+            **kwargs: Any) -> None: ...
+
+    @overload
+    def __init__(
+            self,
+            pad: int,
+            *,
+            dims: int = ...,
+            shapes: Shapes = ...,
+            pad_kwargs: dict[str, Any] | None = ...,
+            **kwargs: Any) -> None: ...
+
+    def __init__(
+            self,
+            pad: int | list[int] | list[tuple[int, int]] | tuple[int, ...],
+            *,
+            dims: int = -1,
+            shapes: Shapes | None = None,
+            pad_kwargs: dict[str, Any] | None = None,
+            **kwargs: Any) -> None:
+        """
+        Parameters
+        ----------
+        pad : int | list[int] | list[tuple[int, int]] | tuple[int, ...]
+            Amount of padding to apply to each dimension of the input tensor, ignoring batch
+            dimension and from right to left, if int is provided, same padding will be applied to
+            left and right of all dimensions according to dims, if list of integers is provided,
+            each integer will be applied to left and right of the corresponding dimension, if list
+            of tuple of integers is provided, then asymmetric (left, right) padding will be applied,
+            if tuple of integers is provided, each pair of integers will be applied to left and
+            right of the corresponding dimension
+        shapes : Shapes | None = None
+            Shape of the outputs from each layer, only required if tracking layer outputs is
+            necessary
+        dims : int, default = -1
+            Number of dimensions to pad starting with the last dimension, ignoring batch dimension,
+            if shapes is not provided, dims must be greater than 0, if negative, excludes the first
+            abs(dims) dimensions, if 0 pads all dimensions, won't be used if padding is a list of
+            integers or list of tuple of integers
+        pad_kwargs : dict[str, Any] | None = None
+            Additional keyword arguments to pass to the padding function
+        **kwargs
+            Leftover parameters to pass to base layer for checking
+        """
+        super().__init__(**kwargs)
+        self._pad: tuple[int, ...]
+        self._kwargs: dict[str, Any] = pad_kwargs or {}
+        pad_: list[int]
+        sub_shape: list[int]
+        shape: list[int] | list[list[int]]
+
+        if isinstance(pad, int) and dims <= 0 and shapes is None:
+            raise ValueError(f'Dims ({dims}) must be greater than 0 if pad ({pad}) is an integer '
+                             f'and shapes is not provided')
+
+        if shapes is None and dims <= 0:
+            dims = 1
+
+        if isinstance(pad, tuple) and len(pad) % 2 != 0:
+            raise ValueError(f'If pad is a tuple, it must contain an even number of integers '
+                             f'({len(pad)})')
+
+        if dims < 0 and shapes:
+            dims = len(shapes[-1]) + dims
+        elif dims == 0 and shapes:
+            len(shapes[-1])
+
+        if isinstance(pad, int):
+            self._pad = tuple([pad] * 2 * dims)
+        elif isinstance(pad, list) and isinstance(pad[0], int):
+            self._pad = tuple(np.repeat(pad, 2).tolist())
+        elif isinstance(pad, list):
+            self._pad = tuple(np.array(pad).flatten().tolist())
+        else:
+            self._pad = pad
+
+        if shapes is None:
+            return
+
+        shape = shapes.get(-1, True)
+        pad_ = ([0] * (len(shape) - len(self._pad) // 2) +
+                [sum(self._pad[i - 2:i]) for i in range(len(self._pad), 0, -2)])
+
+        if isinstance(shape[0], list):
+            shapes.append([
+                self._pad_shape(cast(list[int], sub_shape), pad_) for sub_shape in shape
+            ])
+        else:
+            shapes.append(self._pad_shape(cast(list[int], shape), pad_))
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {
+            'pad': self._pad,
+            'pad_kwargs': self._kwargs,
+        }
+
+    @staticmethod
+    def _pad_shape(shape: list[int], dim_pads: list[int]) -> list[int]:
+        """
+        Returns the output shape after padding.
+
+        Parameters
+        ----------
+        shape : list[int]
+            Input shape
+        dim_pads : list[int]
+            Amount of padding applied to each dimension
+
+        Returns
+        -------
+        list[int]
+            Output shape
+        """
+        dim: int
+        dim_pad: int
+        return [dim + dim_pad for dim, dim_pad in zip(shape, dim_pads)]
+
+    def extra_repr(self) -> str:
+        """
+        Displays layer parameters when printing the network.
+
+        Returns
+        -------
+        str
+            Layer parameters
+        """
+        return f'pad={list(zip(self._pad[::2], self._pad[1::2]))}, pad_kwargs={self._kwargs}'
+
+    def forward(self, x: TensorListLike, *_: Any, **__: Any) -> TensorListLike:
+        """
+        Forward pass of the padding layer.
+
+        Parameters
+        ----------
+        x : TensorListLike
+            Input with tensor(s) of shape (N,...) and type float, where N is the batch size
+
+        Returns
+        -------
+        TensorListLike
+            Output with tensor(s) of shape (N,...) and type float
+        """
+        if isinstance(x, Tensor):
+            return nn.functional.pad(x, self._pad, **self._kwargs)
+        return x.apply(nn.functional.pad, self._pad, **self._kwargs)
 
 
 class Reshape(BaseLayer):
