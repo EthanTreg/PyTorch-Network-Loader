@@ -1,41 +1,36 @@
 """
 Misc functions used elsewhere
 """
+from __future__ import annotations
 import os
 import sys
 import inspect
 import logging as log
+from copy import deepcopy
 from types import ModuleType
 from contextlib import contextmanager
-from typing import Any, Literal, Generator, cast, overload
+from typing import Any, Literal, Self, Generator, Iterable, Iterator, Generic, cast, overload
 
 import torch
 import numpy as np
-from torch import Tensor
+from torch import nn, Tensor
 from numpy import ndarray
 from packaging.version import Version
 
-from netloader.utils.types import ArrayT
+from netloader.utils.types import ArrayT, ModuleT
 
 
 class Shapes(list[list[int] | list[list[int]]]):
     """
     Shapes list that allows for indexing of multiple shapes.
-
-    Methods
-    -------
-    check(idx) -> bool
-        Check if the shape at the provided index is a single shape
-    get(idx, list_=True) -> list[int] | list[list[int]] | Shapes
-        Get shape from the shapes list
     """
     @overload  # type: ignore[override]
     def __getitem__(self, idx: int | tuple[int, int]) -> list[int]: ...
 
     @overload
-    def __getitem__(self, idx: slice) -> 'Shapes': ...
+    def __getitem__(self, idx: slice) -> Shapes: ...
 
-    def __getitem__(self, idx: int | tuple[int, int] | slice) -> 'list[int] | Shapes':
+    def __getitem__(self, idx: int | tuple[int, int] | slice) -> list[int] | Shapes:
         """
         Get shape from the shapes list.
 
@@ -118,7 +113,7 @@ class Shapes(list[list[int] | list[list[int]]]):
         return False
 
     @overload
-    def get(self, idx: slice, list_: bool) -> 'Shapes': ...
+    def get(self, idx: slice, list_: bool) -> Shapes: ...
 
     @overload
     def get(self, idx: tuple[int, int], list_: bool) -> list[int]: ...
@@ -129,13 +124,10 @@ class Shapes(list[list[int] | list[list[int]]]):
     @overload
     def get(self, idx: int, list_: Literal[True]) -> list[int] | list[list[int]]: ...
 
-    @overload
-    def get(self, idx: int, list_: bool) -> list[int] | list[list[int]]: ...
-
     def get(
             self,
             idx: int | tuple[int, int] | slice,
-            list_: bool = True) -> 'list[int] | list[list[int]] | Shapes':
+            list_: bool = True) -> list[int] | list[list[int]] | Shapes:
         """
         Get shape from the shapes list.
 
@@ -145,9 +137,9 @@ class Shapes(list[list[int] | list[list[int]]]):
             Index of the shape to get, if tuple then first index is the layer index and second is
             the shape index if the layer has multiple shapes, if slice, returns a Shapes object with
             the sliced shapes
-        list_ : bool, default = True
+        list_ : bool, Optional
             If true, returns a list of shapes if the index contains multiple shapes, else returns a
-            single shape
+            single shape, default = True
 
         Returns
         -------
@@ -172,6 +164,55 @@ class Shapes(list[list[int] | list[list[int]]]):
         return cast(list[int], item)
 
 
+class TypedModuleList(nn.ModuleList, Generic[ModuleT]):
+    """
+    A typed version of nn.ModuleList that allows for type checking of the modules in the list.
+    See nn.ModuleList for more information.
+    """
+    # pylint: disable-next=abstract-method
+    def __init__(self, modules: Iterable[ModuleT] | None = None) -> None:
+        super().__init__(modules)
+
+    def __add__(self, other: Iterable[ModuleT]) -> TypedModuleList[ModuleT]:  # type: ignore[override]
+        return cast(TypedModuleList[ModuleT], super().__add__(other))
+
+    @overload  # type: ignore[override]
+    def __getitem__(self, idx: int) -> ModuleT: ...
+
+    @overload
+    def __getitem__(self, idx: slice) -> TypedModuleList[ModuleT]: ...
+
+    def __getitem__(self, index: int | slice) -> ModuleT | TypedModuleList[ModuleT]:
+        return cast(ModuleT | TypedModuleList[ModuleT], super().__getitem__(index))
+
+    def __iadd__(self, modules: Iterable[ModuleT]) -> Self:  # type: ignore[override]
+        return super().__iadd__(modules)
+
+    def __iter__(self) -> Iterator[ModuleT]:
+        return cast(Iterator[ModuleT], super().__iter__())
+
+    def __setitem__(self, idx: int, module: ModuleT) -> None:  # type: ignore[override]
+        super().__setitem__(idx, module)
+
+    def append(self, module: ModuleT) -> Self:  # type: ignore[override]
+        return super().append(module)
+
+    def extend(self, modules: Iterable[ModuleT]) -> Self:  # type: ignore[override]
+        return super().extend(modules)
+
+    def insert(self, index: int, module: ModuleT) -> None:  # type: ignore[override]
+        super().insert(index, module)
+
+    @overload  # type: ignore[override]
+    def pop(self, key: int) -> ModuleT: ...
+
+    @overload
+    def pop(self, key: slice) -> TypedModuleList[ModuleT]: ...
+
+    def pop(self, key: int | slice) -> ModuleT | TypedModuleList[ModuleT]:
+        return cast(ModuleT | TypedModuleList[ModuleT], super().pop(key))
+
+
 def ascii_plot(
         data: list[float],
         *,
@@ -188,17 +229,18 @@ def ascii_plot(
     ----------
     data : list[float]
         Data to plot
-    clear : bool, default = False
-        If true, clears the previous graph, WARNING: this is very buggy and may not work properly
-    x_num : int, default = 20
-        Maximum number of epochs to display in the graph
-    height : int, default = 6
-        Height of the graph in lines
-    text : str, default = ''
+    clear : bool, Optional
+        If true, clears the previous graph, WARNING: this is very buggy and may not work properly,
+        default = False
+    x_num : int, Optional
+        Maximum number of epochs to display in the graph, default = 20
+    height : int, Optional
+        Height of the graph in lines, default = 6
+    text : str, Optional
         Optional text to display at the end of the graph
-    label : str, default = ''
+    label : str, Optional
         Label for the x-axis
-    data2 : list[float] | None, default = None
+    data2 : list[float] | None, Optional
         Secondary data to plot
     """
     if len(data) < 2:
@@ -357,11 +399,11 @@ def dict_list_append(
         Primary dict to merge secondary dict into
     dict2 : dict[str, Any]
         Secondary dict to merge into primary dict
-    concat : bool, default = False
-        If true, concatenates non list/ndarray types instead of overriding them
-    balance : bool, default = False
+    concat : bool, Optional
+        If true, concatenates non list/ndarray types instead of overriding them, default = False
+    balance : bool, Optional
         If true, balances the lengths of lists/ndarrays in each dictionary so that each list/ndarray
-        in the returning dictionary has the same length
+        in the returning dictionary has the same length, default = False
 
     Returns
     -------
@@ -371,6 +413,7 @@ def dict_list_append(
     dict1_len: int = 0
     dict2_len: int = 0
     key: str
+    dict2 = deepcopy(dict2)
 
     if not concat:
         for key in np.intersect1d(list(dict1.keys()), list(dict2.keys())).tolist():
@@ -498,10 +541,10 @@ def label_change(
         Classes of shape (N) where N is the number of samples
     in_label : ArrayT
         Unique class values of size (C) where C is the number of classes
-    one_hot : bool, default = False
+    one_hot : bool, Optional
         If the returned tensor should be 1D array of class indices or 2D one hot tensor if out_label
-        is None or is an int
-    out_label : ArrayT | None, default = None
+        is None or is an int, default = False
+    out_label : ArrayT | None, Optional
         Unique class values of size (C) to transform data into, if None, then values will be indexes
 
     Returns
@@ -548,11 +591,11 @@ def list_dict_convert(
     ----------
     data : list[dict[str, float | ndarray]]
         List of dictionaries to convert
-    balance : bool, default = False
+    balance : bool, Optional
         If true, balances the lengths of lists/ndarrays in each dictionary so that each list/ndarray
-        in the returning dictionary has the same length
-    concat : bool, default = False
-        If true, concatenates non list/ndarray types instead of overriding them
+        in the returning dictionary has the same length, default = False
+    concat : bool, Optional
+        If true, concatenates non list/ndarray types instead of overriding them, default = False
 
     Returns
     -------
@@ -577,7 +620,7 @@ def progress_bar(i: int, total: int, *, text: str = '', **kwargs: Any) -> None:
         Current progress
     total : int
         Completion number
-    text : str, default = ''
+    text : str, Optional
         Optional text to place at the end of the progress bar
     **kwargs
         Optional keyword arguments to pass to print
@@ -597,10 +640,14 @@ def progress_bar(i: int, total: int, *, text: str = '', **kwargs: Any) -> None:
         print()
 
 
-def safe_globals(safe_package: str, modules: ModuleType | list[ModuleType]) -> None:
+def safe_globals(
+        safe_package: str,
+        modules: ModuleType | list[ModuleType],
+        use_all: bool = False,
+        legacy_path_replace: tuple[str, str] | None = None) -> None:
     """
     Adds all classes in the module from the specified package to the list of safe PyTorch classes
-    when loading saved networks.
+    when loading saved architectures.
 
     Parameters
     ----------
@@ -608,22 +655,39 @@ def safe_globals(safe_package: str, modules: ModuleType | list[ModuleType]) -> N
         Package that classes must belong to to be added to the safe globals
     modules : ModuleType | list[ModuleType]
         Module(s) to add all classes from to the list of safe PyTorch classes when loading saved
-        networks
+        architectures
+    use_all : bool, Optional
+        If true, only adds classes declared in module.__all__, default = False
+    legacy_path_replace : tuple[str, str] | None, Optional
+        If not None, replaces the first string with the second string in the module path when
+        adding classes to the safe globals
     """
     if isinstance(modules, ModuleType):
         modules = [modules]
 
     for module in modules:
+        if use_all and not hasattr(module, '__all__'):
+            raise AttributeError(f'Module {module.__name__} does not have an __all__ attribute')
+
         torch.serialization.add_safe_globals([
-            member[1] for member in inspect.getmembers(sys.modules[module.__name__])
-            if isinstance(member[1], type) and
-               member[1].__module__.split('.', maxsplit=1)[0] == safe_package
+            member[1]
+            for member in inspect.getmembers(sys.modules[module.__name__], inspect.isclass)
+            if member[1].__module__.split('.', maxsplit=1)[0] == safe_package
+               and (not use_all or member[0] in module.__all__)
         ])
+
+        if legacy_path_replace:
+            torch.serialization.add_safe_globals([
+                (member[1], f'{member[1].__module__.replace(*legacy_path_replace)}.{member[0]}')
+                for member in inspect.getmembers(sys.modules[module.__name__], inspect.isclass)
+                if member[1].__module__.split('.', maxsplit=1)[0] == safe_package
+                   and (not use_all or member[0] in module.__all__)
+            ])
 
 
 def save_name(num: int | str, states_dir: str, name: str) -> str:
     """
-    Standardises the network save file naming.
+    Standardises the architecture save file naming.
 
     Parameters
     ----------
@@ -660,3 +724,22 @@ def suppress_logger_warnings(logger_name: str) -> Generator[None, None, None]:
         yield
     finally:
         logger.setLevel(level)
+
+
+__all__ = [
+    'Shapes',
+    'TypedModuleList',
+    'ascii_plot',
+    'check_params',
+    'compare_versions',
+    'deep_merge',
+    'dict_list_append',
+    'dict_list_convert',
+    'get_device',
+    'label_change',
+    'list_dict_convert',
+    'progress_bar',
+    'safe_globals',
+    'save_name',
+    'suppress_logger_warnings',
+]

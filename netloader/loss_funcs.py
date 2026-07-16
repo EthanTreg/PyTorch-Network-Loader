@@ -12,7 +12,7 @@ class BaseLoss(nn.Module):
     A base class for loss functions.
 
     This class is used to add all loss function classes to the list of safe PyTorch classes when
-    loading saved networks.
+    loading saved architectures.
     """
     def __init__(self, loss_func: type, *args: Any, **kwargs: Any) -> None:
         """
@@ -31,23 +31,31 @@ class BaseLoss(nn.Module):
         self._kwargs: dict[str, Any] = kwargs
         self._loss_func: Callable = loss_func(*self._args, **self._kwargs)
 
-        # Adds all loss classes to list of safe PyTorch classes when loading saved networks
+        # Adds all loss classes to list of safe PyTorch classes when loading saved architectures
         torch.serialization.add_safe_globals([self.__class__])
 
     def __repr__(self) -> str:
         """
-        Returns a string representation of the loss function
+        Returns a string representation of the loss function.
 
         Returns
         -------
         str
             String representation of the loss function
         """
-        return self.__class__.__name__
+        key: str
+        args: str
+        extra_repr: str
+        val: Any
+
+        args = ', '.join(repr(val) for val in self._args)
+        args += ', '.join(f'{key}={repr(val)}' for key, val in self._kwargs.items())
+        args += (', ' if args else '') + extra_repr if (extra_repr := self.extra_repr()) else ''
+        return f'{self.__class__.__name__}({args})'
 
     def __getstate__(self) -> dict[str, Any]:
         """
-        Returns a dictionary containing the state of the loss function for pickling
+        Returns a dictionary containing the state of the loss function for pickling.
 
         Returns
         -------
@@ -58,7 +66,7 @@ class BaseLoss(nn.Module):
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """
-        Sets the state of the loss function for pickling
+        Sets the state of the loss function for pickling.
 
         Parameters
         ----------
@@ -71,7 +79,7 @@ class BaseLoss(nn.Module):
 
     def forward(self, output: Tensor, target: Tensor) -> Tensor:
         """
-        Forward pass of the loss function
+        Forward pass of the loss function.
 
         Parameters
         ----------
@@ -89,9 +97,39 @@ class BaseLoss(nn.Module):
         return self._loss_func(output, target)
 
 
-class CrossEntropyLoss(BaseLoss):
+class GeneralLoss(BaseLoss):
     """
-    Cross entropy loss function
+    A general loss function that can be used with any torch.nn loss function class.
+    """
+    def __init__(self, loss_func: str, *args: Any, **kwargs: Any) -> None:
+        """
+        Parameters
+        ----------
+        loss_func : str
+            Loss function name from torch.nn
+        *args
+            Optional arguments to be passed to loss_func
+        **kwargs
+            Optional keyword arguments to be passed to loss_func
+        """
+        self._name: str = loss_func
+        super().__init__(getattr(nn, self._name), *args, **kwargs)
+
+    def __getstate__(self) -> dict[str, Any]:
+        return super().__getstate__() | {'name': self._name}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        self._name = state.get('name', type(self).__name__)
+        self._loss_func = getattr(nn, self._name)(*self._args, **self._kwargs)
+
+    def extra_repr(self) -> str:
+        return f'loss_func={repr(self._name)}'
+
+
+class CrossEntropyLoss(GeneralLoss):
+    """
+    Cross entropy loss function.
     """
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -102,40 +140,36 @@ class CrossEntropyLoss(BaseLoss):
         **kwargs
             Optional keyword arguments to be passed to CrossEntropyLoss
         """
-        super().__init__(nn.CrossEntropyLoss, *args, **kwargs)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        super().__setstate__(state)
-        self._loss_func = nn.CrossEntropyLoss(*self._args, **self._kwargs)
+        super().__init__('CrossEntropyLoss', *args, **kwargs)
 
 
-class GaussianNLLLoss(BaseLoss):
+class GaussianNLLLoss(GeneralLoss):
     """
-    Gaussian negative log likelihood loss function
+    Gaussian negative log likelihood loss function.
     """
     def __init__(self, *args: Any, dim: int = 1, **kwargs: Any) -> None:
         """
         Parameters
         ----------
-        dim : int, default = 1
-            Dimension of the target that contains the mean and uncertainty
+        dim : int, Optional
+            Dimension of the target that contains the mean and uncertainty, default = 1
         *args
             Optional arguments to be passed to GaussianNLLLoss
         **kwargs
             Optional keyword arguments to be passed to GaussianNLLLoss
         """
-        super().__init__(nn.GaussianNLLLoss, *args, **kwargs)
+        super().__init__('GaussianNLLLoss', *args, **kwargs)
         self._dim: int = dim
 
     def __getstate__(self) -> dict[str, Any]:
-        state = super().__getstate__()
-        state['dim'] = self._dim
-        return state
+        return super().__getstate__() | {'dim': self._dim}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         super().__setstate__(state)
-        self._loss_func = nn.GaussianNLLLoss(*self._args, **self._kwargs)
         self._dim = state['dim']
+
+    def extra_repr(self) -> str:
+        return f'dim={self._dim}'
 
     def forward(self, output: Tensor, target: Tensor) -> Tensor:
         if target.shape[self._dim] != 2 or output.shape[self._dim] != 1:
@@ -148,9 +182,9 @@ class GaussianNLLLoss(BaseLoss):
         return self._loss_func(output[*idx][0], target[*idx][0], target[*idx][1] ** 2)
 
 
-class MSELoss(BaseLoss):
+class MSELoss(GeneralLoss):
     """
-    Mean Squared Error (MSE) loss function
+    Mean Squared Error (MSE) loss function.
     """
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -161,11 +195,7 @@ class MSELoss(BaseLoss):
         **kwargs
             Optional keyword arguments to be passed to MSELoss
         """
-        super().__init__(nn.MSELoss, *args, **kwargs)
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        super().__setstate__(state)
-        self._loss_func = nn.MSELoss(*self._args, **self._kwargs)
+        super().__init__('MSELoss', *args, **kwargs)
 
 
-__all__ = ['CrossEntropyLoss', 'GaussianNLLLoss', 'MSELoss']
+__all__ = ['BaseLoss', 'CrossEntropyLoss', 'GaussianNLLLoss', 'GeneralLoss', 'MSELoss']

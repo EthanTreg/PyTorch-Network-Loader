@@ -7,13 +7,13 @@ from typing import Any, Self, cast, overload
 
 import torch
 import numpy as np
-from numpy import ndarray
 from torch import nn, Tensor
 
 from netloader.utils import Shapes
 from netloader.data import DataList
+from netloader.layers import multi_layer
 from netloader.utils.types import TensorListLike
-from netloader.layers.base import BaseLayer, BaseSingleLayer, BaseMultiLayer
+from netloader.layers.base import BaseLayer, BaseSingleLayer
 
 
 class BatchNorm(BaseSingleLayer):
@@ -22,10 +22,12 @@ class BatchNorm(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(self, shapes: Shapes, **kwargs: Any) -> None:
@@ -58,16 +60,11 @@ class Checkpoint(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x, checkpoints) -> TensorListLike
-        Forward pass of the checkpoint layer
-    extra_repr() -> str:
-        Displays layer parameters when printing the network
+    description : str
+        Description of the layer
     """
     def __init__(
             self,
@@ -125,144 +122,18 @@ class Checkpoint(BaseLayer):
         return f'checkpoint_num={self._check_num}'
 
 
-class Concatenate(BaseMultiLayer):
-    """
-    Constructs a concatenation layer to combine the outputs from two layers.
-
-    Attributes
-    ----------
-    group : int, default = 0
-        Layer group, if 0 it will always be used, else it will only be used if its group matches the
-        Networks
-
-    Methods
-    -------
-    forward(x, outputs, checkpoints) -> Tensor
-        Forward pass of the concatenation layer
-    extra_repr() -> str
-        Displays layer parameters when printing the network
-    """
-    def __init__(
-            self,
-            net_check: bool,
-            layer: int,
-            shapes: Shapes,
-            check_shapes: Shapes,
-            *,
-            checkpoint: bool = False,
-            dim: int = 0,
-            **kwargs: Any) -> None:
-        """
-        Parameters
-        ----------
-        net_check : bool
-            If layer index should be relative to checkpoint layers
-        layer : int
-            Layer index to concatenate the previous layer output with
-        shapes : Shapes
-            Shape of the outputs from each layer
-        check_shapes : Shapes
-            Shape of the outputs from each checkpoint
-        checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers or network layers, if checkpoints
-            in net is True, layer will always be relative to checkpoints
-        dim : int, default = 0
-            Dimension to concatenate to
-        **kwargs
-            Leftover parameters to pass to base layer for checking
-        """
-        super().__init__(net_check, layer, shapes, check_shapes, checkpoint=checkpoint, **kwargs)
-        self._dim: int = dim
-        shape: list[int] = shapes[-1].copy()
-        assert isinstance(self._target[0], int)
-        self._target = cast(list[int], self._target)
-
-        # If tensors cannot be concatenated along the specified dimension
-        self._check_concatenation(shape)
-
-        shape[self._dim] = shape[self._dim] + self._target[self._dim]
-        shapes.append(shape)
-
-    def __getstate__(self) -> dict[str, Any]:
-        return super().__getstate__() | {'dim': self._dim}
-
-    def _check_concatenation(self, shape: list[int]) -> None:
-        """
-        Checks if input shape and target shape are compatible for concatenation.
-
-        Parameters
-        ----------
-        shape : list[int]
-            Input shape
-        """
-        if ((self._target[:self._dim] + (self._target[self._dim + 1:] if self._dim != -1 else []) !=
-             shape[:self._dim] + (shape[self._dim + 1:] if self._dim != -1 else [])) or
-                (len(self._target) != len(shape))):
-            raise ValueError(f'Input shape {shape} does not match the target shape {self._target} '
-                             f"in {'checkpoint' if self._checkpoint else 'layer'} {self._layer} "
-                             f'for concatenation over dimension {self._dim}')
-
-    def forward(
-            self,
-            x: Tensor,
-            outputs: list[TensorListLike],
-            checkpoints: list[TensorListLike],
-            *_: Any,
-            **__: Any) -> Tensor:
-        """
-        Forward pass of the concatenation layer.
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (N,...) and type float, where N is the batch size
-        outputs : list[TensorListLike]
-            Output from each layer with tensors of shape (N,...) and type float
-        checkpoints : list[TensorListLike]
-            Output from each checkpoint with tensors of shape (N,...) and type float
-
-        Returns
-        -------
-        Tensor
-            Output tensor of shape (N,...) and type float
-        """
-        dim: int
-        self._check_num_outputs(
-            checkpoints[self._layer] if self._checkpoint else outputs[self._layer],
-        )
-
-        if self._dim >= 0:
-            dim = self._dim + 1
-        else:
-            dim = self._dim
-
-        if self._checkpoint:
-            return torch.cat((x, cast(Tensor, checkpoints[self._layer])), dim=dim)
-
-        return torch.cat((x, cast(Tensor, outputs[self._layer])), dim=dim)
-
-    def extra_repr(self) -> str:
-        """
-        Displays layer parameters when printing the network.
-
-        Returns
-        -------
-        str
-            Layer parameters
-        """
-        return f'{super().extra_repr()}, dim={self._dim}'
-
-
 class Dropout(BaseSingleLayer):
     """
     Constructs a dropout layer to randomly zero out elements of the input tensor.
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -276,7 +147,7 @@ class Dropout(BaseSingleLayer):
         ----------
         prob : float
             Probability of dropout
-        shapes : Shapes | None, default = None
+        shapes : Shapes | None, Optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
         **kwargs
@@ -307,14 +178,11 @@ class DropPath(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the drop path layer
+    description : str
+        Description of the layer
     """
     def __init__(
             self,
@@ -327,7 +195,7 @@ class DropPath(BaseLayer):
         ----------
         prob : float
             Probability of dropout
-        shapes : Shapes | None, default = None
+        shapes : Shapes | None, Optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
         **kwargs
@@ -387,16 +255,11 @@ class Index(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the indexing layer
-    extra_repr() -> str
-        Displays layer parameters when printing the network
+    description : str
+        Description of the layer
     """
     @overload
     def __init__(
@@ -412,9 +275,9 @@ class Index(BaseLayer):
             self,
             number: int,
             *,
-            map_: bool = True,
-            greater: bool = True,
-            shapes: Shapes | None = None,
+            map_: bool = ...,
+            greater: bool = ...,
+            shapes: Shapes | None = ...,
             **kwargs: Any) -> None: ...
 
     def __init__(
@@ -424,16 +287,16 @@ class Index(BaseLayer):
             index: int | list[int | None] | tuple[int | None, ...] | slice | None = None,
             shapes: Shapes | None = None,
             **kwargs: Any) -> None:
-        """
+        r"""
         Parameters
         ----------
         index : int | list[int | None] | tuple[int | None, ...] | slice
-            Index or slice to apply to the last dimension of the input tensor(s) or if map_ is
+            Index or slice to apply to the last dimension of the input tensor(s) or if map\_ is
             False, the DataList itself
-        map_ : bool, default = True
+        map\_ : bool, Optional
             If slicing should be applied to each tensor in a DataList, or if the DataList should be
-            sliced itself, only used if input is a DataList
-        shapes : Shapes | None, default = None
+            sliced itself, only used if input is a DataList, default = True
+        shapes : Shapes | None, Optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
         **kwargs
@@ -453,7 +316,7 @@ class Index(BaseLayer):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            number = args[0] if args else kwargs.pop('number')
+            number = kwargs.pop('number') if 'number' in kwargs else args[0]
             self._idx = slice(number, None) if kwargs.pop('greater', True) else slice(number)
         elif index is None and 'idx' in kwargs:
             warn(
@@ -548,14 +411,11 @@ class LayerNorm(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the layer normalisation layer
+    description : str
+        Description of the layer
     """
     def __init__(
             self,
@@ -567,13 +427,13 @@ class LayerNorm(BaseLayer):
         """
         Parameters
         ----------
-        dims : int | None, default = None
+        dims : int | None, Optional
             Number of dimensions to normalise starting with the first dimension, ignoring batch
             dimension, requires shapes argument, won't be used if shape is provided
-        shape : list[int] | None, default = None
+        shape : list[int] | None, Optional
             Input shape or shape of the first dimension to normalise, will be used if provided, else
             dims will be used
-        shapes : Shapes | None, default = None
+        shapes : Shapes | None, Optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
         **kwargs
@@ -616,156 +476,17 @@ class LayerNorm(BaseLayer):
         return self._layer(x.permute(0, *permutation)).permute(0, *permutation)
 
 
-class Pack(BaseLayer):
-    """
-    Constructs a packing layer to combine the output from the previous layer with the output from
-    a specified layer into a DataList.
-
-    Attributes
-    ----------
-    group : int, default = 0
-        Layer group, if 0 it will always be used, else it will only be used if its group matches the
-        Networks
-
-    Methods
-    -------
-    forward(x, outputs, checkpoints) -> DataList[Tensor]
-        Forward pass of the pack layer
-    extra_repr() -> str
-        Displays layer parameters when printing the network
-    """
-    def __init__(
-            self,
-            net_check: bool,
-            *args: int | Shapes,
-            checkpoint: bool = False,
-            layer: int | None = None,
-            **kwargs: Any) -> None:
-        """
-        Parameters
-        ----------
-        net_check : bool
-            If layer index should be relative to checkpoint layers
-        shapes : Shapes
-            Shape of the outputs from each layer
-        check_shapes : Shapes
-            Shape of the outputs from each checkpoint
-        checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers
-        layer : int | None, default = None
-            Layer index to pack with the previous layer, if layer is None, then only the last layer
-            will be packed
-        **kwargs
-            Leftover parameters to pass to base layer for checking
-        """
-        super().__init__(**kwargs)
-        target: list[int] | list[list[int]]
-        out_shape: list[list[int]]
-        shapes: Shapes = kwargs.pop(
-            'shapes',
-            None if not args else args[1] if isinstance(args[0], int) else args[0],
-        )
-        check_shapes: Shapes = kwargs.pop('check_shapes', None if not args else args[-1])
-        self._checkpoint: bool = checkpoint or net_check
-        self._layer: int | None = layer
-
-        if args and isinstance(args[0], int):
-            warn(
-                'Passing layer as a positional argument is deprecated, please use layer=',
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._layer = args[0]
-
-        out_shape = [shapes[-1]] if shapes.check(-1) else \
-            cast(list[list[int]], shapes.get(-1, True))
-
-        if self._layer is not None:
-            target = (check_shapes if self._checkpoint else shapes).get(self._layer, True)
-
-            if isinstance(target[0], int):
-                out_shape.append(cast(list[int], target))
-            else:
-                out_shape.extend(cast(list[list[int]], target))
-
-        shapes.append(deepcopy(out_shape))
-
-    def __getstate__(self) -> dict[str, Any]:
-        return super().__getstate__() | {
-            'checkpoint': self._checkpoint,
-            'layer': self._layer,
-        }
-
-    def forward(
-            self,
-            x: TensorListLike,
-            outputs: list[TensorListLike],
-            checkpoints: list[TensorListLike],
-            *_: Any,
-            **__: Any) -> DataList[Tensor]:
-        """
-        Forward pass of the pack layer.
-
-        Parameters
-        ----------
-        x : TensorListLike
-            Input with tensors of shape (N,...) and type float, where N is the batch size
-        outputs : list[TensorListLike]
-            Output from each layer with tensors of shape (N,...) and type float
-        checkpoints : list[TensorListLike]
-            Output from each checkpoint with tensors of shape (N,...) and type float
-
-        Returns
-        -------
-        DataList[Tensor]
-            Output DataList with tensors of shape (N,...) and type float
-        """
-        targets: TensorListLike
-
-        if self._layer is None:
-            return DataList([x]) if isinstance(x, Tensor) else x
-
-        targets = (checkpoints if self._checkpoint else outputs)[self._layer]
-
-        if isinstance(x, DataList) and isinstance(targets, DataList):
-            x.extend(targets)
-        elif isinstance(x, DataList):
-            x.append(cast(Tensor, targets))
-        elif isinstance(x, Tensor) and isinstance(targets, DataList):
-            x = DataList([x])
-            x.extend(targets)
-        else:
-            x = DataList([x, targets])
-        return x
-
-    def extra_repr(self) -> str:
-        """
-        Displays layer parameters when printing the network.
-
-        Returns
-        -------
-        str
-            Layer parameters
-        """
-        return f'layer={self._layer}, checkpoint={bool(self._checkpoint)}'
-
-
 class Pad(BaseLayer):
     """
     Constructs a padding layer to pad the output from the previous layer.
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the padding layer
-    extra_repr() -> str
-        Displays layer parameters when printing the network
+    description : str
+        Description of the layer
     """
     @overload
     def __init__(
@@ -805,15 +526,15 @@ class Pad(BaseLayer):
             of tuple of integers is provided, then asymmetric (left, right) padding will be applied,
             if tuple of integers is provided, each pair of integers will be applied to left and
             right of the corresponding dimension
-        shapes : Shapes | None = None
-            Shape of the outputs from each layer, only required if tracking layer outputs is
-            necessary
-        dims : int, default = -1
+        dims : int, Optional
             Number of dimensions to pad starting with the last dimension, ignoring batch dimension,
             if shapes is not provided, dims must be greater than 0, if negative, excludes the first
             abs(dims) dimensions, if 0 pads all dimensions, won't be used if padding is a list of
-            integers or list of tuple of integers
-        pad_kwargs : dict[str, Any] | None = None
+            integers or list of tuple of integers, default = -1
+        shapes : Shapes | None, Optional
+            Shape of the outputs from each layer, only required if tracking layer outputs is
+            necessary
+        pad_kwargs : dict[str, Any] | None, Optional
             Additional keyword arguments to pass to the padding function
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -927,16 +648,11 @@ class Reshape(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of Reshape
-    extra_repr() -> str
-        Displays layer parameters when printing the network
+    description : str
+        Description of the layer
     """
     def __init__(
             self,
@@ -952,15 +668,15 @@ class Reshape(BaseLayer):
         ----------
         shape : list[int]
             Desired shape of the output tensor, ignoring first dimension
-        factor : bool, default = False
+        factor : bool, Optional
             If reshape should be relative to the network output shape, or if layer is provided,
-            which layer to be relative to, requires tracking layer outputs
-        layer : int | None, default = None
+            which layer to be relative to, requires tracking layer outputs, default = False
+        layer : int | None, Optional
             If factor is True, which layer for factor to be relative to, if None, network output
             will be used
-        net_out : list[int] | None, default = None
+        net_out : list[int] | None, Optional
             Shape of the network's output, required only if factor is True
-        shapes : Shapes | None, default = None
+        shapes : Shapes | None, Optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
         **kwargs
@@ -1052,14 +768,11 @@ class Scale(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the scale layer
+    description : str
+        Description of the layer
     """
     def __init__(
             self,
@@ -1078,9 +791,9 @@ class Scale(BaseLayer):
             Initial scale factor
         shapes : Shapes
             Shape of the outputs from each layer
-        first : bool, default = True
+        first : bool, Optional
             If dims should count from the first dimension after the batch dimension, or from the
-            final dimension backwards
+            final dimension backwards, default = True
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -1101,9 +814,13 @@ class Scale(BaseLayer):
     def __getstate__(self) -> dict[str, Any]:
         return super().__getstate__() | {
             'first': self._first,
-            'dims': len(self._scale),
-            'scale': self._scale.detach().cpu().tolist()[0],
+            'dims': self._scale.ndim,
+            'scale': self._scale.detach().flatten().cpu().tolist()[0],
         }
+
+    def extra_repr(self) -> str:
+        return (f'first={self._first}, dims={self._scale.ndim}, '
+                f'scale={self._scale.detach().flatten().cpu().tolist()[0]}')
 
     def forward(self, x: Tensor, *_: Any, **__: Any) -> Tensor:
         """
@@ -1126,278 +843,30 @@ class Scale(BaseLayer):
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
-        self._scale.to(*args, **kwargs)
+        self._scale = self._scale.to(*args, **kwargs)
         return self
 
 
-class Shortcut(BaseMultiLayer):
-    """
-    Constructs a shortcut layer to add the outputs from two layers.
+__all__ = [
+    'BatchNorm',
+    'Checkpoint',
+    'Dropout',
+    'DropPath',
+    'Index',
+    'LayerNorm',
+    'Pad',
+    'Reshape',
+    'Scale',
+]
 
-    Attributes
-    ----------
-    group : int, default = 0
-        Layer group, if 0 it will always be used, else it will only be used if its group matches the
-        Networks
 
-    Methods
-    -------
-    forward(x, outputs, checkpoints) -> Tensor
-        Forward pass of the shortcut layer
-    """
-    def __init__(
-            self,
-            net_check: bool,
-            layer: int,
-            shapes: Shapes,
-            check_shapes: Shapes,
-            *,
-            checkpoint: bool = False,
-            **kwargs: Any) -> None:
-        """
-        Parameters
-        ----------
-        net_check : bool
-            If layer index should be relative to checkpoint layers
-        layer : int
-            Layer index to add the previous layer output with
-        shapes : Shapes
-            Shape of the outputs from each layer
-        check_shapes : Shapes
-            Shape of the outputs from each checkpoint
-        checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers or network layers, if checkpoints
-            in net is True, layer will always be relative to checkpoints
-        **kwargs
-            Leftover parameters to pass to base layer for checking
-        """
-        super().__init__(net_check, layer, shapes, check_shapes, checkpoint=checkpoint, **kwargs)
-        idxs: ndarray
-        target: ndarray = np.array(self._target)
-        shape: ndarray = np.array(shapes[-1].copy())
-        mask: ndarray = (shape != 1) & (self._target != 1)
-        assert isinstance(self._target[0], int)
-        self._check_addition(shape, mask)
-
-        # If input has any dimensions of length one, output will take the target dimension
-        if 1 in shape:
-            idxs = np.where(shape == 1)[0]
-            shape[idxs] = target[idxs]
-
-        # If target has any dimensions of length one, output will take the input dimension
-        if 1 in target:
-            idxs = np.where(target == 1)[0]
-            shape[idxs] = shape[idxs]
-
-        shapes.append(shape.tolist())
-
-    def _check_addition(self, shape: ndarray, mask: ndarray) -> None:
-        """
-        Checks if input shape and target shape are compatible for addition.
-
-        Parameters
-        ----------
-        shape : ndarray
-            Input shape
-        mask : ndarray
-            Mask for dimensions with size of one in both input and target
-        """
-        if not np.array_equal(shape[mask], np.array(self._target)[mask]):
-            raise ValueError(f'Input shape {shape} is not compatible with target shape '
-                             f"{self._target} in {'checkpoint' if self._checkpoint else 'layer'} "
-                             f'{self._layer} for addition')
-
-    def forward(
-            self,
-            x: Tensor,
-            outputs: list[TensorListLike],
-            checkpoints: list[TensorListLike],
-            *_: Any,
-            **__: Any) -> Tensor:
-        """
-        Forward pass of the shortcut layer
-
-        Parameters
-        ----------
-        x : Tensor
-            Input tensor of shape (N,...) and type float, where N is the batch size
-        outputs : list[TensorListLike]
-            Output from each layer with tensors of shape (N,...) and type float
-        checkpoints : list[TensorListLike]
-            Output from each checkpoint with tensors of shape (N,...) and type float
-
-        Returns
-        -------
-        Tensor
-            Output tensor of shape (N,...) and type float
-        """
-        self._check_num_outputs(
-            checkpoints[self._layer] if self._checkpoint else outputs[self._layer],
+def __getattr__(name: str) -> Any:
+    if hasattr(multi_layer, name):
+        warn(
+            f'Accessing {name} from layers.misc is deprecated, please use layers or '
+            f'layers.multi_layer instead',
+            DeprecationWarning,
+            stacklevel=2,
         )
-
-        if self._checkpoint:
-            return x + cast(Tensor, checkpoints[self._layer])
-        return x + cast(Tensor, outputs[self._layer])
-
-
-class Skip(BaseMultiLayer):
-    """
-    Bypasses previous layers by retrieving the output from the defined layer.
-
-    Attributes
-    ----------
-    group : int, default = 0
-        Layer group, if 0 it will always be used, else it will only be used if its group matches the
-        Networks
-
-    Methods
-    -------
-    forward(x, outputs, checkpoints) -> TensorListLike
-        Forward pass of the shortcut layer
-    """
-    def __init__(
-            self,
-            net_check: bool,
-            layer: int,
-            shapes: Shapes,
-            check_shapes: Shapes,
-            *,
-            checkpoint: bool = False,
-            **kwargs: Any) -> None:
-        """
-        Parameters
-        ----------
-        net_check : bool
-            If layer index should be relative to checkpoint layers
-        layer : int
-            Layer index to get the output from
-        shapes : Shapes
-            Shape of the outputs from each layer
-        check_shapes : Shapes
-            Shape of the outputs from each checkpoint
-        checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers or network layers, if checkpoints
-            in net is True, layer will always be relative to checkpoints
-        **kwargs
-            Leftover parameters to pass to base layer for checking
-        """
-        super().__init__(net_check, layer, shapes, check_shapes, checkpoint=checkpoint, **kwargs)
-        shapes.append(self._target)
-
-    def forward(
-            self,
-            *_: Any,
-            outputs: list[TensorListLike],
-            checkpoints: list[TensorListLike],
-            **__: Any) -> TensorListLike:
-        """
-        Forward pass of the skip layer.
-
-        Parameters
-        ----------
-        outputs : list[TensorListLike]
-            Output from each layer with tensors of shape (N,...) and type float
-        checkpoints : list[TensorListLike]
-            Output from each checkpoint with tensors of shape (N,...) and type float
-
-        Returns
-        -------
-        TensorListLike
-            Output with tensors of shape (N,...) and type float
-        """
-        return (checkpoints if self._checkpoint else outputs)[self._layer]
-
-
-class Unpack(BaseLayer):
-    """
-    Enables a list of Tensors as input into the network, then selects which Tensor in the list to
-    output.
-
-    Methods
-    -------
-    forward(*_, outputs) -> Tensor
-        Forward pass of Unpack
-    extra_repr() -> str
-        Displays layer parameters when printing the network
-    """
-    def __init__(
-            self,
-            net_check: bool,
-            index: int,
-            shapes: Shapes,
-            check_shapes: Shapes,
-            *,
-            checkpoint: bool = False,
-            layer: int = 0,
-            **kwargs: Any) -> None:
-        """
-        Parameters
-        ----------
-        net_check : bool
-            If layer index should be relative to checkpoint layers
-        index : int
-            Index of input Tensor list
-        shapes : Shapes
-            Shape of the outputs from each layer
-        check_shapes : Shapes
-            Shape of the outputs from each checkpoint
-        checkpoint : bool, default = False
-            If layer index should be relative to checkpoint layers or network layers, if checkpoints
-            in net is True, layer will always be relative to checkpoints
-        layer : int, default = 0
-            Layer index to get the output from if checkpoint is True
-        **kwargs
-            Leftover parameters to pass to base layer for checking
-        """
-        super().__init__(**kwargs)
-        self._checkpoint: bool = checkpoint or net_check
-        self._layer: int = layer
-        self._idx: int = index
-        shapes.append((check_shapes if self._checkpoint else shapes)[(self._layer, self._idx)])
-
-    def __getstate__(self) -> dict[str, Any]:
-        return super().__getstate__() | {
-            'checkpoint': self._checkpoint,
-            'layer': self._layer,
-            'index': self._idx,
-        }
-
-    def forward(
-            self,
-            *_: Any,
-            outputs: list[TensorListLike],
-            checkpoints: list[TensorListLike],
-            **__: Any) -> Tensor:
-        """
-        Forward pass of the skip layer.
-
-        Parameters
-        ----------
-        outputs : list[TensorListLike]
-            Output from each layer with tensors of shape (N,...) and type float, where N is the
-            batch size
-        checkpoints : list[TensorListLike]
-            Output from each checkpoint with tensors of shape (N,...) and type float, where N is the
-            batch size
-
-        Returns
-        -------
-        Tensor
-            Output tensor with shape (N,...) and type float
-        """
-        self._check_num_outputs(
-            (checkpoints if self._checkpoint else outputs)[self._layer],
-            single=False,
-        )
-        return cast(Tensor, (checkpoints if self._checkpoint else outputs)[self._layer][self._idx])
-
-    def extra_repr(self) -> str:
-        """
-        Displays layer parameters when printing the network
-
-        Returns
-        -------
-        str
-            Layer parameters
-        """
-        return f'index={self._idx}, checkpoint={bool(self._checkpoint)}, layer={self._layer}'
+        return getattr(multi_layer, name)
+    raise AttributeError(f"module {__name__} has no attribute {name}")

@@ -1,0 +1,5 @@
+@media (min-width: 1280px) {
+  .sy-main {
+    width: calc(100% - 30rem) !important;
+  }
+}

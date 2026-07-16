@@ -1,107 +1,104 @@
 """
-Base network class to base other networks off
+Base architecture class to base other architectures off
 """
 import os
 import logging as log
 from time import time
 from warnings import warn
-from typing import Any, Self, Generic, Literal, cast, overload
+from itertools import repeat
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any, Self, Sequence, Generic, Literal, Callable, cast, overload
 
 import torch
 import numpy as np
+from numpy import ndarray
 from torch import nn, optim, Tensor
 from torch.utils.data import DataLoader
+from torch.optim.optimizer import ParamsT
 from torch._dynamo import OptimizedModule
-from numpy import ndarray
 
 import netloader
 from netloader import utils
 from netloader.transforms import BaseTransform
-from netloader.networks.utils import UtilityMixin
-from netloader.network import Network, CompatibleNetwork
-from netloader.data import Data, DataList, data_collation
+from netloader.architectures.utils import UtilityMixin
+from netloader.data import ApplyFunc, Data, DataList, data_collation
+from netloader.network import BaseNetwork, CompatibleNetwork
 from netloader.utils.types import (
-    Param,
     TensorLike,
     NDArrayLike,
     TensorListLike,
     NDArrayListLike,
+    DatasetT,
     LossCT,
     TensorLossCT,
 )
 
+if TYPE_CHECKING:
+    from wandb import Run
+else:
+    Run = Any
 
-class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
+
+class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
     # pylint: disable=line-too-long
     """
-    Base network class that other types of networks build from
+    Base architecture class that other types of architectures build from
 
     Attributes
     ----------
     description : str
-        Description of the network
+        Description of the architecture
     version : str
-        Version of the network when it was created or re-saved
+        Version of the architecture when it was created or re-saved
     losses : tuple[list[LossCT], list[LossCT]]
-        Network training and validation losses as a float or dictionary of losses for each loss
+        Architecture training and validation losses as a float or dictionary of losses for each loss
         function
     transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
     idxs: ndarray | None
         Training data indices with shape (N) and type int, where N is the number of elements in the
         training dataset
-    optimiser : optim.Optimizer
-        Network optimiser
-    scheduler : optim.lr_scheduler.LRScheduler
+    optimiser : Optimizer
+        Architecture optimiser
+    scheduler : LRScheduler
         Optimiser scheduler
-    net : Network | CompatibleNetwork
+    net : BaseNetwork
         Neural network
-
-    Methods
-    -------
-    batch_predict(data) -> tuple[NDArrayLike | None, ...]
-        Generates predictions for the given data batch
-    compile(**kwargs)
-        Compiles the network using torch.compile for faster training and prediction
-    extra_repr() -> str
-        Additional representation of the architecture
-    get_device() -> torch.device
-        Gets the device of the network
-    get_epochs() -> int
-        Returns the number of epochs the network has been trained for
-    get_hyperparams() -> dict[str, Any]
-        Returns the hyperparameters of the network
-    get_losses() -> tuple[dict[str, list[float]], dict[str, list[float]]] | tuple[list[float], list[float]]
-        Returns the training and validation losses as dictionaries of losses if loss is a
-        dictionary, else returns losses
-    get_loss_weights(name: str='') -> float | dict[str, float]
-        Gets the weights for a loss function term or all loss function term weights
-    train(train)
-        Flips the train/eval state of the network
-    training(epoch, loaders)
-        Trains & validates the network for each epoch
-    save()
-        Saves the network to the given path
-    set_save_path(name, states_dir, *, overwrite=False)
-        Sets the path to save the network
-    set_loss_weights(loss_weights)
-        Sets the weights for each loss term
-    predict(loader, *, inputs=False, path='', **kwargs) -> dict[str, NDArrayLike]
-        Generates predictions for a dataset and can save to a file
-    to(*args, **kwargs) -> Self
-        Move and/or cast the parameters and buffers
     """
     # pylint: enable=line-too-long
+    _half: bool
+    _train_state: bool = True
+    _plot_active: bool = False
+    _save_freq: int
+    _epoch: int = 0
+    _save_path: str = ''
+    _verbose: Literal['epoch', 'full', 'plot', 'progress', None]
+    _loader_states: tuple[Tensor, Tensor] | None = None
+    _loss_weights: dict[str, float | Callable[[], float]]
+    _optimiser_kwargs: dict[str, Any]
+    _scheduler_kwargs: dict[str, Any]
+    _logger: log.Logger = log.getLogger(__name__)
+    _device: torch.device = torch.device('cpu')
+    description: str
+    version: str = netloader.__version__
+    losses: tuple[list[LossCT], list[LossCT]]
+    transforms: dict[str, Sequence[BaseTransform] | BaseTransform | None]
+    idxs: ndarray | None = None
+    optimiser: optim.Optimizer
+    scheduler: optim.lr_scheduler.LRScheduler
+    net: BaseNetwork
+    run: Run | None = None
+
     def __init__(
             self,
             save_num: int | str,
             states_dir: str,
-            net: nn.Module | Network | CompatibleNetwork,
+            net: nn.Module | BaseNetwork,
             *,
             overwrite: bool = False,
             mix_precision: bool = False,
             save_freq: int = 1,
-            learning_rate: float = 1e-3,
+            learning_rate: float | tuple[float, ...] = 1e-3,
             description: str = '',
             verbose: Literal['epoch', 'full', 'plot', 'progress', None] = 'epoch',
             transform: list[BaseTransform] | BaseTransform | None = None,
@@ -112,61 +109,50 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         Parameters
         ----------
         save_num : int | str
-            File number or name to save the network
+            File number or name to save the architecture
         states_dir : str
-            Directory to save the network
-        net : nn.Module | Network | CompatibleNetwork
+            Directory to save the architecture
+        net : Module | BaseNetwork
             Network to predict low-dimensional data
-        overwrite : bool, default = False
+        overwrite : bool, Optional
             If saving can overwrite an existing save file, if False and file with the same name
-            exists, an error will be raised
-        mix_precision: bool, default = False
-            If mixed precision should be used
-        save_freq : int, default = 1
-            Frequency of epochs to save the network
-        learning_rate : float, default = 1e-3
-            Optimiser initial learning rate
-        description : str, default = ''
-            Description of the network
+            exists, an error will be raised, default = False
+        mix_precision : bool, Optional
+            If mixed precision should be used, default = False
+        save_freq : int, Optional
+            Frequency of epochs to save the architecture, default = 1
+        learning_rate : float | tuple[float, ...], Optional
+            Optimiser initial learning rate, default = 1e-3
+        description : str, Optional
+            Description of the architecture
         verbose : {'epoch', 'full', 'plot', 'progress', None}
             If details about each epoch should be printed ('epoch'), details about epoch and epoch
             progress (full), details about epoch and an ASCII plot of the loss progress ('plot'),
             just total progress ('progress'), or nothing (None)
-        transform : list[BaseTransform] | BaseTransform | None, default = None
+        transform : list[BaseTransform] | BaseTransform | None, Optional
             Transformation(s) of the network's output(s)
-        in_transform : list[BaseTransform] | BaseTransform | None, default = None
+        in_transform : list[BaseTransform] | BaseTransform | None, Optional
             Transformation(s) for the network's input(s)
-        optimiser_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_optimiser
-        scheduler_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_scheduler
+        optimiser_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_optimiser
+        scheduler_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_scheduler
         """
-        self._train_state: bool = True
-        self._plot_active: bool = False
-        self._half: bool = mix_precision
-        self._epoch: int = 0
-        self._save_freq: int = save_freq
-        self._save_path: str = ''
-        self._verbose: Literal['epoch', 'full', 'plot', 'progress', None] = verbose
-        self._loss_weights: dict[str, float] = {}
-        self._optimiser_kwargs: dict[str, Any] = optimiser_kwargs or {}
-        self._scheduler_kwargs: dict[str, Any] = scheduler_kwargs or {}
-        self._logger: log.Logger = log.getLogger(__name__)
-        self._device: torch.device = torch.device('cpu')
-        self.description: str = description
-        self.version: str = netloader.__version__
-        self.losses: tuple[list[LossCT], list[LossCT]] = ([], [])
-        self.transforms: dict[str, list[BaseTransform] | BaseTransform | None] = {
+        self._half = mix_precision
+        self._save_freq = save_freq
+        self._verbose = verbose
+        self._loss_weights = {}
+        self._optimiser_kwargs = optimiser_kwargs or {}
+        self._scheduler_kwargs = scheduler_kwargs or {}
+        self.description = description
+        self.losses = ([], [])
+        self.transforms = {
             'ids': None,
             'inputs': in_transform,
             'targets': transform,
             'preds': transform,
         }
-        self.idxs: ndarray | None = None
-        self.optimiser: optim.Optimizer
-        self.scheduler: optim.lr_scheduler.LRScheduler
-        self.net: Network | CompatibleNetwork = net if isinstance(net, Network) else \
-            CompatibleNetwork(net=net)
+        self.net = net if isinstance(net, BaseNetwork) else CompatibleNetwork(net=net)
 
         if save_num:
             self._save_path = utils.save_name(save_num, states_dir, self.net.name)
@@ -177,49 +163,70 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             elif os.path.exists(self._save_path):
                 raise FileExistsError(f'{self._save_path} already exists and overwrite is False')
 
-        self.optimiser = self.set_optimiser(
-            self.net.parameters(),
-            lr=learning_rate,
+        if self._method_override('set_optimiser', UtilityMixin):
+            warn(
+                'BaseArchitecture.set_optimiser method is deprecated, please override '
+                'init_optimiser instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.init_optimiser = self.set_optimiser  # type: ignore[method-assign]
+
+        if self._method_override('set_scheduler', UtilityMixin):
+            warn(
+                'BaseArchitecture.set_scheduler method is deprecated, please override '
+                'init_scheduler instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.init_scheduler = self.set_scheduler  # type: ignore[method-assign]
+
+        self.optimiser = self.init_optimiser(
+            self.get_param_groups(learning_rate),
             **self._optimiser_kwargs,
         )
-        self.scheduler = self.set_scheduler(self.optimiser, **self._scheduler_kwargs)
+        self.scheduler = self.init_scheduler(self.optimiser, **self._scheduler_kwargs)
 
         if isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-            self._scheduler_kwargs = ({'factor': 0.5, 'min_lr': learning_rate * 1e-3}
-                                      | self._scheduler_kwargs)
+            self._scheduler_kwargs = {
+                'factor': 0.5,
+                'min_lr': (learning_rate if isinstance(learning_rate, float) else learning_rate[0])
+                          * 1e-3
+            } | self._scheduler_kwargs
             self.scheduler.load_state_dict(self._scheduler_kwargs)
 
-        # Adds all network classes to list of safe PyTorch classes when loading saved networks
+        # Adds all architecture classes to list of safe PyTorch classes when loading saved
+        # architectures
         torch.serialization.add_safe_globals([self.__class__])
 
     def __repr__(self) -> str:
         """
-        Returns a string representation of the network.
+        Returns a string representation of the architecture.
 
         Returns
         -------
         str
-            String representation of the network
+            String representation of the architecture
         """
         return (f'Architecture: {self.__class__.__name__}\n'
-                f'Name: {os.path.basename(self._save_path).split(".")[0]}\n'
+                f'Name: {os.path.basename(self._save_path).rsplit(".", 1)[0]}\n'
                 f'Description: {self.description}\n'
                 f'Version: {self.version}\n'
                 f'Network: {self.net.name}\n'
                 f'Epoch: {self._epoch}\n'
                 f'Optimiser: {self.optimiser.__class__.__name__}\n'
                 f'Scheduler: {self.scheduler.__class__.__name__ if self.scheduler else None}\n' +
-                (f'Loss Weights: {self._loss_weights}\n' if self._loss_weights else '') +
+                (f'Loss Weights: {self.get_loss_weights()}\n' if self._loss_weights else '') +
                 f'Args: ({self.extra_repr()})')
 
     def __getstate__(self) -> dict[str, Any]:
         """
-        Returns a dictionary containing the state of the network for pickling.
+        Returns a dictionary containing the state of the architecture for pickling.
 
         Returns
         -------
         dict[str, Any]
-            Dictionary containing the state of the network
+            Dictionary containing the state of the architecture
         """
         return {
             'half': self._half,
@@ -234,6 +241,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             'optimiser_kwargs': self._optimiser_kwargs,
             'scheduler_kwargs': self._scheduler_kwargs,
             'transforms': self.transforms,
+            'rng_states': self.get_rng_states(),
             'idxs': None if self.idxs is None else self.idxs.tolist(),
             'optimiser': self.optimiser.state_dict(),
             'scheduler': self.scheduler.state_dict(),
@@ -242,12 +250,12 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """
-        Sets the state of the network for pickling.
+        Sets the state of the architecture for pickling.
 
         Parameters
         ----------
         state : dict[str, Any]
-            Dictionary containing the state of the network
+            Dictionary containing the state of the architecture
         """
         self._train_state = True
         self._plot_active = False
@@ -259,44 +267,64 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         self._half = state['half']
         self._epoch = state['epoch']
         self._save_freq = state.get('save_freq', 1)
-        self.version = state.get('version', '<3.7.1')
         self._verbose = state['verbose']
-        self._device = torch.device('cpu')
-        self._save_path = state.get('save_path', state['save_path'])
-        self.description = state['description']
-        self.losses = state['losses']
+        self._save_path = state['save_path']
+        self._loader_states = None
         self._loss_weights = state.get('loss_weights', {})
         self._optimiser_kwargs = state.get('optimiser_kwargs', {})
         self._scheduler_kwargs = state.get('scheduler_kwargs', {})
         self._logger = log.getLogger(__name__)
+        self._device = torch.device('cpu')
+        self.version = state.get('version', '<3.7.1')
+        self.description = state['description']
+        self.losses = state['losses']
         self.transforms = state['transforms'] if 'transforms' in state else state['header']
         self.idxs = state['idxs'] if state['idxs'] is None else np.array(state['idxs'])
         self.net = state['net']
+        self.run = state.get('run', None)
 
         if not utils.compare_versions(self.version, netloader.__version__):
             warn(
-                f'Network version ({self.version}) is older than the current '
-                f'netloader version ({netloader.__version__}), please resave the network '
-                f'using BaseNetwork.save()',
+                f'Architecture version ({self.version}) is older than the current '
+                f'NetLoader version ({netloader.__version__}), please resave the architecture '
+                f'using BaseArchitecture.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
 
         if 'header' in state:
             warn(
-                'header attribute of BaseNetwork is deprecated, please resave the network '
-                'with the new attribute name using net.save()',
+                'header attribute of BaseArchitecture is deprecated, please resave the '
+                'architecture with the new attribute name using BaseArchitecture.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
             self.transforms['inputs'] = state['in_transform']
 
+        if self._method_override('set_optimiser', UtilityMixin):
+            warn(
+                'BaseArchitecture.set_optimiser method is deprecated, please override '
+                'init_optimiser instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.init_optimiser = self.set_optimiser  # type: ignore[method-assign]
+
+        if self._method_override('set_scheduler', UtilityMixin):
+            warn(
+                'BaseArchitecture.set_scheduler method is deprecated, please override '
+                'init_scheduler instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.init_scheduler = self.set_scheduler  # type: ignore[method-assign]
+
         if isinstance(state['optimiser'], dict):
-            self.optimiser = self.set_optimiser(
-                self.net.parameters(),
+            self.optimiser = self.init_optimiser(
+                self.get_param_groups(None),
                 **state.get('optimiser_kwargs', {}),
             )
-            self.scheduler = self.set_scheduler(
+            self.scheduler = self.init_scheduler(
                 self.optimiser,
                 **state.get('scheduler_kwargs', {}),
             )
@@ -304,17 +332,21 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             self.scheduler.load_state_dict(state['scheduler'])
         else:
             warn(
-                'Optimiser & scheduler is saved in old non-weights safe format and is'
-                ' deprecated, please resave the network in the new format using net.save()',
+                'Optimiser & scheduler is saved in old non-weights safe format and is '
+                'deprecated, please resave the architecture in the new format using '
+                'BaseArchitecture.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
             self.optimiser = state['optimiser']
             self.scheduler = state['scheduler']
 
+        if 'rng_states' in state:
+            self.set_rng_states(state['rng_states'])
+
     def __setattr__(self, key: str, value: Any) -> None:
         """
-        Sets attributes of the network, with deprecation warning for save_path.
+        Sets attributes of the architecture, with deprecation warning for save_path.
 
         Parameters
         ----------
@@ -336,7 +368,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     def __getattr__(self, key: str) -> Any:
         """
-        Gets attributes of the network, with deprecation warning for save_path.
+        Gets attributes of the architecture, with deprecation warning for save_path.
 
         Parameters
         ----------
@@ -431,7 +463,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             )
             self._plot_active = True
 
-    def _loss(self, in_data: TensorListLike, target: TensorListLike) -> LossCT:
+    def _loss(self, in_data: TensorListLike, target: TensorListLike, extra: Any) -> LossCT:
         """
         Returns the loss as a float & updates network weights if training.
 
@@ -441,6 +473,8 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             Input data of shape (N,...) and type float, where N is the number of elements
         target : TensorListLike
             Target data of shape (N,...) and type float
+        extra : Any
+            Extra data from the data loader to pass to the loss function
 
         Returns
         -------
@@ -463,7 +497,16 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
                     stacklevel=2,
                 )
             except DeprecationWarning:
-                loss = self._loss_tensor(in_data, target)
+                try:
+                    loss = self._loss_tensor(in_data, target, extra)
+                except TypeError:
+                    warn(
+                        '_loss_tensor without extra parameter is deprecated, please update '
+                        'the method to include the extra parameter',
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                    loss = self._loss_tensor(in_data, target)  # type: ignore[call-arg]
 
         if isinstance(loss, dict) and 'total' not in loss:
             loss['total'] = self._loss_total(loss)
@@ -492,7 +535,12 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         """
         raise DeprecationWarning
 
-    def _loss_tensor(self, in_data: TensorListLike, target: TensorListLike) -> TensorLossCT:
+    @abstractmethod
+    def _loss_tensor(
+            self,
+            in_data: TensorListLike,
+            target: TensorListLike,
+            extra: Any) -> TensorLossCT:
         """
         Empty method for child classes to base their loss functions on.
 
@@ -502,13 +550,14 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             Input data of shape (N,...) and type float, where N is the number of elements
         target : TensorListLike
             Target data of shape (N,...) and type float
+        extra : Any
+            Extra data from the data loader
 
         Returns
         -------
         TensorLossCT
             Loss of shape (1) and type float or dictionary of losses of shape (1) and type float
         """
-        raise NotImplementedError
 
     def _loss_total(self, losses: dict[str, Tensor]) -> Tensor:
         """
@@ -525,36 +574,14 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             Total loss of shape (1) and type float
         """
         key: str
+        loss_weight: float | Callable[[], float]
         val: Tensor
-        total_loss: Tensor = torch.tensor(0.0, device=self._device)
+        total_loss: Tensor = torch.tensor(0., device=self._device)
 
         for key, val in losses.items():
-            total_loss += self._loss_weights.get(key, 1.0) * val
+            loss_weight = self._loss_weights.get(key, 1.0)
+            total_loss += val * (loss_weight() if callable(loss_weight) else loss_weight)
         return total_loss
-
-    def _param_device(self, params: dict[Tensor, Param] | Param, *args: Any, **kwargs: Any) -> None:
-        """
-        Sends parameters to the device, such as the parameters in the optimiser.
-
-        Parameters
-        ----------
-        params : dict[Tensor, Param] | Param
-            Parameters to move/cast
-        *args, **kwargs
-            Arguments to pass to torch.Tensor.to
-        """
-        param: Tensor | Param
-
-        for param in params.values():
-            if isinstance(param, dict):
-                self._param_device(param, *args, **kwargs)
-            elif isinstance(param, Tensor):
-                param.data = param.data.to(*args, **kwargs)
-
-                # pylint: disable=protected-access
-                if param._grad is not None:
-                    param._grad.data = param._grad.data.to(*args, **kwargs)
-                # pylint: enable=protected-access
 
     def _predict_print(self, i: int, predict_time: float, loader: DataLoader[Any]) -> None:
         """
@@ -574,6 +601,36 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
         if i == len(loader) - 1 and self._verbose is not None:
             print(f'Prediction time: {predict_time:.3e} s')
+
+    def _step(
+            self,
+            batch_step: bool,
+            epoch: int | float,
+            metric: float,
+            dataset: DatasetT | None = None) -> None:
+        """
+        Step method that is called each iteration and each epoch.
+
+        Parameters
+        ----------
+        batch_step : bool
+            If the step is being called during a batch or at the end of an epoch
+        epoch : int | float
+            Current epoch number, if batch_step is False else current epoch + batch progress
+        metric : float
+            Loss metric for the iteration or epoch
+        dataset : DatasetT, Optional
+            Dataset used for training
+        """
+        loss: float | object
+        self._update_scheduler(batch_step=batch_step, epoch=epoch, metrics=metric)
+
+        for loss in self._loss_weights.values():
+            if hasattr(loss, 'step'):
+                loss.step(epoch)
+
+        if dataset and hasattr(dataset, 'step'):
+            dataset.step(epoch)
 
     def _train_val(self, loader: DataLoader[Any]) -> LossCT:
         """
@@ -596,12 +653,13 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         loss: LossCT | None = None
         low_dim: list[Tensor] | list[Data[Tensor]] | list[DataList[Tensor | Data[Tensor]]]
         high_dim: list[Tensor] | list[Data[Tensor]] | list[DataList[Tensor | Data[Tensor]]]
+        extra: list[Any]
         batch_loss: LossCT
         target: TensorListLike
         in_data: TensorListLike
 
         with torch.set_grad_enabled(self._train_state):
-            for i, (_, low_dim, high_dim, *_) in enumerate(loader):
+            for i, (_, low_dim, high_dim, *extra) in enumerate(loader):
                 t_initial = time()
                 in_data, target = cast(
                     tuple[TensorListLike, TensorListLike],
@@ -610,18 +668,38 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
                         data_collation(high_dim, data_field=False).to(self._device),
                     ),
                 )
-                batch_loss = self._loss(in_data, target)
+
+                try:
+                    batch_loss = self._loss(in_data, target, extra[0] if extra else None)
+                except TypeError:
+                    warn(
+                        '_loss without extra parameter is deprecated, please update the '
+                        'method to include the extra parameter',
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                    batch_loss = self._loss(in_data, target)  # type: ignore[call-arg] # pylint: disable=no-value-for-parameter
 
                 if isinstance(batch_loss, dict) and loss:
                     for key, value in batch_loss.items():
-                        loss[key] += value
+                        if key in loss:
+                            loss[key] += value
+                        else:
+                            loss[key] = value
                 elif isinstance(batch_loss, float) and loss:
                     loss += batch_loss
                 else:
                     loss = batch_loss
 
                 if self._train_state:
-                    self._update_scheduler(epoch=self._epoch + (i + 1) / len(loader))
+                    self._step(
+                        True,
+                        self._epoch + (i + 1) / len(loader),
+                        batch_loss['total'] if isinstance(batch_loss, dict) else batch_loss,
+                        dataset=loader.dataset.dataset
+                        if hasattr(loader, 'dataset') and hasattr(loader.dataset, 'dataset')
+                        else None,
+                    )
 
                 self._batch_print(i, time() - t_initial, loader, batch_loss)
 
@@ -647,24 +725,51 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     def _update_epoch(self) -> None:
         """
-        Updates network epoch.
+        Updates architecture epoch.
         """
         self._epoch += 1
 
-    def _update_scheduler(self, metrics: float | None = None, **_: Any) -> None:
+    def _update_scheduler(
+            self,
+            batch_step: bool | None = None,
+            *,
+            metrics: float | None = None,
+            **_: Any) -> None:
         """
-        Updates the scheduler for the network.
+        Updates the scheduler for the architecture.
 
         Parameters
         ----------
-        metrics : float | None, default = None
+        batch_step : bool
+            If the step is being called during a batch or at the end of an epoch
+        metrics : float | None, Optional
             Loss metric to update ReduceLROnPlateau
         """
-        learning_rate: list[float]
-        new_learning_rate: list[float]
-        assert isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau)
+        learning_rate: list[float | Tensor]
+        new_learning_rate: list[float | Tensor]
+
+        if batch_step is None:
+            warn(
+                'batch_step is now a required argument for _update_scheduler, please update'
+                'the method call',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            batch_step = metrics is not None
+
+        if batch_step and not isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            self.scheduler.step()
+            return
+        if batch_step or not isinstance(self.scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            return
 
         if metrics is None:
+            warn(
+                'metrics is a required argument for _update_scheduler when batch_step is '
+                'False and scheduler is ReduceLROnPlateau, please update the method call',
+                DeprecationWarning,
+                stacklevel=2,
+            )
             return
 
         try:
@@ -700,15 +805,15 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
         Parameters
         ----------
-        level : {'net', 'loss'}, default = 'net'
+        level : {'net', 'loss'}
             If 'net', compiles the network, if 'loss', compiles the loss function
         **kwargs
             Optional keyword arguments to pass to torch.compile
         """
         if level == 'net':
-            self.net = cast(Network | CompatibleNetwork, torch.compile(self.net, **kwargs))
+            self.net = cast(BaseNetwork, torch.compile(self.net, **kwargs))
         elif level == 'loss':
-            self._loss_tensor = torch.compile(self._loss_tensor, **kwargs)  # type: ignore[method-assign] # pylint: disable=attribute-defined-outside-init
+            self._loss_tensor = torch.compile(self._loss_tensor, **kwargs)  # type: ignore[method-assign] # pylint: disable=attribute-defined-outside-init, method-hidden
         else:
             raise ValueError(f'Invalid compile level ({level}), must be "net" or "loss"')
 
@@ -725,18 +830,18 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     def get_device(self) -> torch.device:
         """
-        Gets the device of the network.
+        Gets the device of the architecture.
 
         Returns
         -------
         torch.device
-            Device of the network
+            Device of the architecture
         """
         return self._device
 
     def get_epochs(self) -> int:
         """
-        Returns the number of epochs the network has been trained for.
+        Returns the number of epochs the architecture has been trained for.
 
         Returns
         -------
@@ -747,12 +852,12 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     def get_hyperparams(self) -> dict[str, Any]:
         """
-        Returns the hyperparameters of the network.
+        Returns the hyperparameters of the architecture.
 
         Returns
         -------
         dict[str, Any]
-            Hyperparameters of the network
+            Hyperparameters of the architecture
         """
         return {
             'mix_precision': self._half,
@@ -769,17 +874,29 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             'scheduler_kwargs': self._scheduler_kwargs,
         }
 
+    def get_loader_states(self) -> tuple[Tensor, Tensor] | None:
+        """
+        Gets the current data loader states.
+
+        Returns
+        -------
+        tuple[Tensor, Tensor] | None
+            Train and validation data loader states
+        """
+        return self._loader_states
+
     def get_losses(
             self
-    ) -> tuple[dict[str, list[float]], dict[str, list[float]]] | tuple[list[float], list[float]]:
+    ) -> tuple[list[float], list[float]] | tuple[dict[str, list[float]], dict[str, list[float]]]:
         """
         Returns the training and validation losses as dictionaries of losses if loss is a
         dictionary, else returns losses.
 
         Returns
         -------
-        tuple[dict[str, list[float]], dict[str, list[float]]] | tuple[list[float], list[float]]
-            Training and validation losses as dictionaries of lists
+        tuple[list[float], list[float]] | tuple[dict[str, list[float]], dict[str, list[float]]]
+            Training and validation losses as dictionaries of lists if loss is a dictionary, else as
+            lists
         """
         if not isinstance(self.losses[0][0], dict):
             return self.losses
@@ -802,7 +919,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
         Parameters
         ----------
-        name : str, default = ''
+        name : str, Optional
             Name of the loss term to get the weight for, if empty string, returns all loss term
             weights
 
@@ -811,76 +928,65 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         float | dict[str, float]
             Weight for the specified loss term or all loss term weights
         """
-        return self._loss_weights[name] if name else self._loss_weights
+        loss: float | Callable[[], float]
+        key: str
+        losses: dict[str, float] = {}
+
+        if name and callable(loss := self._loss_weights[name]):
+            return loss()
+        if name:
+            return cast(float, self._loss_weights[name])
+
+        for key, loss in self._loss_weights.items():
+            losses[key] = loss() if callable(loss) else loss
+        return losses
+
+    def get_param_groups(self, learning_rate: float | tuple[float, ...] | None) -> ParamsT:
+        """
+        Gets the parameter groups for the optimiser.
+
+        Parameters
+        ----------
+        learning_rate : float | tuple[float, ...] | None
+            Learning rate or learning rates for the parameter groups
+
+        Returns
+        -------
+        ParamsT
+            Parameter groups for the optimiser
+        """
+        return [{
+            'params': self.net.parameters(),
+            'lr': learning_rate[0] if isinstance(learning_rate, tuple) else learning_rate or 0,
+        }]
+
+    def get_rng_states(self) -> dict[str, Any]:
+        """
+        Gets the current random number generator states.
+
+        Returns
+        -------
+        dict[str, Any]
+            Random number generator states for numpy, data loaders, pytorch, and cuda
+        """
+        return {
+            'numpy': tuple(state.tolist() if isinstance(state, ndarray) else
+                      state for state in np.random.get_state()),
+            'loaders': self._loader_states,
+            'pytorch': torch.get_rng_state(),
+            'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        }
 
     def get_save_path(self) -> str:
         """
-        Gets the path to save the network.
+        Gets the path to save the architecture.
 
         Returns
         -------
         str
-            Path to save the network
+            Path to save the architecture
         """
         return self._save_path
-
-    def train(self, train: bool) -> None:
-        """
-        Flips the train/eval state of the network.
-
-        Parameters
-        ----------
-        train : bool
-            If the network should be in the train state
-        """
-        self._train_state = train
-
-        if self._train_state:
-            self.net.train()
-        else:
-            self.net.eval()
-
-    def training(self, epochs: int, loaders: tuple[DataLoader[Any], DataLoader[Any]]) -> None:
-        """
-        Trains & validates the network for each epoch.
-
-        Parameters
-        ----------
-        epochs : int
-            Number of epochs to train the network up to
-        loaders : tuple[DataLoader[Any], DataLoader[Any]]
-            Train and validation data loaders
-        """
-        i: int
-        t_initial: float
-        loss: LossCT
-
-        # Train for each epoch
-        for i in range(self._epoch, epochs):
-            t_initial = time()
-
-            # Train network
-            self.train(True)
-            self.losses[0].append(self._train_val(loaders[0]))
-
-            # Validate network
-            self.train(False)
-            self.losses[1].append(self._train_val(loaders[1]))
-            self._update_scheduler(
-                metrics=cast(dict, self.losses[1][-1])['total']
-                if isinstance(self.losses[1][-1], dict) else self.losses[1][-1],
-            )
-
-            # Save training progress
-            self._update_epoch()
-            self.save()
-            self._epoch_print(i, epochs, time() - t_initial)
-
-        self.train(False)
-        self._plot_active = False
-        loss = self._train_val(loaders[1])
-        print(f"\nFinal validation loss: "
-              f"{cast(dict, loss)['total'] if isinstance(loss, dict) else loss:.3e}")
 
     def predict(
             self,
@@ -890,15 +996,15 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             path: str = '',
             **kwargs: Any) -> dict[str, NDArrayLike]:
         """
-        Generates predictions for the network and can save to a file.
+        Generates predictions for the architecture and can save to a file.
 
         Parameters
         ----------
         loader : DataLoader[Any]
             Data loader to generate predictions for
-        inputs : bool, default = False
-            If the input data should be returned and saved
-        path : str, default = ''
+        inputs : bool, Optional
+            If the input data should be returned and saved, default = False
+        path : str, Optional
             Path as pkl file to save the predictions if they should be saved
         **kwargs
             Optional keyword arguments to pass to batch_predict
@@ -906,7 +1012,7 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         Returns
         -------
         dict[str, NDArrayLike]
-            Prediction IDs, optional inputs, target values, and predicted values of shape (N,...)
+            Prediction IDs, Optional inputs, target values, and predicted values of shape (N,...)
             and type float for dataset of size N
         """
         t_initial: float = time()
@@ -916,11 +1022,13 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         high_dim: list[Tensor] | list[Data[Tensor]] | list[DataList[Tensor | Data[Tensor]]]
         data: list[list[NDArrayLike | None]] = []
         data_: dict[str, NDArrayLike] = {}
-        transform: list[BaseTransform] | BaseTransform | None
-        transforms: dict[str, list[BaseTransform] | BaseTransform | None] = {
-            key: transform for key, transform in self.transforms.items()
-            if inputs or key != 'inputs'
-        }
+        transform: (Sequence[BaseTransform[ndarray, ndarray]] |
+                    BaseTransform[ndarray, ndarray] | None)
+        transforms: dict[
+            str,
+            Sequence[BaseTransform[ndarray, ndarray]] | BaseTransform[ndarray, ndarray] | None
+        ] = {key: transform for key, transform in self.transforms.items()
+             if inputs or key != 'inputs'}
         datum: NDArrayLike
         target: TensorLike
         in_data: TensorLike
@@ -968,10 +1076,14 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             datum = data_collation(list(datum_), data_field=True)
 
             if isinstance(datum, DataList) and transform:
+                data_[key] = datum.apply(cast(
+                    ApplyFunc[ndarray | Data[ndarray], ..., ndarray | Data[ndarray]],
+                    transform,
+                ), back=True).numpy()
                 data_[key] = DataList(
                     [trans(val, back=True) for val, trans in zip(
                         datum,
-                        transform if isinstance(transform, list) else [transform] * len(datum),
+                        transform if isinstance(transform, list) else repeat(transform),
                     )],
                 )
             elif isinstance(transform, BaseTransform):
@@ -989,14 +1101,25 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     def save(self) -> None:
         """
-        Saves the network to the given path.
+        Saves the architecture.
         """
-        if self._save_path and (self._epoch - 1) % self._save_freq == 0:
+        if self._save_path:
             try:
                 torch.save(self, self._save_path)
-            except KeyboardInterrupt:
-                print('Program interrupted, finishing network save...')
+            except (KeyboardInterrupt, SystemExit):
+                print('Program interrupted, finishing architecture save...')
                 torch.save(self, self._save_path)
+
+    def set_save_freq(self, save_freq: int) -> None:
+        """
+        Sets the frequency of saving the architecture.
+
+        Parameters
+        ----------
+        save_freq : int
+            Frequency of saving the architecture in epochs
+        """
+        self._save_freq = save_freq
 
     @overload
     def set_save_path(self, name: str, states_dir: str, *, overwrite: bool = ...) -> None:
@@ -1008,26 +1131,26 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
 
     def set_save_path(self, name: str, states_dir: str = '', *, overwrite: bool = False) -> None:
         """
-        Sets the save path for the network.
+        Sets the save path for the architecture.
 
         Parameters
         ----------
         name : str
-            Name to save the network as or full path to save the network
-        states_dir : str, default = ''
-            Directory to save the network, if empty name is treated as full path
-        overwrite : bool, default = False
+            Name to save the architecture as or full path to save the architecture
+        states_dir : str, Optional
+            Directory to save the architecture, if empty name is treated as full path
+        overwrite : bool, Optional
             If saving can overwrite an existing save file, if False and file with the same name
-            exists, an error will be raised
+            exists, an error will be raised, default = False
         """
-        old_save: str = self._save_path
+        old_save: str = os.path.basename(self._save_path)
 
         if states_dir:
             self._save_path = utils.save_name(name, states_dir, self.net.name)
         else:
-            self._save_path = name
+            self._save_path = name if '.pth' in name else f'{name}.pth'
 
-        if old_save == self._save_path:
+        if old_save == os.path.basename(self._save_path):
             return
 
         if os.path.exists(self._save_path) and overwrite:
@@ -1036,21 +1159,25 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         elif os.path.exists(self._save_path):
             raise FileExistsError(f'{self._save_path} already exists and overwrite is False')
 
-    def set_loss_weights(self, *args: float, **kwargs: float) -> None:
+    def set_loss_weights(
+            self,
+            *args: float | Callable[[], float],
+            **kwargs: float | Callable[[], float]) -> None:
         """
         Sets the weights for the loss function terms.
         Loss weights passed as positional arguments are set in the order of the architecture loss
         weight keys, while keyword arguments are set by name and will override positional arguments.
-
 
         Parameters
         ----------
         *args, **kwargs
             Weights for the loss function terms
         """
+        key: str
+        value: float | Callable[[], float]
+
         if not self._loss_weights:
-            self._logger.warning('No loss weights to set for this network architecture, '
-                                 'skipping...')
+            self._logger.warning('No loss weights to set for this architecture, skipping...')
             return
 
         for key, value in zip(self._loss_weights, args):
@@ -1060,8 +1187,25 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
             if key in self._loss_weights:
                 self._loss_weights[key] = value
             else:
-                self._logger.warning(f'Loss weight ({key}) not found in network architecture loss '
+                self._logger.warning(f'Loss weight ({key}) not found in architecture loss '
                                      f'weights, skipping...')
+
+    def set_rng_states(self, states: dict[str, Any]) -> None:
+        """
+        Sets the random number generator states.
+
+        Parameters
+        ----------
+        states : dict[str, Any]
+            Random number generator states for numpy, data loaders, pytorch, and cuda
+        """
+        cuda_state: Tensor | None
+        np.random.set_state(states.pop('numpy', np.random.get_state()))
+        self._loader_states = states.pop('loaders', None)
+        torch.set_rng_state(states.pop('pytorch', torch.get_rng_state()).cpu())
+
+        if torch.cuda.is_available() and (cuda_state := states.pop('cuda_rng', None)):
+            torch.cuda.set_rng_state_all(cuda_state)
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         """
@@ -1075,17 +1219,115 @@ class BaseNetwork(UtilityMixin, Generic[LossCT, TensorLossCT]):
         Returns
         -------
         Self
-            The network with parameters and buffers moved/cast
+            The architecture with parameters and buffers moved/cast
         """
         self.net = self.net.to(*args, **kwargs)
         self._param_device(self.optimiser.state, *args, **kwargs)
         self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)  # pylint: disable=protected-access
+
+        if isinstance(self.net, OptimizedModule):
+            self.net._orig_mod.to(*args, **kwargs)  # pylint: disable=protected-access
         return self
 
+    def train(self, train: bool) -> None:
+        """
+        Changes the train/eval state of the architecture.
 
-def load_net(num: int | str, states_dir: str, net_name: str, **kwargs: Any) -> BaseNetwork:
+        Parameters
+        ----------
+        train : bool
+            If the architecture should be in the train state
+        """
+        self._train_state = train
+
+        if self._train_state:
+            self.net.train()
+        else:
+            self.net.eval()
+
+    def training(self, epochs: int, loaders: tuple[DataLoader[Any], DataLoader[Any]]) -> None:
+        """
+        Trains & validates the network for each epoch.
+
+        Parameters
+        ----------
+        epochs : int
+            Number of epochs to train the network up to
+        loaders : tuple[DataLoader[Any], DataLoader[Any]]
+            Train and validation data loaders
+        """
+        i: int
+        t_initial: float
+        loss: LossCT
+
+        # Train for each epoch
+        for i in range(self._epoch, epochs):
+            t_initial = time()
+
+            # Train network
+            self.train(True)
+            self.losses[0].append(self._train_val(loaders[0]))
+
+            # Validate network
+            self.train(False)
+            self.losses[1].append(self._train_val(loaders[1]))
+
+            try:
+                self._step(
+                    False,
+                    i,
+                    cast(dict, self.losses[1][-1])['total'] if isinstance(self.losses[1][-1], dict)
+                    else self.losses[1][-1],
+                    dataset=loaders[0].dataset.dataset
+                    if hasattr(loaders[0], 'dataset') and hasattr(loaders[0].dataset, 'dataset')
+                    else None,
+                )
+            except TypeError:
+                warn(
+                    '_step without dataset parameter is deprecated, please update'
+                    'the method to include the dataset parameter',
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self._step(
+                    False,
+                    i,
+                    cast(dict, self.losses[1][-1])['total'] if isinstance(self.losses[1][-1], dict)
+                    else self.losses[1][-1],
+                )
+
+            if self.run:
+                self.run.log(
+                    {'Train Loss': self.losses[0][-1], 'Validation Loss': self.losses[1][-1]}
+                    if isinstance(self.losses[0][-1], float) else
+                    {f'Train {key}': val for key, val in self.losses[0][-1].items()} |
+                    {f'Validation {key}': val for key, val in self.losses[1][-1].items()}
+                )
+
+            # Save training progress
+            if loaders[0].generator:
+                self._loader_states = (
+                    loaders[0].generator.get_state(),
+                    loaders[1].generator.get_state(),
+                )
+
+            self._update_epoch()
+
+            if self._epoch % self._save_freq == 0 or self._epoch == epochs:
+                self.save()
+
+            self._epoch_print(i, epochs, time() - t_initial)
+
+        self.train(False)
+        self._plot_active = False
+        loss = self._train_val(loaders[1])
+        print(f"\nFinal validation loss: "
+              f"{cast(dict, loss)['total'] if isinstance(loss, dict) else loss:.3e}")
+
+
+def load_arch(num: int | str, states_dir: str, arch_name: str, **kwargs: Any) -> BaseArchitecture:
     """
-    Loads a network from file.
+    Loads an architecture from file.
 
     Parameters
     ----------
@@ -1093,17 +1335,20 @@ def load_net(num: int | str, states_dir: str, net_name: str, **kwargs: Any) -> B
         File number or name of the saved state
     states_dir : str
         Directory to the save files
-    net_name : str
-        Name of the network
+    arch_name : str
+        Name of the architecture
     **kwargs
         Optional keyword arguments to pass to torch.load
 
     Returns
     -------
-    BaseNetwork
-        Saved network object
+    BaseArchitecture
+        Saved architecture object
     """
     return torch.load(
-        utils.save_name(num, states_dir, net_name),
+        utils.save_name(num, states_dir, arch_name),
         **{'map_location': 'cpu'} | kwargs,
     )
+
+
+__all__ = ['BaseArchitecture', 'load_arch']

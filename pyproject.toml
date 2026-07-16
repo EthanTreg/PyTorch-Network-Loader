@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools >= 83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netloader"
+dynamic = ["version"]
+authors = [
+  { name="Ethan Tregidga", email="ethan.tregidga@epfl.ch" },
+]
+description = "Utility to generate and train PyTorch neural network objects from JSON files"
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+dependencies = [
+    "numpy>=2.4.0",
+    "torch>=2.11.0",
+    "packaging>=24.0",
+]
+
+[project.optional-dependencies]
+flows = ["zuko"]
+wandb = ["wandb"]
+
+[project.urls]
+Homepage = "https://github.com/EthanTreg/PyTorch-Network-Loader"
+Issues = "https://github.com/EthanTreg/PyTorch-Network-Loader/issues"
+ReadTheDocs = "https://pytorch-network-loader.readthedocs.io/en/latest/"
+
+[tool.setuptools.dynamic]
+version = {attr = "netloader.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["netloader*"]

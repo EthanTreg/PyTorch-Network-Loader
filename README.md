@@ -1,26 +1,27 @@
 # PyTorch Network Loader
 
-Allows the easy creation and training of neural networks in PyTorch using `.json` files.
-Network creation automatically tracks layer output shapes; therefore, knowledge of the input into each layer is not needed.
-Networks are loaded from `.json` files, constructed, then a network object is returned that has all the training functionality built into it.
+PyTorch Network Loader is a utility that enables the easy creation of neural networks in PyTorch using JSON
+configuration files.
+The package automatically tracks layer output shapes, eliminating the need to manually calculate input dimensions for
+each layer.
+NetLoader also provides an architecture framework that allows for the easy architecture setup and training framework,
+along with additional useful utilities to accelerate the use of neural networks in science.
 
-See the [Wiki](../../wiki) for more information on how to use this package.  
-For a real-world example of the `Network` object from this package in use, see 
-[Fast Spectra Predictor Network](https://github.com/EthanTreg/Spectrum-Machine-Learning).
+See the [Wiki](https://pytorch-network-loader.readthedocs.io) for more information on how to use this package.  
+For a real-world example of this package, see [Bayesian-DARKSKIES](https://github.com/EthanTreg/Bayesian-DARKSKIES).
 
 ## Requirements
 
 ### Using Within Projects
 
-- pip install `netloader @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@LATEST-VERSION`[^1] to
-  `requirements.txt`
-- Install using `pip install -r requirements.txt`
+- Install using `pip install netloader`[^1]
 - Example of [InceptionV4](https://arxiv.org/abs/1602.07261) can be downloaded under
   `./network_configs/inceptionv4.json` along with the composite layers in
   `./network_configs/composite_layers/`
 
-[^1]: To use normalizing flows, `netloader` must be pip installed with the optional argument `flows`:
-`pip install netloader[flows] @ git+https://github.com/EthanTreg/PyTorch-Network-Loader@LATEST-VERSION`  
+[^1]: To use normalising flows or weights & biases, `netloader` must be pip installed with the optional argument
+`flows` and/or `wandb`:
+`pip install netloader[flows,wandb]`
 
 ### Locally Running NetLoader
 

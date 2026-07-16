@@ -22,10 +22,12 @@ class Conv(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -52,27 +54,28 @@ class Conv(BaseSingleLayer):
             Shape of the network's output, required only if layer contains factor
         shapes : Shapes
             Shape of the outputs from each layer
-        filters : int | None, default = None
+        filters : int | None, Optional
             Number of convolutional filters, will be used if provided, else factor will be used
-        layer : int | None, default = None
+        layer : int | None, Optional
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Number of convolutional filters equal to the output channels, or if layer is provided,
             the layer's channels, multiplied by factor, won't be used if filters is provided
-        groups : int, default = 1
+        groups : int, Optional
             Number of input channel groups, each with its own convolutional filter(s), input and
-            output channels must both be divisible by the number of groups
-        kernel : int | list[int], default = 3
-            Size of the kernel
-        stride : int | list[int], default = 1
-            Stride of the kernel
-        padding : int | {'same'} | list[int], default = 0
-            Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
-        dropout : float, default = 0
-            Probability of dropout
-        activation : str | None, default = 'ELU'
-            Which activation function to use from PyTorch
+            output channels must both be divisible by the number of groups, default = 1
+        kernel : int | list[int], Optional
+            Size of the kernel, default = 3
+        stride : int | list[int], Optional
+            Stride of the kernel, default = 1
+        padding : int | {'same'} | list[int], Optional
+            Input padding, can an int, list of ints or 'same' where 'same' preserves the input
+            shape, default = 0
+        dropout : float, Optional
+            Probability of dropout, default = 0
+        activation : str | None, Optional
+            Which activation function to use from PyTorch, default = 'ELU'
         norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
@@ -196,10 +199,12 @@ class ConvDepth(Conv):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -225,24 +230,25 @@ class ConvDepth(Conv):
             Shape of the network's output, required only if layer contains factor
         shapes : Shapes
             Shape of the outputs from each layer
-        filters : int | None, default = None
+        filters : int | None, Optional
             Number of convolutional filters, will be used if provided, else factor will be used
-        layer : int | None, default = None
+        layer : int | None, Optional
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        kernel : int | list[int], default = 3
-            Size of the kernel
-        stride : int | list[int], default = 1
-            Stride of the kernel
-        padding : int | {'same'} | list[int], default = 0
-            Input padding, can an int, list of ints or 'same' where 'same' preserves the input shape
-        dropout : float, default = 0
-            Probability of dropout
-        activation : str | None, default = 'ELU'
-            Which activation function to use
+        kernel : int | list[int], Optional
+            Size of the kernel, default = 3
+        stride : int | list[int], Optional
+            Stride of the kernel, default = 1
+        padding : int | {'same'} | list[int], Optional
+            Input padding, can an int, list of ints or 'same' where 'same' preserves the input
+            shape, default = 0
+        dropout : float, Optional
+            Probability of dropout, default = 0
+        activation : str | None, Optional
+            Which activation function to use, default = 'ELU'
         norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
@@ -280,10 +286,12 @@ class ConvDepthDownscale(Conv):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -303,10 +311,10 @@ class ConvDepthDownscale(Conv):
             Shape of the network's output, required only if layer contains factor
         shapes: Shapes
             Shape of the outputs from each layer
-        dropout : float, default = 0
-            Probability of dropout
-        activation : str | None, default = 'ELU'
-            Which activation function to use
+        dropout : float, Optional
+            Probability of dropout, default = 0
+        activation : str | None, Optional
+            Which activation function to use, default = 'ELU'
         norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
@@ -346,10 +354,12 @@ class ConvDownscale(Conv):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(self,
@@ -371,20 +381,20 @@ class ConvDownscale(Conv):
             Shape of the network's output, required only if layer contains factor
         shapes: Shapes
             Shape of the outputs from each layer
-        filters : int | None, default = None
+        filters : int | None, Optional
             Number of convolutional filters, will be used if provided, else factor will be used
-        layer : int | None, default = None
+        layer : int | None, Optional
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        scale : int, default = 2
-            Stride and size of the kernel, which acts as the downscaling factor
-        dropout : float, default = 0
-            Probability of dropout
-        activation : str | None, default = 'ELU'
-            Which activation function to use
+        scale : int, Optional
+            Stride and size of the kernel, which acts as the downscaling factor, default = 2
+        dropout : float, Optional
+            Probability of dropout, default = 0
+        activation : str | None, Optional
+            Which activation function to use, default = 'ELU'
         norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         **kwargs
@@ -421,16 +431,13 @@ class ConvTranspose(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the transposed convolutional layer
     """
     def __init__(
             self,
@@ -457,30 +464,31 @@ class ConvTranspose(BaseSingleLayer):
             Shape of the network's output, required only if layer contains factor
         shapes: Shapes
             Shape of the outputs from each layer
-        filters : int | None, default = None
+        filters : int | None, Optional
             Number of convolutional filters, will be used if provided, else factor will be used
-        layer : int | None, default = None
+        layer : int | None, Optional
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        kernel : int | list[int], default = 3
-            Size of the kernel
-        stride : int | list[int], default = 1
-            Stride of the kernel
-        out_padding : int | list[int], default = 0
-            Padding applied to the output
-        dilation : int | list[int], default = 1
-            Spacing between kernel points
-        padding : int | {'same'} | list[int], default = 0
-            Inverse of convolutional padding which removes rows from each dimension in the output
-        dropout : float, default =  0
-            Probability of dropout
+        kernel : int | list[int], Optional
+            Size of the kernel, default = 3
+        stride : int | list[int], Optional
+            Stride of the kernel, default = 1
+        out_padding : int | list[int], Optional
+            Padding applied to the output, default = 0
+        dilation : int | list[int], Optional
+            Spacing between kernel points, default = 1
+        padding : int | {'same'} | list[int], Optional
+            Inverse of convolutional padding which removes rows from each dimension in the output,
+            default = 0
+        dropout : float, Optional
+            Probability of dropout, default =  0
         padding_mode : {'zeros', 'reflect', 'replicate', 'circular'}
             Padding mode to use from PyTorch
-        activation : str | None, default = 'ELU'
-            Which activation function to use
+        activation : str | None, Optional
+            Which activation function to use, default = 'ELU'
         norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         **kwargs
@@ -618,10 +626,12 @@ class ConvTransposeUpscale(ConvTranspose):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -645,22 +655,22 @@ class ConvTransposeUpscale(ConvTranspose):
             Shape of the network's output, required only if layer contains factor
         shapes: Shapes
             Shape of the outputs from each layer
-        filters : int | None, default = None
+        filters : int | None, Optional
             Number of convolutional filters, will be used if provided, else factor will be used
-        layer : int | None, default = None
+        layer : int | None, Optional
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        scale : int | list[int], default = 2
-            Stride and size of the kernel, which acts as the upscaling factor
-        out_padding : int | list[int], default = 0
-            Padding applied to the output
-        dropout : float, default =  0
-            Probability of dropout
-        activation : str | None, default = 'ELU'
-            Which activation function to use
+        scale : int | list[int], Optional
+            Stride and size of the kernel, which acts as the upscaling factor, default = 2
+        out_padding : int | list[int], Optional
+            Padding applied to the output, default = 0
+        dropout : float, Optional
+            Probability of dropout, default =  0
+        activation : str | None, Optional
+            Which activation function to use, default = 'ELU'
         norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         **kwargs
@@ -700,10 +710,12 @@ class ConvUpscale(Conv):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -728,22 +740,22 @@ class ConvUpscale(Conv):
             Shape of the network's output, required only if layer contains factor
         shapes: Shapes
             Shape of the outputs from each layer
-        filters : int | None, default = None
+        filters : int | None, Optional
             Number of convolutional filters, will be used if provided, else factor will be used
-        layer : int | None, default = None
+        layer : int | None, Optional
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Number of convolutional filters equal to the output channels multiplied by factor,
             won't be used if filters is provided
-        scale : int, default = 2
-            Factor to upscale the input by
-        kernel : int | list[int], default = 3
-            Size of the kernel
-        dropout : float, default =  0
-            Probability of dropout
-        activation : str | None, default = 'ELU'
-            Which activation function to use
+        scale : int, Optional
+            Factor to upscale the input by, default = 2
+        kernel : int | list[int], Optional
+            Size of the kernel, default = 3
+        dropout : float, Optional
+            Probability of dropout, default =  0
+        activation : str | None, Optional
+            Which activation function to use, default = 'ELU'
         norm : {None, 'batch', 'layer'}
             If batch or layer normalisation should be used
         padding_mode : {None, 'zeros', 'reflect', 'replicate', 'circular'}
@@ -796,16 +808,11 @@ class PixelShuffle(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of pixel shuffle
-    extra_repr() -> str
-        Displays layer parameters when printing the network
+    description : str
+        Description of the layer
     """
     def __init__(self, scale: int, *, shapes: Shapes | None = None, **kwargs: Any) -> None:
         """
@@ -813,7 +820,7 @@ class PixelShuffle(BaseLayer):
         ----------
         scale : int
             Upscaling factor
-        shapes: Shapes | None, default = None
+        shapes: Shapes | None, Optional
             Shape of the outputs from each layer
         **kwargs
             Leftover parameters to pass to base layer for checking
@@ -987,3 +994,15 @@ def _padding_transpose(
             (stride * (in_length - 1) + dilation_length * (kernel_length - 1) - out_length + 1) // 2
         )
     return padding
+
+
+__all__ = [
+    'Conv',
+    'ConvDepth',
+    'ConvDepthDownscale',
+    'ConvDownscale',
+    'ConvTranspose',
+    'ConvTransposeUpscale',
+    'ConvUpscale',
+    'PixelShuffle',
+]

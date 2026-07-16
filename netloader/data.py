@@ -1,18 +1,19 @@
 """
-Base dataset classes for use with BaseNetwork
+Base dataset classes for use with BaseArchitecture
 """
 from __future__ import annotations
 import logging as log
 from types import ModuleType
+from itertools import repeat
 from typing import (
     Any,
-    Generic,
     Self,
+    Generic,
     Literal,
     Sequence,
     Iterator,
-    Callable,
     Protocol,
+    TypeVar,
     cast,
     overload,
 )
@@ -23,15 +24,28 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader, Subset
 from numpy import ndarray
 
-from netloader.utils.types import DataLike, ArrayLike, DataT, ArrayT, DatasetT, DataListT, ArrayCT
+from netloader.utils.types import (
+    DataLike,
+    ArrayLike,
+    DataT,
+    ArrayT,
+    DatasetT,
+    DataListT,
+    ArrayCT,
+    P,
+)
 
 
-class ApplyFunc(Protocol[DataT]):
+InArrayT_contra = TypeVar('InArrayT_contra', bound=DataLike, contravariant=True)
+OutArrayT_co = TypeVar('OutArrayT_co', bound=DataLike, covariant=True)
+
+
+class ApplyFunc(Protocol[InArrayT_contra, P, OutArrayT_co]):
     """
     Protocol for functions that can be applied to Data objects in the apply method of Data and
     DataList.
     """
-    def __call__(self, data: DataT, /, *args: Any, **kwargs: Any) -> DataT:
+    def __call__(self, data: InArrayT_contra, /, *args: P.args, **kwargs: P.kwargs) -> OutArrayT_co:
         """
         Parameters
         ----------
@@ -51,45 +65,22 @@ class ApplyFunc(Protocol[DataT]):
 
 class Data(Generic[ArrayCT]):
     """
-    Stores data with uncertainties for uncertainty handling in BaseNetwork.
+    Stores data with uncertainties for uncertainty handling in BaseArchitecture.
 
     Attributes
     ----------
-    data : ArrayTC
+    data : ArrayCT
         Data
-    uncertainty : ArrayCT | None, default = None
+    uncertainty : ArrayCT | None
         Data uncertainty
-
-    Methods
-    -------
-    collate(data, data_field=True) -> ArrayCT | Data[ArrayCT]
-        Collates a list of Data objects into a single Data object
-    apply(func, *args, types, **kwargs) -> Self
-        Applies a function or method to the data and uncertainty
-    clone() -> Data[ArrayCT]
-        Clones the data and uncertainty
-    concat(dim=0) -> ArrayCT
-        Concatenates data and uncertainty for passing into a network
-    copy() -> Data[ArrayCT]
-        Copies the data and uncertainty
-    cpu() -> Self
-        Moves data and uncertainty to CPU if they are Tensors
-    detach() -> Self
-        Detaches data and uncertainty from the computation graph if they are Tensors
-    numpy() -> Data[ndarray]
-        Converts data and uncertainty to numpy arrays if they are Tensors
-    tensor() -> Data[Tensor]
-        Converts data and uncertainty to tensors if they are numpy arrays
-    to(*args, **kwargs) -> Self
-        Move and/or cast the parameters and buffers
     """
     def __init__(self, data: ArrayCT, uncertainty: ArrayCT | None = None) -> None:
         """
         Parameters
         ----------
-        data : ArrayTC
+        data : ArrayCT
             Data
-        uncertainty : ArrayCT | None, default = None
+        uncertainty : ArrayCT | None, Optional
             Data uncertainty
         """
         self.shape: tuple[int, ...] = tuple(data.shape)
@@ -118,7 +109,7 @@ class Data(Generic[ArrayCT]):
 
         Returns
         -------
-        Data[ArrayTC]
+        Data[ArrayCT]
             Data with subset of data and uncertainty
         """
         return Data(
@@ -127,8 +118,43 @@ class Data(Generic[ArrayCT]):
         )
 
     def __repr__(self) -> str:
-        return (f'Data(shape={self.data.shape}, type={self.data.__class__.__name__}, '
+        return (f'Data(shape={self.shape}, type={self.data.dtype}, '
                 f'uncertainty={self.uncertainty is not None})')
+
+    @staticmethod
+    def _apply(
+            data: ArrayCT,
+            func: str | ApplyFunc[ArrayCT, ..., ArrayCT],
+            *args: Any,
+            types: tuple[type[DataLike], ...] = (Tensor, ndarray),
+            **kwargs: Any) -> ArrayCT:
+        """
+        Applies a function to the data.
+
+        Parameters
+        ----------
+        data : ArrayCT
+            Data to apply the function to
+        func : str | ApplyFunc[ArrayCT, ..., ArrayCT]
+            Function, or method if string, to apply to the data and uncertainty
+        *args
+            Arguments to pass to the function or method
+        types : tuple[type[ArrayLike], ...]
+            Types to apply the function or method to, if data and uncertainty is not an instance of
+            types, then data and uncertainty are returned unchanged, default = (Tensor, ndarray)
+        **kwargs
+            Keyword arguments to pass to the function or method
+
+        Returns
+        -------
+        ArrayCT
+            Result of applying the function to the data
+        """
+        if data not in types:
+            return data
+        if isinstance(func, str):
+            return getattr(data, func)(*args, **kwargs)
+        return func(data, *args, **kwargs)
 
     @staticmethod
     @overload
@@ -152,14 +178,15 @@ class Data(Generic[ArrayCT]):
 
         Parameters
         ----------
-        data : list[Data[ArrayTC]]
+        data : list[Data[ArrayCT]]
             List of Data objects to collate
-        data_field : bool, default = True
-            If True, returns a Data object, else returns the collated data as an ArrayLike
+        data_field : bool, Optional
+            If True, returns a Data object, else returns the collated data as an ArrayLike,
+            default = True
 
         Returns
         -------
-        ArrayTC | Data[ArrayTC]
+        ArrayCT | Data[ArrayCT]
             Collated ArrayLike or Data object
         """
         module: ModuleType = torch if isinstance(data[0].data, Tensor) else np
@@ -175,9 +202,9 @@ class Data(Generic[ArrayCT]):
 
     def apply(
             self,
-            func: str | ApplyFunc[ArrayCT],
+            func: str | ApplyFunc[ArrayCT, ..., ArrayCT],
             *args: Any,
-            types: tuple[type[ArrayLike], ...] = (Tensor, ndarray),
+            types: tuple[type[DataLike], ...] = (Tensor, ndarray),
             **kwargs: Any) -> Self:
         """
         Applies a function or method to the data and uncertainty.
@@ -188,9 +215,9 @@ class Data(Generic[ArrayCT]):
             Function, or method if string, to apply to the data and uncertainty
         *args
             Arguments to pass to the function or method
-        types : tuple[type[ArrayLike], ...], default = (Tensor, ndarray)
+        types : tuple[type[ArrayLike], ...]
             Types to apply the function or method to, if data and uncertainty is not an instance of
-            types, then data and uncertainty are returned unchanged
+            types, then data and uncertainty are returned unchanged, default = (Tensor, ndarray)
         **kwargs
             Keyword arguments to pass to the function or method
 
@@ -202,10 +229,14 @@ class Data(Generic[ArrayCT]):
         if not isinstance(self.data, types):
             return self
 
-        func_: Callable[..., ArrayCT] = lambda data: getattr(data, func)(*args, **kwargs) \
-            if isinstance(func, str) else func(data, *args, **kwargs)
-        self.data = func_(self.data)
-        self.uncertainty = func_(self.uncertainty)
+        self.data = self._apply(self.data, func, *args, types=types, **kwargs)
+        self.uncertainty = None if self.uncertainty is None else self._apply(
+            self.uncertainty,
+            func,
+            *args,
+            types=types,
+            **kwargs,
+        )
         return self
 
     def clone(self) -> Data[ArrayCT]:
@@ -216,7 +247,7 @@ class Data(Generic[ArrayCT]):
 
         Returns
         -------
-        Data[ArrayTC]
+        Data[ArrayCT]
             Cloned Data
         """
         data: ArrayCT
@@ -236,12 +267,12 @@ class Data(Generic[ArrayCT]):
 
         Parameters
         ----------
-        dim : int, default = 0
-            Dimension to concatenate along
+        dim : int, Optional
+            Dimension to concatenate along, default = 0
 
         Returns
         -------
-        ArrayTC
+        ArrayCT
             Data and uncertainty concatenated along the specified dimension if uncertainty is not
             None, else just data
         """
@@ -343,39 +374,6 @@ class Data(Generic[ArrayCT]):
 class DataList(Generic[DataT]):
     """
     A list that stores tensors, arrays, or Datas and provides batch operations.
-
-    Methods
-    -------
-    collate(data, data_field=True) -> DataList[DataLike]
-        Collates a list of DataList objects into a single DataList object
-    append(data) -> None
-        Appends an element to the DataList
-    apply(func, *args, types, **kwargs) -> Self
-        Applies a function or method to each element in the DataList
-    clone() -> DataList[DataT]
-        Clones the DataList
-    copy() -> DataList[DataT]
-        Copies the DataList
-    cpu() -> Self
-        Moves all tensors to CPU
-    detach() -> Self
-        Detaches all tensors from the computation graph
-    extend(data) -> None
-        Extends the DataList by appending elements from the iterable
-    get(idx, list_=False) -> DataT | list[DataT] | DataList[DataT]
-        Gets a subset of the DataList or a subset of each element in the DataList
-    insert(idx, data) -> None
-        Inserts an element into the DataList at the specified index
-    iter(list_=True) -> Iterator[DataT] | Iterator[DataList[DataT]]
-        Iterates over each element in the DataList
-    len(list_=True) -> int
-        Gets the length of the DataList or the length of each element in the DataList
-    numpy() -> DataList[ndarray | Data[ndarray]]
-        Converts all tensors to numpy arrays
-    tensor() -> DataList[Tensor | Data[Tensor]]
-        Converts all numpy arrays to tensors
-    to(*args, **kwargs) -> DataList[DataLike]
-        Move and/or cast the parameters and buffers
     """
     def __init__(self, data: list[DataT]) -> None:
         """
@@ -390,16 +388,24 @@ class DataList(Generic[DataT]):
             raise ValueError(f'All elements in DataList must have the same length, got lengths: '
                              f'{[len(datum) for datum in data]}')
 
-    def __len__(self) -> int:
+    def __add__(self, other: DataT | DataList[DataT]) -> DataList[DataT]:
         """
-        Returns the number of elements in the DataList.
+        Adds another DataList or data to the DataList.
+
+        Parameters
+        ----------
+        other : DataT | DataList[DataT]
+            DataList or single element to add to the DataList
 
         Returns
         -------
-        int
-            Number of elements in the DataList
+        DataList[DataT]
+            New DataList with the other DataList or data added to the end of the DataList
         """
-        return self.len(list_=False)
+        if len(self) != len(other):
+            raise ValueError(f'Lengths of DataList ({len(self)}) and {type(other).__name__} '
+                             f'({len(other)}) must be the same')
+        return DataList(self._data + (list(other) if isinstance(other, DataList) else [other]))
 
     def __getitem__(self, idx: int | slice) -> DataList[DataT]:
         """
@@ -428,9 +434,65 @@ class DataList(Generic[DataT]):
         """
         return self.iter(list_=True)
 
+    def __len__(self) -> int:
+        """
+        Returns the number of samples in each element.
+
+        Returns
+        -------
+        int
+            Number of samples in each element
+        """
+        return self.len(list_=False)
+
     def __repr__(self) -> str:
+        """
+        Returns a string representation of the DataList.
+
+        Returns
+        -------
+        str
+            String representation of the DataList
+        """
         return (f'DataList(shapes={[tuple(datum.shape) for datum in self._data]}, '
                 f'types={[datum.__class__.__name__ for datum in self._data]})')
+
+    @staticmethod
+    def _apply(
+            data: DataT,
+            func: str | ApplyFunc[DataT, ..., DataT],
+            *args: Any,
+            types: tuple[type[DataLike], ...] = (ndarray, Tensor, Data),
+            **kwargs: Any) -> DataT:
+        """
+        Applies a function or method to the data if it is an instance of types, else returns the
+        data unchanged.
+
+        Parameters
+        ----------
+        data : DataT
+            Data to apply function to
+        func : str | ApplyFunc[ArrayT]
+            Function, or method if string, to apply to the data
+        *args
+            Arguments to pass to the function or method
+        types : tuple[type[DataLike], ...]
+            Types to apply the function or method to, if data is not an instance of types, then
+            data is returned unchanged, default = (ndarray, Tensor, Data)
+        **kwargs
+            Keyword arguments to pass to the function or method
+
+        Returns
+        -------
+        DataT
+            Result of applying the function or method to the data if it is an instance of types,
+            else returns the data unchanged
+        """
+        if not isinstance(data, types):
+            return data
+        if isinstance(func, str):
+            return getattr(data, func)(*args, **kwargs)
+        return func(data, *args, **kwargs)
 
     @staticmethod
     @overload
@@ -465,8 +527,9 @@ class DataList(Generic[DataT]):
         ----------
         data : list[DataList[DataT]]
             List of DataList objects to collate
-        data_field : bool, default = True
-            If True, collates Data elements into Data object, else collates into ArrayLike
+        data_field : bool, Optional
+            If True, collates Data elements into Data object, else collates into ArrayLike,
+            default = True
 
         Returns
         -------
@@ -505,7 +568,7 @@ class DataList(Generic[DataT]):
 
     def apply(
             self,
-            func: str | ApplyFunc[DataT],
+            func: str | Sequence[str | ApplyFunc[DataT, ..., DataT]] | ApplyFunc[DataT, ..., DataT],
             *args: Any,
             types: tuple[type[DataLike], ...] = (Data, Tensor, ndarray),
             **kwargs: Any) -> Self:
@@ -514,13 +577,13 @@ class DataList(Generic[DataT]):
 
         Parameters
         ----------
-        func : str | ApplyFunc[DataT]
-            Function, or method if string, to apply to each element in the DataList
+        func : str | Sequence[str | ApplyFunc[ArrayT]] | ApplyFunc[DataT]
+            Function(s), or method(s) if string, to apply to each element in the DataList
         *args
             Arguments to pass to the function or method
-        types : tuple[type[DataLike], ...], default = (Data, Tensor, ndarray)
+        types : tuple[type[DataLike], ...]
             Types to apply the function or method to, if an element is not an instance of types,
-            then that element is returned unchanged
+            then that element is returned unchanged, default = (Data, Tensor, ndarray)
         **kwargs
             Keyword arguments to pass to the function or method
 
@@ -530,11 +593,15 @@ class DataList(Generic[DataT]):
             Self with function or method applied to each element in the DataList
         """
         datum: DataT
-        func_: Callable[..., DataT] = lambda data: data if not isinstance(data, types) else \
-            getattr(data, func)(*args, **kwargs) if isinstance(func, str) else \
-                func(data, *args, **kwargs)
+        func_: str | ApplyFunc[DataT, ..., DataT]
+
+        if isinstance(func, list) and len(func) != len(self._data):
+            raise ValueError(f'Length of function list ({len(func)}) must match length of DataList '
+                             f'({len(self._data)})')
+
         self._data = [
-            datum.apply(func_) if isinstance(datum, Data) else func_(datum) for datum in self._data
+            self._apply(datum, func_, *args, types=types, **kwargs)
+            for datum, func_ in zip(self._data, func if isinstance(func, list) else repeat(func))
         ]
         return self
 
@@ -616,9 +683,9 @@ class DataList(Generic[DataT]):
         ----------
         idx : int | slice
             Index or slice to get
-        list_ : bool, default = False
+        list_ : bool, Optional
             If True, returns a subset of the DataList, else returns a subset of each element in the
-            DataList
+            DataList, default = False
 
         Returns
         -------
@@ -630,6 +697,17 @@ class DataList(Generic[DataT]):
         if list_:
             return self._data[idx]
         return DataList(cast(list[DataT], [data[idx] for data in self]))
+
+    def get_data(self) -> list[DataT]:
+        """
+        Gets the underlying data list.
+
+        Returns
+        -------
+        list[DataT]
+            Underlying data list
+        """
+        return self._data
 
     def insert(self, idx: int, data: DataT) -> None:
         """
@@ -662,8 +740,9 @@ class DataList(Generic[DataT]):
 
         Parameters
         ----------
-        list_ : bool, default = True
-            If True, iterates over the DataList, else iterates over each element in the DataList
+        list_ : bool, Optional
+            If True, iterates over the DataList, else iterates over each element in the DataList,
+            default = True
 
         Returns
         -------
@@ -681,9 +760,9 @@ class DataList(Generic[DataT]):
 
         Parameters
         ----------
-        list_ : bool, default = True
+        list_ : bool, Optional
             If True, returns the length of the DataList, else returns the length of each element
-            in the DataList
+            in the DataList, default = True
 
         Returns
         -------
@@ -789,29 +868,23 @@ class BaseDatasetMeta(type):
         return instance
 
 
-class BaseDataset(Dataset[Any], Generic[DataListT], metaclass=BaseDatasetMeta):
+class BaseDataset(
+    Dataset[tuple[int, DataListT, DataListT, Any]],
+    Generic[DataListT],
+    metaclass=BaseDatasetMeta):
     """
     Base dataset class for use with BaseNetwork.
 
     Attributes
     ----------
-    extra : list[Any] | ArrayLike | None, default = None
+    extra : list[Any] | ArrayLike | None
         Additional data for each sample in the dataset of length N with shape (N,...) and type Any
     idxs : ndarray
         Index for each sample in the dataset with shape (N) and type int
-    low_dim : DataListT | None, default = None
+    low_dim : DataListT | None
         Low dimensional data for each sample in the dataset with shape (N,...)
-    high_dim : DataListT | None, default = None
+    high_dim : DataListT | None
         High dimensional data for each sample in the dataset with shape (N,...), this is required
-
-    Methods
-    -------
-    get_low_dim(idx) -> DataListT
-        Gets a low dimensional sample of the given index
-    get_high_dim(idx) -> DataListT
-        Gets a high dimensional sample of the given index
-    get_extra(idx) -> Any
-        Gets extra data for the sample of the given index
     """
     def __init__(self) -> None:
         super().__init__()
@@ -845,9 +918,9 @@ class BaseDataset(Dataset[Any], Generic[DataListT], metaclass=BaseDatasetMeta):
         """
         return self.idxs[idx], self.get_low_dim(idx), self.get_high_dim(idx), self.get_extra(idx)
 
-    def get_low_dim(self, idx: int) -> DataListT:
+    def get_extra(self, idx: int) -> Any:
         """
-        Gets a low dimensional sample of the given index
+        Gets extra data for the sample of the given index
 
         Parameters
         ----------
@@ -856,10 +929,10 @@ class BaseDataset(Dataset[Any], Generic[DataListT], metaclass=BaseDatasetMeta):
 
         Returns
         -------
-        DataListT
-            Low dimensional sample
+        Any
+            Sample extra data
         """
-        return cast(DataListT, torch.tensor(()) if self.low_dim is None else self.low_dim[idx])
+        return torch.tensor(()) if self.extra is None else self.extra[idx]
 
     def get_high_dim(self, idx: int) -> DataListT:
         """
@@ -878,9 +951,9 @@ class BaseDataset(Dataset[Any], Generic[DataListT], metaclass=BaseDatasetMeta):
         assert self.high_dim is not None
         return cast(DataListT, self.high_dim[idx])
 
-    def get_extra(self, idx: int) -> Any:
+    def get_low_dim(self, idx: int) -> DataListT:
         """
-        Gets extra data for the sample of the given index
+        Gets a low dimensional sample of the given index
 
         Parameters
         ----------
@@ -889,73 +962,20 @@ class BaseDataset(Dataset[Any], Generic[DataListT], metaclass=BaseDatasetMeta):
 
         Returns
         -------
-        Any
-            Sample extra data
+        DataListT
+            Low dimensional sample
         """
-        return torch.tensor(()) if self.extra is None else self.extra[idx]
+        return cast(DataListT, torch.tensor(()) if self.low_dim is None else self.low_dim[idx])
 
+    def step(self, epoch: float) -> None:
+        """
+        Step the dataset for each training iteration.
 
-def loader_init(
-        dataset: Dataset,
-        *,
-        return_idxs: bool = False,
-        batch_size: int = 64,
-        ratios: list[float] | tuple[float, ...] | None = None,
-        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = None,
-        **kwargs: Any) -> (tuple[DataLoader, ...] |
-                           tuple[tuple[DataLoader, ...], tuple[list[int], ...]]):
-    """
-    Initialises data loaders from a subset of the dataset with the given ratios.
-
-    Parameters
-    ----------
-    dataset : Dataset
-        Dataset to create data loaders from
-    return_idxs : bool, default = False
-        If the indexes for each data loader should be returned
-    batch_size : int, default = 64
-        Batch size when sampling from the data loaders
-    ratios : list[float] | tuple[float, ...] | None, default = (0.8, 0.2)
-        Ratios of length M to split up the dataset into subsets, if idxs is provided, dataset will
-        first be split up using idxs and ratios will be used on the remaining samples
-    idxs : list[ndarray] | tuple[ndarray, ...] | ndarray | None, default = None
-        Dataset indexes for creating the subsets with shape (N,S), where N is the number of subsets
-        and S is the number of samples in each subset
-    **kwargs : Any
-        Optional keyword arguments to pass to DataLoader
-
-    Returns
-    -------
-    tuple[DataLoader, ...] | tuple[tuple[DataLoader, ...], tuple[list[int], ...]]
-        Data loaders for each subset of length N + M and optionally indexes used for each subset
-    """
-    num: int
-    slice_: float | ndarray
-    loaders: list[DataLoader] = []
-    data_idxs: ndarray = np.arange(len(dataset))  # type: ignore
-    idxs = [] if idxs is None else list(idxs) \
-        if isinstance(idxs, (tuple, list)) or np.ndim(idxs) > 1 else [idxs]
-    ratios = (0.8, 1) if ratios is None else list(np.cumsum(np.array(ratios) / np.sum(ratios)))
-    np.random.shuffle(data_idxs)
-
-    for slice_ in idxs + list(ratios):
-        if isinstance(slice_, (int, float)):
-            num = max(int(len(data_idxs) * slice_), 1)
-            slice_ = data_idxs[:num]
-
-        if not np.isin(data_idxs, slice_).any():
-            continue
-
-        loaders.append(DataLoader(
-            Subset(dataset, data_idxs[np.isin(data_idxs, slice_)].tolist()),
-            batch_size=batch_size,
-            **{'shuffle': True} | kwargs,
-        ))
-        data_idxs = np.delete(data_idxs, np.isin(data_idxs, slice_))
-
-    if return_idxs:
-        return tuple(loaders), tuple(loader.dataset.indices for loader in loaders)  # type: ignore
-    return tuple(loaders)
+        Parameters
+        ----------
+        epoch : float
+            Current epoch number
+        """
 
 
 @overload
@@ -1005,15 +1025,15 @@ def data_collation(  # type: ignore
 
     Parameters
     ----------
-    data : list[ArrayTC] | list[Data[ArrayTC]] | list[DataList[DataT]] | ArrayTC | DataList[DataT]
+    data : list[ArrayCT] | list[Data[ArrayCT]] | list[DataList[DataT]] | ArrayCT | DataList[DataT]
         List of ArrayLike, Data, or DataList objects to collate, or if ArrayLike or DataList,
         will return as is, with shape (N,...)
-    data_field : bool, default = True
-        If Datas should return Data else ArrayLike
+    data_field : bool, Optional
+        If Datas should return Data else ArrayLike, default = True
 
     Returns
     -------
-    ArrayTC | Data[ArrayTC] | DataList[ArrayT] | DataList[DataT]
+    ArrayCT | Data[ArrayCT] | DataList[ArrayT] | DataList[DataT]
         Collated Data or DataList object, or ArrayLike if data_field is False or input is
         ArrayLike, with shape (N,...)
     """
@@ -1027,3 +1047,101 @@ def data_collation(  # type: ignore
     return Data.collate(cast(list[Data], data), data_field=data_field) \
         if isinstance(data[0], Data) else \
         DataList.collate(cast(list[DataList], data), data_field=data_field)
+
+
+@overload
+def loader_init(
+        dataset: DatasetT,
+        *,
+        return_idxs: Literal[False],
+        batch_size: int = ...,
+        ratios: list[float] | tuple[float, ...] | None = ...,
+        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = ...,
+        **kwargs: Any) -> tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...]: ...
+
+@overload
+def loader_init(
+        dataset: DatasetT,
+        *,
+        return_idxs: Literal[True],
+        batch_size: int = ...,
+        ratios: list[float] | tuple[float, ...] | None = ...,
+        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = ...,
+        **kwargs: Any) -> tuple[
+    tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...],
+    tuple[Sequence[int], ...]]: ...
+
+def loader_init(
+        dataset: DatasetT,
+        *,
+        return_idxs: bool = False,
+        batch_size: int = 64,
+        ratios: list[float] | tuple[float, ...] | None = None,
+        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = None,
+        **kwargs: Any,
+) -> (tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...] |
+      tuple[
+          tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...],
+          tuple[Sequence[int], ...]]):
+    # pylint: disable=line-too-long
+    """
+    Initialises data loaders from a subset of the dataset with the given ratios.
+
+    Parameters
+    ----------
+    dataset : DatasetT
+        Dataset to create data loaders from
+    return_idxs : bool, Optional
+        If the indexes for each data loader should be returned, default = False
+    batch_size : int, Optional
+        Batch size when sampling from the data loaders, default = 64
+    ratios : list[float] | tuple[float, ...] | None, Optional
+        Ratios of length M to split up the dataset into subsets, if idxs is provided, dataset will
+        first be split up using idxs and ratios will be used on the remaining samples,
+        default = (0.8,0.2)
+    idxs : list[ndarray] | tuple[ndarray, ...] | ndarray | None, Optional
+        Dataset indexes for creating the subsets with shape (N,S), where N is the number of subsets
+        and S is the number of samples in each subset
+    **kwargs : Any
+        Optional keyword arguments to pass to DataLoader
+
+    Returns
+    -------
+    tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...] | tuple[tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...], tuple[Sequence[int], ...]]
+        Data loaders for each subset of length N + M and optionally indexes used for each subset
+    """
+    # pylint: enable=line-too-long
+    num: int
+    slice_: float | ndarray
+    loaders: list[DataLoader[tuple[int, DataListT, DataListT, Any]]] = []
+    data_idxs: ndarray = np.arange(len(dataset))
+    loader: DataLoader[tuple[int, DataListT, DataListT, Any]]
+    idxs = [] if idxs is None else list(idxs) \
+        if isinstance(idxs, (tuple, list)) or np.ndim(idxs) > 1 else [idxs]
+    ratios = (0.8, 1) if ratios is None else list(np.cumsum(np.array(ratios) / np.sum(ratios)))
+    np.random.shuffle(data_idxs)
+
+    for slice_ in idxs + list(ratios):
+        if isinstance(slice_, (int, float)):
+            num = max(int(len(data_idxs) * slice_), 1)
+            slice_ = data_idxs[:num]
+
+        if not np.isin(data_idxs, slice_).any():
+            continue
+
+        loaders.append(DataLoader(
+            Subset(
+                cast(Dataset[tuple[int, DataListT, DataListT, Any]], dataset),
+                data_idxs[np.isin(data_idxs, slice_)].tolist(),
+            ),
+            batch_size=batch_size,
+            **{'shuffle': True} | kwargs,
+        ))
+        data_idxs = np.delete(data_idxs, np.isin(data_idxs, slice_))
+
+    if return_idxs:
+        return tuple(loaders), tuple(cast(Subset, loader.dataset).indices for loader in loaders)
+    return tuple(loaders)
+
+
+__all__ = ['ApplyFunc', 'Data', 'DataList', 'BaseDataset', 'data_collation', 'loader_init']

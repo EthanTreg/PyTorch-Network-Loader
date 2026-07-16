@@ -19,14 +19,11 @@ class SplineFlow(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-
-    Methods
-    -------
-    forward(x) -> NormalizingFlow
-        Forward pass of the neural spline flow to return a distribution
+    description : str
+        Description of the layer
     """
     def __init__(
             self,
@@ -54,12 +51,13 @@ class SplineFlow(BaseLayer):
             Shape of the network's output
         shapes : Shapes
             Shape of the outputs from each layer
-        context : bool, default = False
-            If the output from the previous layer should be used to condition the normalizing flow
-        features : int | None, default = None
+        context : bool, Optional
+            If the output from the previous layer should be used to condition the normalising flow,
+            default = False
+        features : int | None, Optional
             Dimensions of the probability distribution, if factor is provided, features will not be
             used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Output features is equal to the factor of the network's output, will be used if
             provided, else features will be used
         **kwargs
@@ -120,3 +118,6 @@ class SplineFlow(BaseLayer):
         if self._context:
             return self._layer(x)
         return self._layer()
+
+
+__all__ = ['SplineFlow']

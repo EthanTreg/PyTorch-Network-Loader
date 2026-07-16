@@ -3,6 +3,7 @@ Utility functions for PyTorch-Network-Loader
 """
 from netloader.utils.utils import (
     Shapes,
+    TypedModuleList,
     ascii_plot,
     check_params,
     compare_versions,
@@ -17,14 +18,17 @@ from netloader.utils.utils import (
     save_name,
     suppress_logger_warnings,
 )
+from netloader.utils.types import ArrayT
 from netloader.utils import configs, types, utils
 from netloader.utils.configs import BaseConfig, Config, NetConfig
 
 __all__ = [
+    'ArrayT',
     'BaseConfig',
     'Config',
     'NetConfig',
     'Shapes',
+    'TypedModuleList',
     'ascii_plot',
     'check_params',
     'compare_versions',

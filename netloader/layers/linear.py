@@ -23,10 +23,12 @@ class Activation(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -34,22 +36,26 @@ class Activation(BaseSingleLayer):
             *,
             activation: str = 'ELU',
             shapes: Shapes | None = None,
+            activation_kwargs: dict[str, Any] | None = None,
             **kwargs: Any) -> None:
         """
         Parameters
         ----------
-        activation : str, default = 'ELU'
-            Which activation function to use from PyTorch
-        shapes : Shapes | None, default = None
+        activation : str, Optional
+            Which activation function to use from PyTorch, default = 'ELU'
+        shapes : Shapes | None, Optional
             Shape of the outputs from each layer, only required if tracking layer outputs is
             necessary
+        activation_kwargs : dict[str, Any] | None, Optional
+            Additional keyword arguments to pass to the activation function
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**({'idx': 0} | kwargs))
+        self._kwargs: dict[str, Any] = activation_kwargs or {}
         self.layers.add_module('Activation', getattr(nn, activation)(
-            **{'inplace': True} if 'inplace' in signature(getattr(nn, activation)).parameters
-            else {},
+            **({'inplace': True} if 'inplace' in signature(getattr(nn, activation)).parameters
+            else {}) | self._kwargs,
         ))
 
         # If not used as a layer in a network
@@ -59,7 +65,10 @@ class Activation(BaseSingleLayer):
         shapes.append(shapes[-1].copy())
 
     def __getstate__(self) -> dict[str, Any]:
-        return super().__getstate__() | {'activation': self.layers.Activation.__class__.__name__}
+        return super().__getstate__() | {
+            'activation': self.layers.Activation.__class__.__name__,
+            'activation_kwargs': self._kwargs,
+        }
 
 
 class Linear(BaseSingleLayer):
@@ -68,16 +77,13 @@ class Linear(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the linear layer
     """
     def __init__(
             self,
@@ -99,24 +105,24 @@ class Linear(BaseSingleLayer):
             Shape of the network's output
         shapes : Shapes
             Shape of the outputs from each layer
-        features : int | None, default = None
+        features : int | None, Optional
             Number of output features for the layer, if factor is provided, features will not be
             used
-        layer : int | None, default = None
+        layer : int | None, Optional
             If factor is not None, which layer for factor to be relative to, if None, network output
             will be used
-        factor : float | None, default = None
+        factor : float | None, Optional
             Output features is equal to the factor of the network's output, or if layer is provided,
             which layer to be relative to, will be used if provided, else features will be used
-        batch_norm : bool, default = False
-            If batch normalisation should be used
-        flatten_target : bool, default = False
+        batch_norm : bool, Optional
+            If batch normalisation should be used, default = False
+        flatten_target : bool, Optional
             If the target should be flattened so that features is equal to the product of the target
-            multiplied by factor, if factor is provided
-        dropout : float, default =  0
-            Probability of dropout
-        activation : str | None, default = 'SELU'
-            Which activation function to use from PyTorch
+            multiplied by factor, if factor is provided, default = False
+        dropout : float, Optional
+            Probability of dropout, default =  0
+        activation : str | None, Optional
+            Which activation function to use from PyTorch, default = 'SELU'
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -172,18 +178,13 @@ class OrderedBottleneck(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    min_size : int, default = 0
+    min_size : int
         Minimum gate size
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the information-ordered bottleneck layer
-    extra_repr() -> str
-        Displays layer parameters when printing the network
+    description : str
+        Description of the layer
     """
     def __init__(self, shapes: Shapes, *, min_size: int = 0, **kwargs: Any) -> None:
         """
@@ -191,8 +192,8 @@ class OrderedBottleneck(BaseLayer):
         ----------
         shapes : Shapes
             Shape of the outputs from each layer
-        min_size : int, default = 0
-            Minimum gate size
+        min_size : int, Optional
+            Minimum gate size, default = 0
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -256,16 +257,13 @@ class Sample(BaseLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    sample_layer : distributions.Normal
+    description : str
+        Description of the layer
+    sample_layer : Normal
         Layer to sample values from a Gaussian distribution
-
-    Methods
-    -------
-    forward(x, net) -> Tensor
-        Forward pass of the sampling layer
     """
     def __init__(self, idx: int, shapes: Shapes, **kwargs: Any) -> None:
         """
@@ -313,7 +311,7 @@ class Sample(BaseLayer):
         split: int = x.size(1) // 2
         mean: Tensor = x[:, :split]
         std: Tensor = torch.exp(x[:, split:2 * split])
-        x = mean + std * self.sample_layer.sample(mean.shape)
+        x = mean + std * self.sample_layer.rsample(mean.shape)
 
         net.kl_loss = 0.5 * torch.mean(
             mean ** 2 + std ** 2 - 2 * torch.log(std) - 1
@@ -333,16 +331,13 @@ class Upsample(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the upsampling layer
     """
     def __init__(
             self,
@@ -360,11 +355,11 @@ class Upsample(BaseSingleLayer):
             Layer number
         shapes : Shapes
             Shape of the outputs from each layer
-        shape : list[int] | None, default = None
+        shape : list[int] | None, Optional
             Shape of the output, will be used if provided, else scale will be used
-        scale : float | tuple[float] | tuple[float, ...], default = 2
+        scale : float | tuple[float] | tuple[float, ...], Optional
             Factor to upscale all or individual dimensions, first dimension is ignored, won't be
-            used if shape is provided
+            used if shape is provided, default = 2
         mode : {'nearest', 'linear', 'bilinear', 'bicubic', 'trilinear'}
             What interpolation method to use for upsampling
         **kwargs
@@ -445,3 +440,6 @@ class Upsample(BaseSingleLayer):
         if out_shape is not None and len(out_shape) != 1 and len(out_shape) + 1 != len(in_shape):
             raise ValueError(f'Target shape {out_shape} is not compatible with input shape '
                              f'{in_shape}, check that channels dimension is not in target shape')
+
+
+__all__ = ['Activation', 'Linear', 'OrderedBottleneck', 'Sample', 'Upsample']

@@ -4,8 +4,10 @@ __pycache__/
 /netloader.egg-info/
 /build/
 /model_states/
+/dist/
 **/*[Tt][Ee][Ss][Tt]*
 **/*[Tt][Ee][Mm][Pp]*
+**/_build/
 /tests/model_states/
 /tests/model_states/*
 !/tests/

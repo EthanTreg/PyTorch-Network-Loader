@@ -15,19 +15,6 @@ ConfigT = TypeVar('ConfigT', bound='BaseConfig')
 class BaseConfig:
     """
     Base dataclass to hold configuration parameters.
-
-    Methods
-    -------
-    from_dict(config: dict[str, Any]) -> ConfigT
-        Creates a BaseConfig object from a dictionary
-    get_changed_fields() -> set[str]
-        Gets the set of changed fields in the dataclass
-    merge(other: ConfigT) -> None
-        Merges another dataclass into this one
-    merge_dict(other: dict[str, Any]) -> None
-        Merges a dictionary into this dataclass
-    to_dict() -> dict[str, Any]
-        Converts the dataclass to a dictionary
     """
     _changed_fields: set[str] = field(default_factory=set, init=False, repr=False)
 
@@ -63,7 +50,7 @@ class BaseConfig:
             return super().__setattr__(key, value)
 
         key = key.replace('-', '_')
-        hint: type = get_type_hints(self)[key]
+        hint: type = get_type_hints(type(self))[key]
 
         if getattr(hint, '__origin__', None) is Literal:
             self._check_literal(key, value, getattr(hint, '__args__', ()))
@@ -98,8 +85,8 @@ class BaseConfig:
         ----------
         config : dict[str, Any]
             Configuration dictionary
-        new_fields : bool, default = False
-            Whether to allow new fields in the dictionary
+        new_fields : bool, Optional
+            Whether to allow new fields in the dictionary, default = False
 
         Returns
         -------
@@ -129,8 +116,8 @@ class BaseConfig:
         ----------
         other : ConfigT
             Configuration dataclass to merge
-        new_fields : bool, default = False
-            Whether to allow new fields in the other dataclass
+        new_fields : bool, Optional
+            Whether to allow new fields in the other dataclass, default = False
         """
         key: str
 
@@ -151,8 +138,8 @@ class BaseConfig:
         ----------
         other : dict[str, Any]
             Configuration dictionary to merge
-        new_fields : bool, default = False
-            Whether to allow new fields in the dictionary
+        new_fields : bool, Optional
+            Whether to allow new fields in the dictionary, default = False
         """
         key: str
         value: Any
@@ -199,9 +186,9 @@ class NetConfig(BaseConfig):
     Attributes
     ----------
     checkpoints : bool
-        Whether to use checkpoint layers in the network
+        Whether to capture intermediate outputs as checkpoints
     paper : str
-        Link to the paper describing the network
+        Reference to the paper describing the network
     github : str
         Link to the GitHub repository for the network
     description : str
@@ -249,3 +236,6 @@ class Config(BaseConfig):
     """
     layers: list[dict[str, Any]] = field(default_factory=list)
     net: NetConfig = field(default_factory=NetConfig)
+
+
+__all__ = ['BaseConfig', 'NetConfig', 'Config', 'ConfigT']

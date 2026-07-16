@@ -3,7 +3,6 @@ Deprecated module for backwards compatibility
 """
 from warnings import warn
 
-# pylint: disable=unused-import
 from netloader.transforms import (
     BaseTransform,
     Log,
@@ -19,3 +18,5 @@ warn(
     DeprecationWarning,
     stacklevel=2,
 )
+
+__all__ = ['BaseTransform', 'Log', 'MinClamp', 'MultiTransform', 'Normalise', 'NumpyTensor']

@@ -6,7 +6,7 @@ import logging
 import warnings
 
 
-__version__ = '3.10.1'
+__version__ = '3.11.1'
 __author__ = 'Ethan Tregidga'
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
 warnings.filterwarnings('once', category=DeprecationWarning, module=r'^netloader(\.|$)')
@@ -27,16 +27,50 @@ if sys.version_info < (3, 12):
 try:
     import torch
 
-    from netloader.network import Network
     from netloader.utils import safe_globals
-    from netloader import networks, transforms, loss_funcs, models
+    from netloader import (
+        layers,
+        models,
+        architectures,
+        utils,
+        data,
+        loss_funcs,
+        network,
+        schedulers,
+        transforms,
+    )
 
 
     # Adds PyTorch Network Loader classes to list of safe PyTorch classes when loading saved
-    # networks
-    safe_globals(__name__, [networks, transforms, loss_funcs, models])
-    torch.serialization.add_safe_globals([Network])
-except ModuleNotFoundError:
-    pass
-except ImportError:
+    # architectures
+    safe_globals(
+        __name__,
+        [models, loss_funcs, schedulers, transforms],
+        use_all=True,
+    )
+    safe_globals(
+        __name__,
+        [architectures],
+        use_all=True,
+        legacy_path_replace=('architectures', 'networks'),
+    )
+    torch.serialization.add_safe_globals([
+        network.BaseNetwork,
+        network.Network,
+        network.CompatibleNetwork,
+    ])
+    torch.serialization.add_safe_globals([])
+
+    __all__ = [
+        'utils',
+        'layers',
+        'models',
+        'architectures',
+        'data',
+        'network',
+        'loss_funcs',
+        'schedulers',
+        'transforms',
+    ]
+except (ModuleNotFoundError, ImportError):
     pass

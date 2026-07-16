@@ -1,7 +1,10 @@
 """
 Collects all classes in the layers module
 """
+from typing import Any
+
 from netloader.layers.linear import Activation, Linear, OrderedBottleneck, Sample, Upsample
+from netloader.layers.multi_layer import Concatenate, Pack, Shortcut, Skip, Unpack
 from netloader.layers.base import BaseLayer, BaseSingleLayer, BaseMultiLayer
 from netloader.layers.pooling import AdaptivePool, Pool, PoolDownscale
 from netloader.layers.blocks import ConvNeXtBlock
@@ -19,18 +22,13 @@ from netloader.layers.convolutional import (
 from netloader.layers.misc import (
     BatchNorm,
     Checkpoint,
-    Concatenate,
     Dropout,
     DropPath,
     Index,
     LayerNorm,
-    Pack,
     Pad,
     Reshape,
     Scale,
-    Shortcut,
-    Skip,
-    Unpack,
 )
 from netloader.layers import utils
 
@@ -74,9 +72,17 @@ __all__ = [
     'utils',
 ]
 
+_optional_imports: dict[str, set[str]] = {'flow': {'SplineFlow'}}
+
 
 try:
     from netloader.layers.flows import SplineFlow
     __all__.append('SplineFlow')
 except ImportError:
     pass
+
+
+def __getattr__(name: str) -> Any:
+    if name not in __all__ and name in _optional_imports['flow']:
+        raise ImportError(f'Cannot import {name}, normalising flow layers require the package Zuko')
+    raise AttributeError(f"module {__name__} has no attribute {name}")

@@ -250,7 +250,8 @@
     },
     {
       "type": "Unpack",
-      "index": 1
+      "index": 1,
+      "layer": 0
     },
     {
       "type": "Reshape",

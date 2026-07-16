@@ -18,18 +18,13 @@ class Recurrent(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the recurrent layer
-    extra_repr() -> string
-        Displays layer parameters when printing the network
     """
     def __init__(
             self,
@@ -47,26 +42,26 @@ class Recurrent(BaseSingleLayer):
         """
         Parameters
         ----------
-        idx : integer
+        idx : int
             Layer number
-        shapes : list[list[integer]]
+        shapes : list[list[int]]
             Shape of the outputs from each layer
-        batch_norm : boolean, default = False
-            If batch normalisation should be used
-        layers : integer, default = 2
-            Number of stacked recurrent layers
-        filters : integer, default = 1
-            Number of output filters
-        dropout : float, default =  0
-            Probability of dropout, requires layers > 1
+        batch_norm : bool, Optional
+            If batch normalisation should be used, default = False
+        layers : int, Optional
+            Number of stacked recurrent layers, default = 2
+        filters : int, Optional
+            Number of output filters, default = 1
+        dropout : float, Optional
+            Probability of dropout, requires layers > 1, default =  0
         mode : {'gru', 'rnn', 'lstm'}
             Type of recurrent layer
-        activation : str | None, default = 'ELU'
-            Which activation function to use, if mode is 'rnn', ReLU activation will always be used
+        activation : str | None, Optional
+            Which activation function to use, if mode is 'rnn', ReLU activation will always be used,
+            default = 'ELU'
         bidirectional : {None, 'sum', 'mean', 'concatenate'}
             If a bidirectional recurrence should be used and method for combining the two
             directions
-
         **kwargs
             Leftover parameters to pass to base layer for checking
         """
@@ -163,3 +158,6 @@ class Recurrent(BaseSingleLayer):
             Layer parameters
         """
         return f'bidirectional_method={self._bidirectional}'
+
+
+__all__ = ['Recurrent']

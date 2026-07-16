@@ -1,9 +1,11 @@
 """
 Transformations that can be inverted
 """
+from __future__ import annotations
 from warnings import warn
 from types import ModuleType
-from typing import Callable, Any, Generic, cast, overload
+from abc import ABC, abstractmethod
+from typing import Callable, Any, Generic, TypeVar, cast, overload
 
 import torch
 import numpy as np
@@ -14,76 +16,62 @@ from netloader.data import Data
 from netloader.utils.types import ArrayLike, ArrayT, ArrayCT
 
 
-class BaseTransform(Generic[ArrayT]):
-    """
-    Base transformation class that other types of transforms build from
+InArrayCT = TypeVar('InArrayCT', ndarray, Tensor)
+OutArrayCT = TypeVar('OutArrayCT', ndarray, Tensor)
 
-    Methods
-    -------
-    forward(x) -> ArrayT
-        Forward pass of the transformation
-    backward(x) -> ArrayT
-        Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Backwards pass to invert the transformation and uncertainty propagation
-    extra_repr() -> str
-        Displays layer parameters when printing the transform
+
+class BaseTransform(ABC, Generic[InArrayCT, OutArrayCT]):
+    """
+    Base transformation class that other types of transforms build from.
     """
     def __init__(self) -> None:
-        # Adds all transform classes to list of safe PyTorch classes when loading saved networks
+        # Adds all transform classes to list of safe PyTorch classes when loading saved
+        # architectures
         torch.serialization.add_safe_globals([self.__class__])
 
     @overload
-    def __call__(self, x: ArrayT, *, back: bool = ...) -> ArrayT:
-        ...
+    def __call__(self, x: InArrayCT, *, back: bool = ...) -> OutArrayCT: ...
 
     @overload
-    def __call__(self, x: Data[ArrayCT], *, back: bool = ...) -> Data[ArrayCT]:
-        ...
+    def __call__(self, x: Data[InArrayCT], *, back: bool = ...) -> Data[OutArrayCT]: ...
 
     @overload
     def __call__(
             self,
-            x: ArrayT,
+            x: InArrayCT,
             *,
             back: bool = ...,
-            uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
-        ...
+            uncertainty: InArrayCT) -> tuple[OutArrayCT, OutArrayCT]: ...
 
     def __call__(
             self,
-            x: ArrayT | Data[ArrayCT],
+            x: InArrayCT | Data[InArrayCT],
             *,
             back: bool = False,
-            uncertainty: ArrayT | None = None) -> ArrayT | Data[ArrayCT] | tuple[ArrayT, ArrayT]:
+            uncertainty: InArrayCT | None = None
+    ) -> OutArrayCT | Data[OutArrayCT] | tuple[OutArrayCT, OutArrayCT]:
         """
         Calling function returns the forward, backwards or uncertainty propagation of the
         transformation
 
         Parameters
         ----------
-        x : DataLike
+        x : ArrayT | Data[ArrayCT]
             Input array or tensor of shape (N,...), where N is the number of elements
-        back : bool, default = False
-            If the inverse transformation should be applied
-        uncertainty : ArrayT, default = None
+        back : bool, Optional
+            If the inverse transformation should be applied, default = False
+        uncertainty : ArrayT, Optional
             Corresponding uncertainties for the input data for uncertainty propagation of shape
             (N,...)
 
         Returns
         -------
-        DataLike | tuple[ArrayT, ArrayT]
+        ArrayT | Data[ArrayCT] | tuple[ArrayT, ArrayT]
             Transformed array or tensor of shape (N,...) and propagated uncertainties of shape
             (N,...)  if provided
         """
         if isinstance(x, Data):
-            return Data(*self._call(
-                cast(ArrayT, x.data),
-                back=back,
-                uncertainty=cast(ArrayT, x.uncertainty),
-            ))
+            return Data(*self._call(x.data, back=back, uncertainty=x.uncertainty))
         return self._call(x, back=back, uncertainty=uncertainty)
 
     def __repr__(self) -> str:
@@ -120,9 +108,9 @@ class BaseTransform(Generic[ArrayT]):
 
     def _call(
             self,
-            x: ArrayT,
+            x: InArrayCT,
             back: bool = False,
-            uncertainty: ArrayT | None = None) -> ArrayT | tuple[ArrayT, ArrayT]:
+            uncertainty: InArrayCT | None = None) -> OutArrayCT | tuple[OutArrayCT, OutArrayCT]:
         """
         Internal calling function to handle the different types of calls
 
@@ -130,9 +118,9 @@ class BaseTransform(Generic[ArrayT]):
         ----------
         x : ArrayT
             Input array or tensor of shape (N,...) and type float, where N is the number of elements
-        back : bool, default = False
-            If the inverse transformation should be applied
-        uncertainty : ArrayT | None, default = None
+        back : bool, Optional
+            If the inverse transformation should be applied, default = False
+        uncertainty : ArrayT | None, Optional
             Corresponding uncertainties for the input data for uncertainty propagation of shape
             (N,...) and type float
 
@@ -150,7 +138,94 @@ class BaseTransform(Generic[ArrayT]):
             return self.forward_grad(x, uncertainty)
         return self.forward(x)
 
-    def forward(self, x: ArrayT) -> ArrayT:
+    @abstractmethod
+    def forward(self, x: InArrayCT) -> OutArrayCT:
+        """
+        Forward pass of the transformation
+
+        Parameters
+        ----------
+        x : ArrayT
+            Input array or tensor of shape (N,...), where N is the number of elements
+
+        Returns
+        -------
+        ArrayT
+            Transformed array or tensor of shape (N,...)
+        """
+
+    @abstractmethod
+    def backward(self, x: InArrayCT) -> OutArrayCT:
+        """
+        Backwards pass to invert the transformation
+
+        Parameters
+        ----------
+        x : ArrayT
+            Input array or tensor of shape (N,...), where N is the number of elements
+
+        Returns
+        -------
+        ArrayT
+            Untransformed array or tensor of shape (N,...)
+        """
+
+    @abstractmethod
+    def forward_grad(self, x: InArrayCT, uncertainty: InArrayCT) -> tuple[OutArrayCT, OutArrayCT]:
+        """
+        Forward pass of the transformation and uncertainty propagation
+
+        Parameters
+        ----------
+        x : ArrayT
+            Input array or tensor of shape (N,...), where N is the number of elements
+        uncertainty : ArrayT
+            Uncertainty of the input array or tensor of shape (N,...)
+
+        Returns
+        -------
+        tuple[ArrayT, ArrayT]
+            Transformed array or tensor of shape (N,...) and transformed uncertainty of shape
+            (N,...)
+        """
+
+    @abstractmethod
+    def backward_grad(self, x: InArrayCT, uncertainty: InArrayCT) -> tuple[OutArrayCT, OutArrayCT]:
+        """
+        Backwards pass to invert the transformation and uncertainty propagation
+
+        Parameters
+        ----------
+        x : ArrayT
+            Input array or tensor of shape (N,...), where N is the number of elements
+        uncertainty : ArrayT
+            Uncertainty of the input array or tensor of shape (N,...)
+
+        Returns
+        -------
+        tuple[ArrayT, ArrayT]
+            Untransformed array or tensor of shape (N,...) and untransformed uncertainty of shape
+            (N,...)
+        """
+
+    def extra_repr(self) -> str:
+        """
+        Additional representation of the transformation
+
+        Returns
+        -------
+        str
+            Transform specific representation
+        """
+        return ''
+
+
+class BaseTypeTransform(BaseTransform[ArrayCT, ArrayCT]):
+    """
+    Base transformation class that other types of transforms build from, with the same input and
+    output type.
+    """
+    def forward(self, x: ArrayCT) -> ArrayCT:
         """
         Forward pass of the transformation
 
@@ -166,7 +241,7 @@ class BaseTransform(Generic[ArrayT]):
         """
         return x
 
-    def backward(self, x: ArrayT) -> ArrayT:
+    def backward(self, x: ArrayCT) -> ArrayCT:
         """
         Backwards pass to invert the transformation
 
@@ -182,7 +257,7 @@ class BaseTransform(Generic[ArrayT]):
         """
         return x
 
-    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
+    def forward_grad(self, x: ArrayCT, uncertainty: ArrayCT) -> tuple[ArrayCT, ArrayCT]:
         """
         Forward pass of the transformation and uncertainty propagation
 
@@ -201,7 +276,7 @@ class BaseTransform(Generic[ArrayT]):
         """
         return self(x), uncertainty
 
-    def backward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
+    def backward_grad(self, x: ArrayCT, uncertainty: ArrayCT) -> tuple[ArrayCT, ArrayCT]:
         """
         Backwards pass to invert the transformation and uncertainty propagation
 
@@ -220,30 +295,10 @@ class BaseTransform(Generic[ArrayT]):
         """
         return self(x, back=True), uncertainty
 
-    def extra_repr(self) -> str:
-        """
-        Additional representation of the transformation
 
-        Returns
-        -------
-        str
-            Transform specific representation
-        """
-        return ''
-
-
-class Index(BaseTransform):
+class Index(BaseTypeTransform):
     """
-    Slices the input along a given dimension assuming the input meets the required shape
-
-    Methods
-    -------
-    forward(x) -> ArrayT
-        Forward pass of the transformation
-    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Forward pass of the transformation and uncertainty propagation
-    extra_repr() -> str
-        Displays layer parameters when printing the transform
+    Slices the input along a given dimension assuming the input meets the required shape.
     """
     def __init__(
             self,
@@ -254,14 +309,14 @@ class Index(BaseTransform):
         """
         Parameters
         ----------
-        dim : int, default = -1
-            Dimension to slice over
-        in_shape : tuple[int, ...] | None, default = None
+        dim : int, Optional
+            Dimension to slice over, default = -1
+        in_shape : tuple[int, ...] | None, Optional
             Target shape ignoring batch size so that the slice only occurs if the input has the
             same shape to prevent repeated slicing, if any dimension has a shape of -1, then the
             size of the dimension will be ignored
-        slice_ : slice, default = slice(None)
-            Slicing object
+        slice_ : slice, Optional
+            Slicing object, default = slice(None)
         """
         super().__init__()
         self._shape: tuple[int, ...] = tuple(in_shape or ())
@@ -278,7 +333,7 @@ class Index(BaseTransform):
             warn(
                 f'{self.__class__.__name__} transform is saved in old non-weights safe '
                 'format and is deprecated, please resave the transform in the new format using '
-                'net.save()',
+                'BaseArchitecture.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -300,30 +355,17 @@ class Index(BaseTransform):
         return f'in_shape: {self._shape}, slice: {self._slice}'
 
 
-class Log(BaseTransform):
+class Log(BaseTypeTransform):
     """
-    Logarithm transform
-
-    Methods
-    -------
-    forward(x) -> ArrayT
-        Forward pass of the transformation
-    backward(x) -> ArrayT
-        Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Backwards pass to invert the transformation and uncertainty propagation
-    extra_repr() -> str
-        Displays layer parameters when printing the transform
+    Logarithm transform.
     """
     def __init__(self, *, base: float = 10, idxs: list[int] | None = None) -> None:
         """
         Parameters
         ----------
-        base : float, default = 10
-            Base of the logarithm
-        idxs : list[int], default = None
+        base : float, Optional
+            Base of the logarithm, default = 10
+        idxs : list[int] | None, Optional
             Indices to slice the last dimension to perform the log on
         """
         super().__init__()
@@ -346,6 +388,7 @@ class Log(BaseTransform):
     def forward(self, x: ArrayT) -> ArrayT:
         module: ModuleType = torch if isinstance(x, Tensor) else np
         logs: dict[float, Callable] = {module.e: module.log, 10: module.log10, 2: module.log2}
+        x = cast(ArrayT, x.clone() if isinstance(x, Tensor) else x.copy())
 
         if self._base in logs and self._idxs is not None:
             x[..., self._idxs] = logs[self._base](x[..., self._idxs])
@@ -358,8 +401,10 @@ class Log(BaseTransform):
         return x
 
     def backward(self, x: ArrayT) -> ArrayT:
+        x = cast(ArrayT, x.clone() if isinstance(x, Tensor) else x.copy())
+
         if self._idxs is not None:
-            x[..., self._idxs] = self._base ** x[..., self._idxs]  # type: ignore
+            x[..., self._idxs] = self._base ** x[..., self._idxs]  # type: ignore[assignment]
         else:
             x = cast(ArrayT, self._base ** x)
         return x
@@ -394,24 +439,17 @@ class Log(BaseTransform):
         return f'base: {self._base}, idxs: {self._idxs}'
 
 
-class MinClamp(BaseTransform):
+class MinClamp(BaseTypeTransform):
     """
-    Clamps the minimum value to be the smallest positive value
-
-    Methods
-    -------
-    forward(x) -> ArrayT
-        Forward pass of the transformation
-    extra_repr() -> str
-        Displays layer parameters when printing the transform
+    Clamps the minimum value to be the smallest positive value.
     """
     def __init__(self, *, dim: int | None = None, idxs: list[int] | None = None) -> None:
         """
         Parameters
         ----------
-        dim : int, default = None
+        dim : int | None, Optional
             Dimension to take the minimum value over
-        idxs : list[int], default = None
+        idxs : list[int] | None, Optional
             Indices to slice the last dimension to perform the min clamp on
         """
         super().__init__()
@@ -461,29 +499,12 @@ class MinClamp(BaseTransform):
 
 class MultiTransform(BaseTransform):
     """
-    Applies multiple transformations
+    Applies multiple transformations.
 
     Attributes
     ----------
     transforms : list[BaseTransform]
         List of transformations
-
-    Methods
-    -------
-    forward(x) -> ArrayT
-        Forward pass of the transformation
-    backward(x) -> ArrayT
-        Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Backwards pass to invert the transformation and uncertainty propagation
-    append(transform) -> None
-        Appends a transform to the list of transforms
-    extend(*args) -> None
-        Extends the list of transforms with another list of transforms
-    extra_repr() -> str
-        Displays layer parameters when printing the transform
     """
     def __init__(self, *args: BaseTransform) -> None:
         """
@@ -505,10 +526,28 @@ class MultiTransform(BaseTransform):
         else:
             self.transforms = list(args)
 
+    @overload
+    def __getitem__(self, item: int) -> BaseTransform: ...
+
+    @overload
+    def __getitem__(self, item: slice) -> MultiTransform: ...
+
     def __getitem__(self, item: int | slice) -> BaseTransform:
+        """
+        Gets a transform or a slice of transforms from the list of transforms.
+
+        Parameters
+        ----------
+        item : int | slice
+            Index or slice of the transform(s) to get
+
+        Returns
+        -------
+        BaseTransform
+            Transform or MultiTransform containing the slice of transforms
+        """
         if isinstance(item, int):
             return self.transforms[item]
-
         return MultiTransform(*self.transforms[item])
 
     def __getstate__(self) -> dict[str, Any]:
@@ -524,7 +563,7 @@ class MultiTransform(BaseTransform):
             warn(
                 f'{self.__class__.__name__} transform is saved in old non-weights safe '
                 'format and is deprecated, please resave the transform in the new format using '
-                'net.save()',
+                'BaseArchitecture.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -534,28 +573,28 @@ class MultiTransform(BaseTransform):
                 self.transforms.append(globals()[name]())
                 self.transforms[-1].__setstate__(transform)
 
-    def forward(self, x: ArrayT) -> ArrayT:
+    def forward(self, x: ArrayLike) -> ArrayLike:
         transform: BaseTransform
 
         for transform in self.transforms:
             x = transform(x)
         return x
 
-    def backward(self, x: ArrayT) -> ArrayT:
+    def backward(self, x: ArrayLike) -> ArrayLike:
         transform: BaseTransform
 
         for transform in self.transforms[::-1]:
             x = transform(x, back=True)
         return x
 
-    def forward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
+    def forward_grad(self, x: ArrayLike, uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
         transform: BaseTransform
 
         for transform in self.transforms:
             x, uncertainty = transform(x, uncertainty=uncertainty)
         return x, uncertainty
 
-    def backward_grad(self, x: ArrayT, uncertainty: ArrayT) -> tuple[ArrayT, ArrayT]:
+    def backward_grad(self, x: ArrayLike, uncertainty: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
         transform: BaseTransform
 
         for transform in self.transforms[::-1]:
@@ -595,9 +634,9 @@ class MultiTransform(BaseTransform):
         return f'{extra_repr}\n'
 
 
-class Normalise(BaseTransform):
+class Normalise(BaseTypeTransform):
     """
-    Normalises the data to zero mean and unit variance, or between 0 and 1
+    Normalises the data to zero mean and unit variance, or between 0 and 1.
 
     Attributes
     ----------
@@ -605,19 +644,6 @@ class Normalise(BaseTransform):
         Offset to subtract from the data
     scale : ndarray
         Scale to divide the data by
-
-    Methods
-    -------
-    forward(x) -> ArrayT
-        Forward pass of the transformation
-    backward(x) -> ArrayT
-        Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Backwards pass to invert the transformation and uncertainty propagation
-    extra_repr() -> str
-        Displays layer parameters when printing the transform
     """
     @overload
     def __init__(self, *, offset: ndarray, scale: ndarray) -> None:
@@ -643,15 +669,16 @@ class Normalise(BaseTransform):
         """
         Parameters
         ----------
-        mean : bool, default = True
-            If data should be normalised to zero mean and unit variance, or between 0 and 1
-        dim : int | tuple[int, ...] | None, default = None
+        mean : bool, Optional
+            If data should be normalised to zero mean and unit variance, or between 0 and 1,
+            default = True
+        dim : int | tuple[int, ...] | None, Optional
             Dimensions to normalise over, if None, all dimensions will be normalised over
-        offset : ndarray | None, default = None
+        offset : ndarray | None, Optional
             Offset to subtract from the data if data argument is None
-        scale : ndarray | None, default = None
+        scale : ndarray | None, Optional
             Scale to divide the data if data argument is None
-        data : ArrayLike | None, default = None
+        data : ArrayLike | None, Optional
             Data to normalise with shape (N,...), where N is the number of elements
         """
         super().__init__()
@@ -716,30 +743,19 @@ class Normalise(BaseTransform):
 
 class NumpyTensor(BaseTransform):
     """
-    Converts Numpy arrays to PyTorch tensors
+    Converts Numpy arrays to PyTorch tensors.
 
     Attributes
     ----------
-    dtype : torch.dtype, default = float32
+    dtype : torch.dtype
         Data type of the tensor
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the transformation
-    backward(x) -> ndarray
-        Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> tuple[Tensor, Tensor]
-        Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> tuple[ndarray, ndarray]
-        Backwards pass to invert the transformation and uncertainty propagation
     """
     def __init__(self, *, dtype: torch.dtype = torch.float32) -> None:
         """
         Parameters
         ----------
-        dtype : dtype, default = float32
-            Data type of the tensor
+        dtype : dtype, Optional
+            Data type of the tensor, default = torch.float32
         """
         super().__init__()
         self.dtype: torch.dtype = dtype
@@ -770,22 +786,9 @@ class NumpyTensor(BaseTransform):
         return self.backward(x), self.backward(uncertainty)
 
 
-class Reshape(BaseTransform):
+class Reshape(BaseTypeTransform):
     """
-    Reshapes the data
-
-    Methods
-    -------
-    forward(x) -> ArrayT
-        Forward pass of the transformation
-    backward(x) -> ArrayT
-        Backwards pass to invert the transformation
-    forward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Forward pass of the transformation and uncertainty propagation
-    backward_grad(x, uncertainty) -> tuple[ArrayT, ArrayT]
-        Backwards pass to invert the transformation and uncertainty propagation
-    extra_repr() -> str
-        Displays layer parameters when printing the transform
+    Reshapes the data.
     """
     def __init__(
             self,
@@ -795,9 +798,9 @@ class Reshape(BaseTransform):
         """
         Parameters
         ----------
-        in_shape : list[int] | None, default = None
+        in_shape : list[int] | None, Optional
             Original shape of the data
-        out_shape : list[int] | None, default = None
+        out_shape : list[int] | None, Optional
             Output shape of the data
         """
         super().__init__()
@@ -829,3 +832,18 @@ class Reshape(BaseTransform):
 
     def extra_repr(self) -> str:
         return f'in_shape: {self._in_shape}, out_shape: {self._out_shape}'
+
+
+__all__ = [
+    'BaseTransform',
+    'BaseTypeTransform',
+    'Index',
+    'Log',
+    'MinClamp',
+    'MultiTransform',
+    'Normalise',
+    'NumpyTensor',
+    'Reshape',
+    'InArrayCT',
+    'OutArrayCT',
+]

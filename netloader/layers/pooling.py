@@ -17,16 +17,13 @@ class AdaptivePool(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
-
-    Methods
-    -------
-    extra_repr() -> str
-        Displays layer parameters when printing the network
     """
     def __init__(
             self,
@@ -43,8 +40,8 @@ class AdaptivePool(BaseSingleLayer):
             Output shape of the layer
         shapes : list[list[int]]
             Shape of the outputs from each layer
-        channels : bool, default = True
-            If the input includes a channels dimension
+        channels : bool, Optional
+            If the input includes a channels dimension, default = True
         mode : {'average', 'max'}
             Whether to use 'max' or 'average' pooling
 
@@ -139,16 +136,13 @@ class Pool(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
-
-    Methods
-    -------
-    forward(x) -> Tensor
-        Forward pass of the pool layer
     """
     def __init__(
             self,
@@ -165,15 +159,15 @@ class Pool(BaseSingleLayer):
         ----------
         shapes : list[list[int]]
             Shape of the outputs from each layer
-        kernel : int | list[int], default = 2
-            Size of the kernel
-        stride : int | list[int], default = 2
-            Stride of the kernel
-        padding : int | {'same'} | list[int], default = 0
-            Input padding, can an int or 'same' where 'same' preserves the input shape
+        kernel : int | list[int], Optional
+            Size of the kernel, default = 2
+        stride : int | list[int], Optional
+            Stride of the kernel, default = 2
+        padding : int | {'same'} | list[int], Optional
+            Input padding, can an int or 'same' where 'same' preserves the input shape, default = 0
         mode : {'max', 'average'}
             Whether to use 'max' or 'average' pooling
-        pool_kwargs : dict[str, Any] | None, default = None
+        pool_kwargs : dict[str, Any] | None, Optional
             Additional keyword arguments to pass to the pooling layer
 
         **kwargs
@@ -265,10 +259,12 @@ class PoolDownscale(Pool):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers to loop through in the forward pass
     """
     def __init__(
@@ -297,3 +293,6 @@ class PoolDownscale(Pool):
         state: dict[str, Any] = super().__getstate__()
         state.pop('padding', None)
         return state
+
+
+__all__ = ['AdaptivePool', 'Pool', 'PoolDownscale']

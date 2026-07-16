@@ -6,10 +6,11 @@ import os
 import torch
 import numpy as np
 
-import netloader.networks as nets
+import netloader.architectures as archs
+from netloader.data import DataList
 from netloader.network import Network
+from netloader.utils import get_device
 from netloader import transforms, models
-from netloader.utils.utils import get_device
 from netloader.data import BaseDataset, loader_init
 
 
@@ -58,7 +59,7 @@ def main():
         transforms.NumpyTensor(),
     )
     trans_data = transform(data, uncertainty=data)[0]
-    blank_transform = transforms.MultiTransform(transforms.BaseTransform())
+    blank_transform = transforms.MultiTransform(transforms.Normalise(offset=0, scale=1))
     transforms.MultiTransform.__setstate__(blank_transform, transform.__getstate__())
     assert (trans_data == blank_transform(data, uncertainty=data)[0]).all()
     print(f'Test Data Shape: {data.shape}\nTransformed Data Shape: {trans_data.numpy().shape}\n'
@@ -80,7 +81,7 @@ def main():
 
         if net_name == 'layer_examples':
             network.group = 1
-            out_tensor = network([in_tensor, target])
+            out_tensor = network(DataList([in_tensor, target]))
         else:
             out_tensor = network(in_tensor)
 
@@ -104,7 +105,7 @@ def main():
     # Test Networks
     try:
         print(f'Testing {net_name} training...')
-        net = nets.Encoder(
+        arch = archs.Encoder(
             0,
             '',
             network,
@@ -112,15 +113,15 @@ def main():
             verbose='full',
             classes=torch.arange(10),
         ).to(device)
-        net.training(1, loaders)
+        arch.training(1, loaders)
     except NameError:
         pass
 
     # Test Encoder training
     print('Testing Encoder training...')
     try:
-        net = nets.load_net(1, states_dir, 'test_encoder').to(device)
-        net.training(net.get_epochs() + 1, loaders)
+        arch = archs.load_arch(1, states_dir, 'test_encoder').to(device)
+        arch.training(arch.get_epochs() + 1, loaders)
     except FileNotFoundError:
         pass
 
@@ -130,7 +131,7 @@ def main():
         in_shape[1:],
         [1],
     ).to(device)
-    net = nets.Encoder(
+    arch = archs.Encoder(
         1,
         states_dir,
         network,
@@ -141,15 +142,15 @@ def main():
         transform=low_transform,
         in_transform=high_transform,
     ).to(device)
-    net.training(4, loaders)
-    net = nets.load_net(1, states_dir, net.net.name).to(device)
-    net.training(10, loaders)
-    net.predict(loaders[1])
+    arch.training(4, loaders)
+    arch = archs.load_arch(1, states_dir, arch.net.name).to(device)
+    arch.training(10, loaders)
+    arch.predict(loaders[1])
 
     print('Testing Autoencoder training...')
     try:
-        net = nets.load_net(1, states_dir, 'test_autoencoder', map_location=device)
-        net.training(net.get_epochs() + 1, loaders)
+        arch = archs.load_arch(1, states_dir, 'test_autoencoder', map_location=device)
+        arch.training(arch.get_epochs() + 1, loaders)
     except FileNotFoundError:
         pass
 
@@ -159,7 +160,7 @@ def main():
         in_shape[1:],
         in_shape[1:],
     ).to(device)
-    net = nets.Autoencoder(
+    arch = archs.Autoencoder(
         1,
         states_dir,
         network,
@@ -169,15 +170,15 @@ def main():
         transform=high_transform,
         latent_transform=low_transform,
     ).to(device)
-    net.training(2, loaders)
-    net = nets.load_net(1, states_dir, net.net.name).to(device)
-    net.training(4, loaders)
-    net.predict(loaders[1])
+    arch.training(2, loaders)
+    arch = archs.load_arch(1, states_dir, arch.net.name).to(device)
+    arch.training(4, loaders)
+    arch.predict(loaders[1])
 
     # Test Decoder training
     print('Testing Decoder training...')
     try:
-        net = nets.load_net(1, states_dir, 'test_decoder').to(device)
+        net = archs.load_arch(1, states_dir, 'test_decoder').to(device)
         net.training(net.get_epochs() + 1, loaders)
     except FileNotFoundError:
         pass
@@ -188,7 +189,7 @@ def main():
         [1],
         in_shape[1:],
     ).to(device)
-    net = nets.Decoder(
+    net = archs.Decoder(
         1,
         states_dir,
         network,
@@ -199,20 +200,20 @@ def main():
         in_transform=high_transform,
     ).to(device)
     net.training(2, loaders)
-    net = nets.load_net(1, states_dir, net.net.name)
+    net = archs.load_arch(1, states_dir, net.net.name)
     net.training(4, loaders)
     net.predict(loaders[1])
 
     # Test ConvNeXt training
     print('Testing ConvNeXt training...')
     try:
-        net = nets.load_net(1, states_dir, 'test_convnext').to(device)
+        net = archs.load_arch(1, states_dir, 'test_convnext').to(device)
         net.training(net.get_epochs() + 1, loaders)
     except FileNotFoundError:
         pass
 
     network = models.ConvNeXtTiny(in_shape[1:], [1])
-    net = nets.Encoder(
+    net = archs.Encoder(
         1,
         states_dir,
         network,
@@ -223,7 +224,7 @@ def main():
         in_transform=high_transform,
     ).to(device)
     net.training(2, loaders)
-    net = nets.load_net(1, states_dir, net.net.name).to(device)
+    net = archs.load_arch(1, states_dir, net.net.name).to(device)
     net.training(4, loaders)
     net.predict(loaders[1])
 

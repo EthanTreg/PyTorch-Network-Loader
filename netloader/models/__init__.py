@@ -1,11 +1,12 @@
 """
 Collects all classes in the models module
 """
+from netloader.models.misc import MultiNetwork
 from netloader.models.convnext import (
     ConvNeXt,
     ConvNeXtTiny,
-    ConvNeXtSmall,
     ConvNeXtBase,
+    ConvNeXtSmall,
     ConvNeXtLarge,
     ConvNeXtXLarge,
 )
@@ -13,8 +14,9 @@ from netloader.models.convnext import (
 __all__ = [
     'ConvNeXt',
     'ConvNeXtTiny',
-    'ConvNeXtSmall',
     'ConvNeXtBase',
+    'MultiNetwork',
+    'ConvNeXtSmall',
     'ConvNeXtLarge',
     'ConvNeXtXLarge',
 ]

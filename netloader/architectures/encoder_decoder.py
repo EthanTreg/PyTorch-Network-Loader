@@ -10,26 +10,26 @@ from numpy import ndarray
 from torch import Tensor, nn
 
 from netloader.data import DataList
-from netloader.network import Network
 from netloader.utils import label_change
+from netloader.network import BaseNetwork
 from netloader.transforms import BaseTransform
-from netloader.networks.base import BaseNetwork
+from netloader.architectures.base import BaseArchitecture
 from netloader.loss_funcs import BaseLoss, MSELoss, CrossEntropyLoss
 from netloader.utils.types import TensorListLike, NDArrayListLike, TensorT
 
 
-class BaseEncoder(BaseNetwork):
+class BaseEncoder(BaseArchitecture):
     """
-    Base encoder network for predicting low-dimensional data from high-dimensional inputs.
+    Base encoder architecture for predicting low-dimensional data from high-dimensional inputs.
 
     Attributes
     ----------
     description : str
-        Description of the network
+        Description of the architecture
     version : str
-        Version of the network
+        Version of the architecture
     losses : tuple[list[LossCT], list[LossCT]]
-        Network training and validation losses as a float or dictionary of losses for each loss
+        Architecture training and validation losses as a float or dictionary of losses for each loss
         function
     transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
@@ -38,27 +38,18 @@ class BaseEncoder(BaseNetwork):
         training dataset
     classes : Tensor | None
         Unique classes of shape (C) and type int/float, where C is the number of classes
-    optimiser : optim.Optimizer
-        Network optimiser
-    scheduler : optim.lr_scheduler.LRScheduler
+    optimiser : Optimizer
+        Architecture optimiser
+    scheduler : LRScheduler
         Optimiser scheduler
-    net : Network | CompatibleNetwork
+    net : BaseNetwork
         Neural network
-
-    Methods
-    -------
-    extra_repr() -> str
-        Additional representation of the architecture
-    get_hyperparams() -> dict[str, Any]
-        Returns the hyperparameters of the network
-    to(*args, **kwargs) -> Self
-        Move and/or cast the parameters and buffers
     """
     def __init__(
             self,
             save_num: int | str,
             states_dir: str,
-            net: nn.Module | Network,
+            net: nn.Module | BaseNetwork,
             *,
             overwrite: bool = False,
             mix_precision: bool = False,
@@ -75,36 +66,38 @@ class BaseEncoder(BaseNetwork):
         Parameters
         ----------
         save_num : int | str
-            File number or name to save the network
+            File number or name to save the architecture
         states_dir : str
-            Directory to save the network
-        net : nn.Module | Network
+            Directory to save the architecture
+        net : Module | BaseNetwork
             Network to predict low-dimensional data
-        overwrite : bool, default = False
+        overwrite : bool, Optional
             If saving can overwrite an existing save file, if True and file with the same name
-            exists, an error will be raised
-        mix_precision: bool, default = False
-            If mixed precision should be used
-        learning_rate : float, default = 1e-3
-            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
-        description : str, default = ''
-            Description of the network training
+            exists, an error will be raised, default = False
+        mix_precision: bool, Optional
+            If mixed precision should be used, default = False
+        learning_rate : float, Optional
+            Optimiser initial learning rate, if None, no optimiser or scheduler will be set,
+            default = 1e-3
+        description : str, Optional
+            Description of the architecture training
         verbose : {'full', 'progress', None}
             If details about epoch should be printed ('full'), just a progress bar ('progress'),
             or nothing (None)
-        classes : (C) Tensor, default = None
-            Unique classes of size C if using class classification
-        loss_func : BaseLoss | None, default = MSELoss | CrossEntropyLoss
+        classes : Tensor, Optional
+            Unique classes of shape (C) and type int/float, where C is the number of classes, if
+            using class classification
+        loss_func : BaseLoss | None, Optional
             Loss function for the encoder, if None MSELoss will be used if classes is None, else
             CrossEntropyLoss will be used
-        transform : BaseTransform, default = None
+        transform : BaseTransform, Optional
             Transformation of the low-dimensional data
-        in_transform : BaseTransform, default = None
+        in_transform : BaseTransform, Optional
             Transformation for the input data
-        optimiser_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_optimiser
-        scheduler_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_scheduler
+        optimiser_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_optimiser
+        scheduler_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_scheduler
         """
         super().__init__(
             save_num,
@@ -121,13 +114,12 @@ class BaseEncoder(BaseNetwork):
             scheduler_kwargs=scheduler_kwargs,
         )
         self._loss_func_: BaseLoss
-        self.classes: Tensor | None
+        self.classes: Tensor | None = classes
 
-        if classes is None:
-            self.classes = classes
+        if self.classes is None:
             self._loss_func_ = loss_func or MSELoss()
         else:
-            self.classes = classes.to(self._device)
+            self.classes = self.classes.to(self._device)
             self._loss_func_ = loss_func or CrossEntropyLoss()
 
     def __getstate__(self) -> dict[str, Any]:
@@ -142,7 +134,8 @@ class BaseEncoder(BaseNetwork):
         else:
             warn(
                 f'{self.__class__.__name__} is saved in old non-weights safe format and is '
-                'deprecated, please resave the network in the new format using net.save()',
+                'deprecated, please resave the architecture in the new format using '
+                'BaseArchitecture.save()',
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -155,9 +148,10 @@ class BaseEncoder(BaseNetwork):
     def _loss_tensor(
             self,
             in_data: TensorListLike,
-            target: TensorListLike) -> dict[str, Tensor] | Tensor:
+            target: TensorListLike,
+            _: Any) -> dict[str, Tensor] | Tensor:
         """
-        Calculates the loss from the network's predictions.
+        Calculates the loss from the architecture's predictions.
 
         Parameters
         ----------
@@ -169,7 +163,7 @@ class BaseEncoder(BaseNetwork):
         Returns
         -------
         dict[str, Tensor] | Tensor
-            Loss from the network's predictions
+            Loss from the architecture's predictions
         """
         # Default shape is (N, L), but cross entropy expects (N)
         if self.classes is not None and isinstance(target, Tensor):
@@ -209,47 +203,38 @@ class BaseEncoder(BaseNetwork):
         return self
 
 
-class Autoencoder(BaseNetwork):
+class Autoencoder(BaseArchitecture):
     """
-    Network handler for autoencoder type networks.
+    Architecture handler for autoencoder type architectures.
 
     Attributes
     ----------
     description : str
-        Description of the network
+        Description of the architecture
     losses : tuple[list[LossCT], list[LossCT]]
-        Network training and validation losses as a float or dictionary of losses for each loss
+        Architecture training and validation losses as a float or dictionary of losses for each loss
         function
     transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
     idxs: ndarray | None
         Training data indices with shape (N) and type int, where N is the number of elements in the
         training dataset
-    optimiser : optim.Optimizer
-        Network optimiser
-    scheduler : optim.lr_scheduler.LRScheduler
+    optimiser : Optimizer
+        Architecture optimiser
+    scheduler : LRScheduler
         Optimiser scheduler
-    net : Network | CompatibleNetwork
+    net : BaseNetwork
         Neural network
     reconstruct_func : BaseLoss
         Loss function for the reconstruction loss
     latent_func : BaseLoss
         Loss function for the latent loss
-
-    Methods
-    -------
-    batch_predict(data) -> tuple[NDArrayListLike | None, ...]
-        Generates predictions for the given data
-    extra_repr() -> str
-        Additional representation of the architecture
-    get_hyperparams() -> dict[str, Any]
-        Returns the hyperparameters of the network
     """
     def __init__(
             self,
             save_num: int | str,
             states_dir: str,
-            net: nn.Module | Network,
+            net: nn.Module | BaseNetwork,
             *,
             overwrite: bool = False,
             mix_precision: bool = False,
@@ -264,31 +249,31 @@ class Autoencoder(BaseNetwork):
         Parameters
         ----------
         save_num : int | str
-            File number or name to save the network
+            File number or name to save the architecture
         states_dir : str
-            Directory to save the network
-        net : Module | Network
+            Directory to save the architecture
+        net : Module | BaseNetwork
             Network to predict low-dimensional data
-        overwrite : bool, default = False
+        overwrite : bool, Optional
             If saving can overwrite an existing save file, if True and file with the same name
-            exists, an error will be raised
-        mix_precision: bool, default = False
-            If mixed precision should be used
-        learning_rate : float, default = 1e-3
-            Optimiser initial learning rate
-        description : str, default = ''
-            Description of the network training
+            exists, an error will be raised, default = False
+        mix_precision: bool, Optional
+            If mixed precision should be used, default = False
+        learning_rate : float, Optional
+            Optimiser initial learning rate, default = 1e-3
+        description : str, Optional
+            Description of the architecture training
         verbose : {'full', 'progress', None}
             If details about epoch should be printed ('full'), just a progress bar ('progress'),
             or nothing (None)
-        transform : BaseTransform, default = None
+        transform : BaseTransform, Optional
             Transformation applied to the input data
-        latent_transform : BaseTransform, default = None
+        latent_transform : BaseTransform, Optional
             Transformation applied to the latent space
-        optimiser_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_optimiser
-        scheduler_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_scheduler
+        optimiser_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_optimiser
+        scheduler_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_scheduler
         """
         super().__init__(
             save_num,
@@ -339,7 +324,11 @@ class Autoencoder(BaseNetwork):
             return self._loss_weights[item.replace('_loss', '')]
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
 
-    def _loss_tensor(self, in_data: TensorListLike, target: TensorListLike) -> dict[str, Tensor]:
+    def _loss_tensor(
+            self,
+            in_data: TensorListLike,
+            target: TensorListLike,
+            _: Any) -> dict[str, Tensor]:
         """
         Calculates the loss from the autoencoder's predictions.
 
@@ -430,16 +419,16 @@ class Autoencoder(BaseNetwork):
         }
 
 
-class Decoder(BaseNetwork):
+class Decoder(BaseArchitecture):
     """
-    Decoder network for predicting high-dimensional data from low-dimensional inputs.
+    Decoder architecture for predicting high-dimensional data from low-dimensional inputs.
 
     Attributes
     ----------
     description : str
-        Description of the network
+        Description of the architecture
     losses : tuple[list[LossCT], list[LossCT]]
-        Network training and validation losses as a float or dictionary of losses for each loss
+        Architecture training and validation losses as a float or dictionary of losses for each loss
         function
     transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
@@ -448,25 +437,18 @@ class Decoder(BaseNetwork):
     idxs: ndarray | None
         Training data indices with shape (N) and type int, where N is the number of elements in the
         training dataset
-    optimiser : optim.Optimizer
-        Network optimiser
-    scheduler : optim.lr_scheduler.LRScheduler
+    optimiser : Optimizer
+        Architecture optimiser
+    scheduler : LRScheduler
         Optimiser scheduler
-    net : Network | CompatibleNetwork
+    net : BaseNetwork
         Neural network
-
-    Methods
-    -------
-    extra_repr() -> str
-        Additional representation of the architecture
-    get_hyperparams() -> dict[str, Any]
-        Returns the hyperparameters of the network
     """
     def __init__(
             self,
             save_num: int | str,
             states_dir: str,
-            net: nn.Module | Network,
+            net: nn.Module | BaseNetwork,
             *,
             overwrite: bool = False,
             mix_precision: bool = False,
@@ -481,31 +463,32 @@ class Decoder(BaseNetwork):
         Parameters
         ----------
         save_num : int | str
-            File number or name to save the network
+            File number or name to save the architecture
         states_dir : str
-            Directory to save the network
-        net : Module | Network
+            Directory to save the architecture
+        net : Module | BaseNetwork
             Network to predict low-dimensional data
-        overwrite : bool, default = False
+        overwrite : bool, Optional
             If saving can overwrite an existing save file, if True and file with the same name
-            exists, an error will be raised
-        mix_precision: bool, default = False
-            If mixed precision should be used
-        learning_rate : float, default = 1e-3
-            Optimiser initial learning rate, if None, no optimiser or scheduler will be set
-        description : str, default = ''
-            Description of the network
+            exists, an error will be raised, default = False
+        mix_precision: bool, Optional
+            If mixed precision should be used, default = False
+        learning_rate : float, Optional
+            Optimiser initial learning rate, if None, no optimiser or scheduler will be set,
+            default = 1e-3
+        description : str, Optional
+            Description of the architecture
         verbose : {'epoch', 'full', 'progress', None}
             If details about each epoch should be printed ('epoch'), details about epoch and epoch
             progress (full), just total progress ('progress'), or nothing (None)
-        transform : BaseTransform, default = None
-            Transformation of the network's output
-        in_transform : BaseTransform, default = None
+        transform : BaseTransform, Optional
+            Transformation of the architecture's output
+        in_transform : BaseTransform, Optional
             Transformation for the input data
-        optimiser_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_optimiser
-        scheduler_kwargs : dict[str, Any] | None, default = None
-            Optional keyword arguments to pass to set_scheduler
+        optimiser_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_optimiser
+        scheduler_kwargs : dict[str, Any] | None, Optional
+            Optional keyword arguments to pass to init_scheduler
         """
         super().__init__(
             save_num,
@@ -554,9 +537,10 @@ class Decoder(BaseNetwork):
     def _loss_tensor(
             self,
             in_data: TensorListLike,
-            target: TensorListLike) -> dict[str, Tensor] | Tensor:
+            target: TensorListLike,
+            _: Any) -> dict[str, Tensor] | Tensor:
         """
-        Calculates the loss from the network's predictions.
+        Calculates the loss from the architecture's predictions.
 
         Parameters
         ----------
@@ -568,7 +552,7 @@ class Decoder(BaseNetwork):
         Returns
         -------
         dict[str, Tensor] | Tensor
-            Loss from the network's predictions
+            Loss from the architecture's predictions
         """
         return self.loss_func(self.net(in_data), target)
 
@@ -597,14 +581,14 @@ class Decoder(BaseNetwork):
 
 class Encoder(BaseEncoder):
     """
-    Encoder network for predicting low-dimensional data from high-dimensional inputs.
+    Encoder architecture for predicting low-dimensional data from high-dimensional inputs.
 
     Attributes
     ----------
     description : str
-        Description of the network
+        Description of the architecture
     losses : tuple[list[LossCT], list[LossCT]]
-        Network training and validation losses as a float or dictionary of losses for each loss
+        Architecture training and validation losses as a float or dictionary of losses for each loss
         function
     transforms : dict[str, list[BaseTransform] | BaseTransform | None]
         Keys for the output data from predict and corresponding transforms
@@ -613,17 +597,12 @@ class Encoder(BaseEncoder):
         training dataset
     classes : Tensor | None
         Unique classes of shape (C) and type int/float, where C is the number of classes
-    optimiser : optim.Optimizer
-        Network optimiser
-    scheduler : optim.lr_scheduler.LRScheduler
+    optimiser : Optimizer
+        Architecture optimiser
+    scheduler : LRScheduler
         Optimiser scheduler
-    net : Network | CompatibleNetwork
+    net : BaseNetwork
         Neural network
-
-    Methods
-    -------
-    batch_predict(data) -> tuple[ndarray | DataList[ndarray] | None]
-        Generates predictions for the given data
     """
     def batch_predict(self, data: TensorListLike, **_: Any) -> tuple[NDArrayListLike | None, ...]:
         """
@@ -646,3 +625,6 @@ class Encoder(BaseEncoder):
         if isinstance(self._loss_func_, nn.CrossEntropyLoss):
             output = np.argmax(output, axis=-1, keepdims=True)
         return (output,)
+
+
+__all__ = ['BaseEncoder', 'Autoencoder', 'Decoder', 'Encoder']

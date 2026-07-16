@@ -9,7 +9,8 @@ from netloader.utils import Shapes
 from netloader.utils.types import TensorListLike
 from netloader.layers.base import BaseSingleLayer
 from netloader.layers.convolutional import Conv, ConvDepth
-from netloader.layers.misc import Checkpoint, DropPath, Scale, Shortcut
+from netloader.layers.misc import Checkpoint, DropPath, Scale
+from netloader.layers import Shortcut
 
 
 class ConvNeXtBlock(BaseSingleLayer):
@@ -20,20 +21,17 @@ class ConvNeXtBlock(BaseSingleLayer):
 
     Attributes
     ----------
-    group : int, default = 0
+    group : int
         Layer group, if 0 it will always be used, else it will only be used if its group matches the
         Networks
-    layers : nn.Sequential
+    description : str
+        Description of the layer
+    layers : Sequential
         Layers part of the parent layer to loop through in the forward pass
     shapes : Shapes
         Layer output shapes
     check_shapes : Shapes
         Checkpoint output shapes
-
-    Methods
-    -------
-    forward(x, outputs, checkpoints) -> Tensor
-        Forward pass of the block
     """
     def __init__(
             self,
@@ -50,10 +48,10 @@ class ConvNeXtBlock(BaseSingleLayer):
             Shape of the network's output, required only if layer contains factor
         shapes : Shapes
             Shape of the outputs from each layer
-        drop_path : float, default = 0
-            Probability of Drop Path dropout
-        layer_scale : float, default = 1e-6
-            Initial scale factor for layer Scale
+        drop_path : float, Optional
+            Probability of Drop Path dropout, default = 0
+        layer_scale : float, Optional
+            Initial scale factor for layer Scale, default = 1e-6
         **kwargs
             Leftover parameters for checking if they are valid
         """
@@ -142,3 +140,6 @@ class ConvNeXtBlock(BaseSingleLayer):
         for layer in self.layers:
             x = layer(x, outputs=outputs, checkpoints=checkpoints)
         return cast(Tensor, x)
+
+
+__all__ = ['ConvNeXtBlock']
