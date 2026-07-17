@@ -19,7 +19,7 @@ from docs.utils import utils
 # General configuration
 nitpicky: bool = True
 add_module_names: bool = False
-release: str = '3.11.1'
+release: str = '3.11.2'
 author: str = 'Ethan Tregidga'
 project: str = 'PyTorch Network Loader'
 copyright = '2026, Ethan Tregidga'

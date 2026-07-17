@@ -6,7 +6,7 @@ import logging
 import warnings
 
 
-__version__ = '3.11.1'
+__version__ = '3.11.2'
 __author__ = 'Ethan Tregidga'
 logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.WARNING)
 warnings.filterwarnings('once', category=DeprecationWarning, module=r'^netloader(\.|$)')

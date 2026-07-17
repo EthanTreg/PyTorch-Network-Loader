@@ -10,7 +10,7 @@ authors = [
 ]
 description = "Utility to generate and train PyTorch neural network objects from JSON files"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -18,13 +18,13 @@ classifiers = [
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
 dependencies = [
-    "numpy>=2.4.0",
-    "torch>=2.11.0",
+    "numpy>=2.0.0",
+    "torch>=2.8.0",
     "packaging>=24.0",
 ]
 
 [project.optional-dependencies]
-flows = ["zuko"]
+flows = ["zuko>=1.5.0"]
 wandb = ["wandb"]
 
 [project.urls]
