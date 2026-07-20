@@ -659,11 +659,9 @@ def add_google_tag(app: Sphinx, _: Any, __: Any, context: dict[str, Any], ___: A
     context : dict[str, Any]
         The context dictionary for the template
     """
-    context['google_analytics_tag'] = app.config.google_analytics_tag
-    context['metatags'] = (
-            context.get('metatags', '') +
-                           '<meta name="google-site-verification" '
-                           'content="L3-TegeT7VmexU4N80NyedPKBKxd4-5mpG5ouL0h-K8" />')
+    meta_tag: str = ('<meta name="google-site-verification" '
+                    'content="L3-TegeT7VmexU4N80NyedPKBKxd4-5mpG5ouL0h-K8" />')
+    context['metatags'] = context.get('metatags', '') + meta_tag
 
 
 OBJ_REF = {
