@@ -1,4 +1,6 @@
 .. _netloader-docs:
+.. meta::
+   :google-site-verification: L3-TegeT7VmexU4N80NyedPKBKxd4-5mpG5ouL0h-K8
 
 ***************************************
 PyTorch Network Loader Documentation
