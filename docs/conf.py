@@ -52,15 +52,17 @@ html_use_index: bool = False
 html_theme: str = 'shibuya'
 html_static_path: list[str] = ['_static']
 html_css_files: list[str] = ['custom.css']
+html_extra_path: list[str] = ['_extra']
 
 # Cross-project links
 intersphinx_mapping: dict[str, tuple[str, None]] = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
-    'torch': ('https://pytorch.org/docs/stable/', None),
+    'torch': ('https://docs.pytorch.org/docs/stable/', None),
     'zuko': ('https://zuko.readthedocs.io/stable/', None),
 }
 numpydoc_xref_aliases = utils.NUMPYDOC_ALIASES
+nitpick_ignore = [('py:obj', 'Run')]
 
 
 def setup(app: Sphinx) -> None:
@@ -73,7 +75,6 @@ def setup(app: Sphinx) -> None:
         Sphinx application instance
     """
     app.add_autodocumenter(utils.TypeDocumenter)
-    app.connect('html-page-context', utils.add_google_tag)
     app.connect('autodoc-process-docstring', utils.process_docstring)
     app.add_directive(utils.BaseAutoSignature.name, utils.BaseAutoSignature)
     app.add_directive(utils.AutoLossSignature.name, utils.AutoLossSignature)
