@@ -15,6 +15,8 @@ from docutils.parsers.rst import Directive
 from docutils.statemachine import StringList
 from sphinx.ext.autodoc import DataDocumenter
 from sphinx.addnodes import pending_xref
+from sphinx.application import Sphinx
+
 
 # NumPyDoc cross-reference aliases
 NUMPYDOC_ALIASES: dict[str, str] = {
@@ -51,6 +53,9 @@ NUMPYDOC_ALIASES: dict[str, str] = {
 
     # Zuko
     'NormalizingFlow': ':class:`~zuko.distributions.NormalizingFlow`',
+
+    # WandB
+    'Run': ':class:`~wandb.sdk.wandb_run.Run`',
 
     # Netloader
     'Data': ':class:`~netloader.data.Data`',
@@ -641,6 +646,24 @@ def process_docstring(
         lines[:] = ['See :meth:`torch.nn.Module.to`.']
 
     overload_docstring(_, what, name, obj, __, lines)
+
+
+def add_google_tag(app: Sphinx, _: Any, __: Any, context: dict[str, Any], ___: Any) -> None:
+    """
+    Adds a Google Analytics tag to the HTML context.
+
+    Parameters
+    ----------
+    app : Sphinx
+        The Sphinx application object
+    context : dict[str, Any]
+        The context dictionary for the template
+    """
+    context['google_analytics_tag'] = app.config.google_analytics_tag
+    context['metatags'] = (
+            context.get('metatags', '') +
+                           '<meta name="google-site-verification" '
+                           'content="L3-TegeT7VmexU4N80NyedPKBKxd4-5mpG5ouL0h-K8" />')
 
 
 OBJ_REF = {

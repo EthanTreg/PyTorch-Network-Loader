@@ -73,6 +73,7 @@ def setup(app: Sphinx) -> None:
         Sphinx application instance
     """
     app.add_autodocumenter(utils.TypeDocumenter)
+    app.connect('html-page-context', utils.add_google_tag)
     app.connect('autodoc-process-docstring', utils.process_docstring)
     app.add_directive(utils.BaseAutoSignature.name, utils.BaseAutoSignature)
     app.add_directive(utils.AutoLossSignature.name, utils.AutoLossSignature)
