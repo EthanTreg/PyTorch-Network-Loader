@@ -62,6 +62,8 @@ class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
         Architecture optimiser
     scheduler : LRScheduler
         Optimiser scheduler
+    run : Run | None
+        Weights & Biases run object for logging and tracking experiments
     net : BaseNetwork
         Neural network
     """

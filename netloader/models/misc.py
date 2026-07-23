@@ -183,7 +183,7 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
     def __setstate__(self, state: dict[str, Any]) -> None:
         super().__setstate__(state)
         self._cache = state.get('save_outputs', False)
-        self.layers = TypedModuleList(state.get('layers', []))
+        self.layers = TypedModuleList(state.get('layers', state.get('net')))
 
     def forward(self, x: TensorListLike) -> TensorListLike:
         """

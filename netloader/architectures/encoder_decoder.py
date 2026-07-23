@@ -27,7 +27,7 @@ class BaseEncoder(BaseArchitecture):
     description : str
         Description of the architecture
     version : str
-        Version of the architecture
+        Version of the architecture when it was created or re-saved
     losses : tuple[list[LossCT], list[LossCT]]
         Architecture training and validation losses as a float or dictionary of losses for each loss
         function
@@ -42,6 +42,8 @@ class BaseEncoder(BaseArchitecture):
         Architecture optimiser
     scheduler : LRScheduler
         Optimiser scheduler
+    run : Run | None
+        Weights & Biases run object for logging and tracking experiments
     net : BaseNetwork
         Neural network
     """
@@ -211,6 +213,8 @@ class Autoencoder(BaseArchitecture):
     ----------
     description : str
         Description of the architecture
+    version : str
+        Version of the architecture when it was created or re-saved
     losses : tuple[list[LossCT], list[LossCT]]
         Architecture training and validation losses as a float or dictionary of losses for each loss
         function
@@ -223,6 +227,8 @@ class Autoencoder(BaseArchitecture):
         Architecture optimiser
     scheduler : LRScheduler
         Optimiser scheduler
+    run : Run | None
+        Weights & Biases run object for logging and tracking experiments
     net : BaseNetwork
         Neural network
     reconstruct_func : BaseLoss
@@ -427,6 +433,8 @@ class Decoder(BaseArchitecture):
     ----------
     description : str
         Description of the architecture
+    version : str
+        Version of the architecture when it was created or re-saved
     losses : tuple[list[LossCT], list[LossCT]]
         Architecture training and validation losses as a float or dictionary of losses for each loss
         function
@@ -441,6 +449,8 @@ class Decoder(BaseArchitecture):
         Architecture optimiser
     scheduler : LRScheduler
         Optimiser scheduler
+    run : Run | None
+        Weights & Biases run object for logging and tracking experiments
     net : BaseNetwork
         Neural network
     """
@@ -587,6 +597,8 @@ class Encoder(BaseEncoder):
     ----------
     description : str
         Description of the architecture
+    version : str
+        Version of the architecture when it was created or re-saved
     losses : tuple[list[LossCT], list[LossCT]]
         Architecture training and validation losses as a float or dictionary of losses for each loss
         function
@@ -601,6 +613,8 @@ class Encoder(BaseEncoder):
         Architecture optimiser
     scheduler : LRScheduler
         Optimiser scheduler
+    run : Run | None
+        Weights & Biases run object for logging and tracking experiments
     net : BaseNetwork
         Neural network
     """

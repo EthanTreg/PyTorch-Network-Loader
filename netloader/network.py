@@ -81,7 +81,7 @@ class BaseNetwork(nn.Module, ABC, Generic[ModuleListT]):
         """
         if item == 'net':
             warn(
-                'CompatibleNetwork.net is deprecated, please use CompatibleNetwork.layers '
+                'BaseNetwork.net is deprecated, please use BaseNetwork.layers '
                 'instead',
                 DeprecationWarning,
                 stacklevel=2,
@@ -99,6 +99,28 @@ class BaseNetwork(nn.Module, ABC, Generic[ModuleListT]):
             Dictionary containing the state of the network
         """
         return {'name': self.name, 'version': netloader.__version__}
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        """
+        Sets the attribute of the network.
+
+        Parameters
+        ----------
+        key : str
+            Name of the attribute to set
+        value : Any
+            Value to set the attribute to
+        """
+        if key == 'net':
+            warn(
+                'BaseNetwork.net is deprecated, please use BaseNetwork.layers '
+                'instead',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            super().__setattr__('layers', value)
+        else:
+            super().__setattr__(key, value)
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """

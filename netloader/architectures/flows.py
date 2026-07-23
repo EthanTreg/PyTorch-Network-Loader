@@ -14,8 +14,8 @@ from zuko.distributions import NormalizingFlow
 from netloader.data import Data
 from netloader.utils import label_change
 from netloader.loss_funcs import BaseLoss
-from netloader.network import BaseNetwork
 from netloader.transforms import BaseTransform
+from netloader.network import BaseNetwork, Network
 from netloader.architectures.base import BaseArchitecture
 from netloader.architectures.encoder_decoder import BaseEncoder
 from netloader.utils.types import NDArrayLike, TensorListLike, NDArrayListLike, TensorT
@@ -29,10 +29,10 @@ class NormFlow(BaseArchitecture):
 
     Attributes
     ----------
-    net : BaseNetwork
-        Neural spline flow
     description : str
         Description of the architecture
+    version : str
+        Version of the architecture when it was created or re-saved
     losses : tuple[list[LossCT], list[LossCT]]
         Architecture training and validation losses as a float or dictionary of losses for each loss
         function
@@ -45,6 +45,10 @@ class NormFlow(BaseArchitecture):
         Architecture optimiser
     scheduler : LRScheduler
         Optimiser scheduler
+    run : Run | None
+        Weights & Biases run object for logging and tracking experiments
+    net : BaseNetwork
+        Neural spline flow
     """
     @staticmethod
     def _data_loader_translation(low_dim: TensorT, high_dim: TensorT) -> tuple[TensorT, TensorT]:
@@ -132,6 +136,8 @@ class NormFlowEncoder(BaseEncoder):
     ----------
     description : str
         Description of the architecture
+    version : str
+        Version of the architecture when it was created or re-saved
     losses : tuple[list[LossCT], list[LossCT]]
         Architecture training and validation losses as a float or dictionary of losses for each loss
         function
@@ -146,6 +152,8 @@ class NormFlowEncoder(BaseEncoder):
         Architecture optimiser
     scheduler : LRScheduler
         Optimiser scheduler
+    run : Run | None
+        Weights & Biases run object for logging and tracking experiments
     net : BaseNetwork
         Neural network
     """
@@ -222,7 +230,7 @@ class NormFlowEncoder(BaseEncoder):
             net,
             overwrite=overwrite,
             mix_precision=mix_precision,
-            learning_rate=0,
+            learning_rate=0.,
             description=description,
             verbose=verbose,
             classes=classes,
@@ -243,7 +251,7 @@ class NormFlowEncoder(BaseEncoder):
             'max': transform,
             'meds': transform,
         }
-        assert isinstance(self.net, nn.ModuleList)
+        assert isinstance(self.net, (nn.ModuleList, Network))
 
         if not self._train_encoder:
             self.net.layers[:-1].requires_grad_(False)
