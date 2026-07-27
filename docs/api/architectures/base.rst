@@ -3,8 +3,8 @@
 .. module:: netloader.architectures.base
    :synopsis: Base architectures.
 
-Base Networks
-=============
+Base Architectures
+==================
 
 .. currentmodule:: netloader.architectures.base
 

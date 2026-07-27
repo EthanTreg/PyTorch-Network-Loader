@@ -3,8 +3,8 @@
 .. module:: netloader.architectures.
    :synopsis: Architecture utilities.
 
-Network Utilities
-=================
+Architecture Utilities
+======================
 
 .. currentmodule:: netloader.architectures.utils
 

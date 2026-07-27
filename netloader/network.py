@@ -203,7 +203,14 @@ class BaseNetwork(nn.Module, ABC, Generic[ModuleListT]):
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
-        self.kl_loss = self.kl_loss.to(*args, **kwargs)
+        self.kl_loss = self.kl_loss.detach().to(*args, **kwargs)
+
+        for i, checkpoint in enumerate(self.checkpoints):
+            if hasattr(checkpoint, 'to'):
+                self.checkpoints[i] = checkpoint.detach().to(*args, **kwargs)
+            else:
+                self._logger.warning(f'Failed to move checkpoint {checkpoint.__class__.__name__} '
+                                     f'to device')
         return self
 
 
@@ -544,13 +551,6 @@ class Network(BaseNetwork[TypedModuleList[layers.BaseLayer]]):
 
         for layer in self.layers:
             layer.to(*args, **kwargs)
-
-        for i, checkpoint in enumerate(self.checkpoints):
-            if hasattr(checkpoint, 'to'):
-                self.checkpoints[i] = checkpoint.to(*args, **kwargs)
-            else:
-                self._logger.warning(f'Failed to move checkpoint {checkpoint.__class__.__name__} '
-                                     f'to device')
         return self
 
 

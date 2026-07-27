@@ -12,7 +12,7 @@ from netloader.utils import Config, TypedModuleList
 from netloader.network import BaseNetwork, CompatibleNetwork, Network
 
 
-class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
+class MultiNetwork(BaseNetwork[TypedModuleList[BaseNetwork]]):
     """
     Network class to hold multiple networks and train them together.
 
@@ -27,7 +27,7 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
         is the batch size
     kl_loss : Tensor
         KL divergence loss on the latent space of shape (1) and type float, if using a sample layer
-    layers : TypedModuleList[CompatibleNetwork | Network]
+    layers : TypedModuleList[BaseNetwork]
         Network construction
     """
     _cache: bool
@@ -36,14 +36,14 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
     def __init__(
             self,
             name: str,
-            *nets: nn.Module | nn.ModuleList | CompatibleNetwork | Network,
+            *nets: nn.Module | nn.ModuleList | BaseNetwork,
             save_outputs: bool = ...) -> None: ...
 
     @overload
     def __init__(
             self,
             name: str,
-            *nets: str | nn.Module | nn.ModuleList | CompatibleNetwork | Network | Config,
+            *nets: str | nn.Module | nn.ModuleList | BaseNetwork | Config,
             save_outputs: bool = ...,
             suppress_warning: bool = ...,
             root: str = ...,
@@ -55,7 +55,7 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
     def __init__(
             self,
             name: str,
-            *nets: str | nn.Module | nn.ModuleList | CompatibleNetwork | Network | Config,
+            *nets: str | nn.Module | nn.ModuleList | BaseNetwork | Config,
             save_outputs: bool = False,
             suppress_warning: bool = False,
             root: str = '',
@@ -68,7 +68,7 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
         ----------
         name : str
             Name of the network, used for saving
-        *nets: str | nn.Module | nn.ModuleList | CompatibleNetwork | Network | Config
+        *nets: str | nn.Module | nn.ModuleList | BaseNetwork | Config
             Networks to combine sequentially
         save_outputs : bool, Optional
             If outputs from each network should be saved, default = False
@@ -91,7 +91,7 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
         self.name = name
         self.layers = TypedModuleList()
         calc_in_shape: bool = True
-        net: str | nn.Module | nn.ModuleList | CompatibleNetwork | Network | Config
+        net: str | nn.Module | nn.ModuleList | BaseNetwork | Config
         builds: list[bool] = [isinstance(net, (str, Config)) for net in nets]
         out_shape: list[int] | None
         default: dict[str, Any] | None
@@ -150,15 +150,15 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
                 in_shape = out_shape
 
     @overload
-    def __getitem__(self, item: int) -> CompatibleNetwork | Network: ...
+    def __getitem__(self, item: int) -> BaseNetwork: ...
 
     @overload
-    def __getitem__(self, item: slice) -> TypedModuleList[CompatibleNetwork | Network]: ...
+    def __getitem__(self, item: slice) -> TypedModuleList[BaseNetwork]: ...
 
     def __getitem__(
             self,
             item: int | slice,
-    ) -> CompatibleNetwork | Network | TypedModuleList[CompatibleNetwork | Network]:
+    ) -> BaseNetwork | TypedModuleList[BaseNetwork]:
         """
         Returns the network(s) at the given index or slice.
 
@@ -169,7 +169,7 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
 
         Returns
         -------
-        CompatibleNetwork | Network | TypedModuleList[CompatibleNetwork | Network]
+        BaseNetwork | TypedModuleList[BaseNetwork]
             The network(s) at the given index or slice
         """
         return self.layers[item]
@@ -200,7 +200,7 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
         TensorListLike
             Output tensor from the network with shape (N,...) and type float
         """
-        net: CompatibleNetwork | Network
+        net: BaseNetwork
         self.checkpoints = []
 
         for i, net in enumerate(self.layers):
@@ -231,11 +231,14 @@ class MultiNetwork(BaseNetwork[TypedModuleList[CompatibleNetwork | Network]]):
         dict[str, Any] | Config
             Network configuration
         """
-        net: CompatibleNetwork | Network
+        net: BaseNetwork
         config = Config(layers=[net.get_config() for net in self.layers])
         return config.to_dict() if dict_ else config
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
-        self.layers.to(*args, **kwargs)
+        layer: BaseNetwork
+
+        for layer in self.layers:
+            layer.to(*args, **kwargs)
         return self

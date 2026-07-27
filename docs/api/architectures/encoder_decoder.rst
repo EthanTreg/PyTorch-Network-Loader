@@ -3,8 +3,8 @@
 .. module:: netloader.architectures.encoder_decoder
    :synopsis: Encoder-Decoder Networks.
 
-Encoder-Decoder Networks
-========================
+Encoder-Decoder Architectures
+=============================
 
 .. currentmodule:: netloader.architectures.encoder_decoder
 

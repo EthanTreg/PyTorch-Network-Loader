@@ -251,7 +251,7 @@ class NormFlowEncoder(BaseEncoder):
             'max': transform,
             'meds': transform,
         }
-        assert isinstance(self.net, (nn.ModuleList, Network))
+        assert isinstance(self.net, Network)
 
         if not self._train_encoder:
             self.net.layers[:-1].requires_grad_(False)

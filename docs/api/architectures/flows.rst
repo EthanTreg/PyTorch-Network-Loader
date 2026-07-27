@@ -3,8 +3,8 @@
 .. module:: netloader.architectures.flows
    :synopsis: Normalising flow-based networks.
 
-Normalising Flow Networks
-=========================
+Normalising Flow Architectures
+==============================
 
 .. currentmodule:: netloader.architectures.flows
 
