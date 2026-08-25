@@ -1,8 +1,7 @@
 """
-Base dataset classes for use with BaseArchitecture
+Data structures for use with NetLoader.
 """
 from __future__ import annotations
-import logging as log
 from types import ModuleType
 from itertools import repeat
 from typing import (
@@ -21,19 +20,9 @@ from typing import (
 import torch
 import numpy as np
 from torch import Tensor
-from torch.utils.data import Dataset, DataLoader, Subset
 from numpy import ndarray
 
-from netloader.utils.types import (
-    DataLike,
-    ArrayLike,
-    DataT,
-    ArrayT,
-    DatasetT,
-    DataListT,
-    ArrayCT,
-    P,
-)
+from netloader.utils.types import DataLike, DataT, ArrayT, ArrayCT, P
 
 
 InArrayT_contra = TypeVar('InArrayT_contra', bound=DataLike, contravariant=True)
@@ -87,16 +76,27 @@ class Data(Generic[ArrayCT]):
         self.data: ArrayCT = data
         self.uncertainty: ArrayCT | None = uncertainty
 
-    def __len__(self) -> int:
+    def __eq__(self, other: object) -> bool:
         """
-        Returns the number of samples in the data.
+        Checks if two Data objects are equal.
+
+        Parameters
+        ----------
+        other : object
+            Other Data object to compare to
 
         Returns
         -------
-        int
-            Number of samples in the data
+        bool
+            If the Data objects are equal
         """
-        return len(self.data)
+        val: bool | ArrayCT
+
+        if not isinstance(other, Data):
+            return NotImplemented
+        return bool((self.data == other.data).all() and
+                    val if isinstance(val := self.uncertainty == other.uncertainty, bool) else
+                    val.all())
 
     def __getitem__(self, idx: int | slice) -> Data[ArrayCT]:
         """
@@ -116,6 +116,17 @@ class Data(Generic[ArrayCT]):
             self.data[idx],
             uncertainty=self.uncertainty[idx] if self.uncertainty is not None else None
         )
+
+    def __len__(self) -> int:
+        """
+        Returns the number of samples in the data.
+
+        Returns
+        -------
+        int
+            Number of samples in the data
+        """
+        return len(self.data)
 
     def __repr__(self) -> str:
         return (f'Data(shape={self.shape}, type={self.data.dtype}, '
@@ -375,18 +386,38 @@ class DataList(Generic[DataT]):
     """
     A list that stores tensors, arrays, or Datas and provides batch operations.
     """
-    def __init__(self, data: list[DataT]) -> None:
+    _names: list[str]
+    _data: list[DataT]
+
+    def __init__(
+            self,
+            data: list[DataT] | dict[str, DataT],
+            names: list[str] | None = None) -> None:
         """
         Parameters
         ----------
-        data : list[DataT]
-            List of Data, Tensor, or ndarray objects
+        data : list[DataT] | dict[str, DataT]
+            List or dictionary of Data, Tensor, or ndarray objects
+        names : list[str], Optional
+            List of names for each data element, only used if data is a list
         """
-        self._data: list[DataT] = data
+        if isinstance(data, dict):
+            self._names = list(data.keys())
+            self._data = list(data.values())
+        else:
+            self._names = names or []
+            self._data = data
 
-        if any(len(data[0]) != len(datum) for datum in data[1:]):
+        if self._names and len(self._names) != len(self._data):
+            raise ValueError(f'Length of names ({len(self._names)}) must match length of data '
+                             f'({len(self._data)})')
+
+        if len(self._names) != len(set(self._names)):
+            raise ValueError(f'DataList requires unique names, got names: {self._names}')
+
+        if any(len(self._data[0]) != len(datum) for datum in self._data[1:]):
             raise ValueError(f'All elements in DataList must have the same length, got lengths: '
-                             f'{[len(datum) for datum in data]}')
+                             f'{[len(datum) for datum in self._data]}')
 
     def __add__(self, other: DataT | DataList[DataT]) -> DataList[DataT]:
         """
@@ -402,26 +433,70 @@ class DataList(Generic[DataT]):
         DataList[DataT]
             New DataList with the other DataList or data added to the end of the DataList
         """
+        other_names: list[str] = other.get_names() if isinstance(other, DataList) else []
+
         if len(self) != len(other):
             raise ValueError(f'Lengths of DataList ({len(self)}) and {type(other).__name__} '
                              f'({len(other)}) must be the same')
-        return DataList(self._data + (list(other) if isinstance(other, DataList) else [other]))
+        if self._names and not isinstance(other, DataList):
+            raise ValueError(f'Cannot add {type(other)} to DataList with named elements, use '
+                             f'DataList.append')
+        if (self._names and not other_names) or (other_names and not self._names):
+            raise ValueError(f'Adding DataLists with named elements requires both DataLists to '
+                             f'have named elements, got first '
+                             f'{"named" if self._names else "unnamed"} and second'
+                             f'{"named" if other_names else "unnamed"}')
+        return DataList(
+            self._data + (list(other) if isinstance(other, DataList) else [other]),
+            names=self._names + other_names,
+        )
 
-    def __getitem__(self, idx: int | slice) -> DataList[DataT]:
+    def __eq__(self, other: object) -> bool:
+        """
+        Checks if two DataLists are equal.
+
+        Parameters
+        ----------
+        other : object
+            Other DataList to compare to
+
+        Returns
+        -------
+        bool
+            If the DataLists are equal
+        """
+        val: bool | DataT
+        data1: DataT
+        data2: DataLike
+
+        if not isinstance(other, DataList):
+            return False
+        if self.get_names() != other.get_names():
+            return False
+        return all(val if isinstance(val := data1 == data2, bool) else val.all()
+                   for data1, data2 in zip(self.get_data(), other.get_data()))
+
+    @overload
+    def __getitem__(self, idx: str) -> DataT: ...
+
+    @overload
+    def __getitem__(self, idx: int | slice) -> DataList[DataT]: ...
+
+    def __getitem__(self, idx: int | str | slice) -> DataT | DataList[DataT]:
         """
         Gets a subset of each element in the DataList.
 
         Parameters
         ----------
-        idx: int | slice
-            Index or slice to get
+        idx: int | str | slice
+            Index, name, or slice to get
 
         Returns
         -------
-        DataList[DataT]
-            DataList with subset of each element in the DataList
+        DataT | DataList[DataT]
+            DataList with subset of each element in the DataList or element if idx is of type str
         """
-        return self.get(idx, list_=False)
+        return self.get(idx)
 
     def __iter__(self) -> Iterator[DataT]:
         """
@@ -455,7 +530,8 @@ class DataList(Generic[DataT]):
             String representation of the DataList
         """
         return (f'DataList(shapes={[tuple(datum.shape) for datum in self._data]}, '
-                f'types={[datum.__class__.__name__ for datum in self._data]})')
+                f'types={[datum.__class__.__name__ for datum in self._data]}'
+                f'{f", names={self._names}" if self._names else ""})')
 
     @staticmethod
     def _apply(
@@ -552,7 +628,7 @@ class DataList(Generic[DataT]):
             )
         return cast(DataList[ArrayT] | DataList[DataT], DataList(new_data))
 
-    def append(self, data: DataT) -> None:
+    def append(self, data: DataT, name: str = '') -> None:
         """
         Appends an element to the DataList.
 
@@ -560,11 +636,20 @@ class DataList(Generic[DataT]):
         ----------
         data : DataT
             Element to append to the DataList
+        name : str, Optional
+            Name for the element
         """
         if self.len(list_=False) != len(data):
             raise ValueError(f'Element to append must have the same length as the DataList, got '
                              f'lengths: {self.len(list_=False)} and {len(data)}')
+        if self._names and not name:
+            raise ValueError('DataList contains named elements, name argument is required')
+        if name in self._names:
+            raise ValueError(f'DataList requires unique names, but got name: {name} and DataList '
+                             f'names: {self._names}')
+
         self._data.append(data)
+        self._names.append(name)
 
     def apply(
             self,
@@ -620,7 +705,7 @@ class DataList(Generic[DataT]):
         return DataList([
             cast(DataT, data.clone() if isinstance(data, Tensor) else data.copy())
             for data in self._data
-        ])
+        ], names=self._names)
 
     copy = clone
 
@@ -646,7 +731,10 @@ class DataList(Generic[DataT]):
         """
         return self.apply('detach', types=(Tensor, Data))
 
-    def extend(self, data: Sequence[DataT] | DataList[DataT]) -> None:
+    def extend(
+            self,
+            data: Sequence[DataT] | DataList[DataT],
+            names: list[str] | None = None) -> None:
         """
         Extends the DataList by appending elements from the iterable.
 
@@ -654,62 +742,115 @@ class DataList(Generic[DataT]):
         ----------
         data : Sequence[DataT] | DataList[DataT]
             Elements to extend the DataList with
+        names : list[str], Optional
+            List of names for each data element
         """
+        name: str
         datum: DataT
 
-        for datum in data:
-            self.append(datum)
+        if self._names and not names:
+            raise ValueError('DataList contains named elements, names argument is required')
+        if self._names and names and len(names) != len(data):
+            raise ValueError(f'Length of names ({len(names)}) must match length of data '
+                             f'({len(data)})')
+
+        for name, datum in zip(names or repeat(''), data):
+            self.append(datum, name=name)
+
+    @overload
+    def get(self, idx: str) -> DataT: ...
 
     @overload
     def get(self, idx: int, list_: Literal[True]) -> DataT: ...
 
     @overload
-    def get(self, idx: slice, list_: Literal[True]) -> list[DataT]: ...
+    def get(self, idx: int, list_: Literal[False]) -> DataList[DataT]: ...
 
     @overload
-    def get(self, idx: int | slice, list_: Literal[False]) -> DataList[DataT]: ...
+    def get(self, idx: int, list_: bool = ...) -> DataT | DataList[DataT]: ...
 
     @overload
-    def get(self, idx: int, list_: bool) -> DataT | DataList[DataT]: ...
+    def get(self, idx: slice, list_: bool = ...) -> DataList[DataT]: ...
 
-    @overload
-    def get(self, idx: slice, list_: bool) -> list[DataT] | DataList[DataT]: ...
-
-    def get(self, idx: int | slice, list_: bool = False) -> DataT | list[DataT] | DataList[DataT]:
+    def get(
+            self,
+            idx: int | str | slice,
+            list_: bool = False) -> DataT | DataList[DataT]:
         """
         Gets a subset of the DataList or a subset of each element in the DataList.
 
         Parameters
         ----------
-        idx : int | slice
-            Index or slice to get
+        idx : int | str | slice
+            Index, name, or slice to get, if idx is of type str, then ``list_`` argument is ignored
+            and the element with the corresponding name is returned
         list_ : bool, Optional
             If True, returns a subset of the DataList, else returns a subset of each element in the
             DataList, default = False
 
         Returns
         -------
-        DataT | list[DataT] | DataList[DataT]
+        DataT | DataList[DataT]
             Subset of the DataList or subset of each element in the DataList
         """
         data: DataT
 
-        if list_:
-            return self._data[idx]
-        return DataList(cast(list[DataT], [data[idx] for data in self]))
+        if isinstance(idx, str):
+            if self._names is None:
+                raise ValueError("DataList has no names")
+            return self._data[self._names.index(idx)]
 
-    def get_data(self) -> list[DataT]:
+        if list_ and isinstance(idx, slice):
+            return DataList(
+                self._data[idx],
+                names=names if isinstance(names := self._names[idx], list) else [names],
+            )
+        if list_ and isinstance(idx, int):
+            return self._data[idx]
+        return DataList(cast(list[DataT], [data[idx] for data in self]), names=self._names)
+
+    @overload
+    def get_data(self, dict_: Literal[False]) -> list[DataT]: ...
+
+    @overload
+    def get_data(self, dict_: Literal[True]) -> dict[str, DataT]: ...
+
+    @overload
+    def get_data(self, dict_: bool = ...) -> list[DataT] | dict[str, DataT]: ...
+
+    def get_data(self, dict_: bool = False) -> list[DataT] | dict[str, DataT]:
         """
         Gets the underlying data list.
 
+        Parameters
+        ----------
+        dict_ : bool, Optional
+            If True, returns a dictionary of the underlying data list with names as keys, else
+            returns a list of the underlying data list, default = False
+
         Returns
         -------
-        list[DataT]
+        list[DataT] | dict[str, DataT]
             Underlying data list
         """
+        if dict_:
+            if not self._names:
+                raise ValueError('Cannot return a dictionary, DataList has no names')
+            return dict(zip(self._names, self._data))
         return self._data
 
-    def insert(self, idx: int, data: DataT) -> None:
+    def get_names(self) -> list[str]:
+        """
+        Gets the names of the elements in the DataList.
+
+        Returns
+        -------
+        list[str]
+            Names of the elements in the DataList
+        """
+        return self._names
+
+    def insert(self, idx: int, data: DataT, name: str = '') -> None:
         """
         Inserts an element into the DataList at the specified index.
 
@@ -719,10 +860,18 @@ class DataList(Generic[DataT]):
             Index to insert the element at
         data : DataT
             Element to insert into the DataList
+        name : str, Optional
+            Name for the element
         """
         if self.len(list_=False) != len(data):
             raise ValueError(f'Element to insert must have the same length as the DataList, got '
                              f'lengths: {self.len(list_=False)} and {len(data)}')
+        if self._names and not name:
+            raise ValueError('DataList contains named elements, name argument is required')
+        if name in self._names:
+            raise ValueError(f'DataList requires unique names, but got name: {name} and DataList '
+                             f'names: {self._names}')
+
         self._data.insert(idx, data)
 
     @overload
@@ -783,7 +932,22 @@ class DataList(Generic[DataT]):
         data: DataT
         return DataList(cast(list[ndarray | Data[ndarray]], [
             data.cpu().numpy() if hasattr(data, 'cpu') else data for data in self
-        ]))
+        ]), names=self._names)
+
+    def set_names(self, names: list[str]) -> None:
+        """
+        Sets the names of the elements in the DataList.
+
+        Parameters
+        ----------
+        names : list[str]
+            Names of the elements in the DataList
+        """
+        if names and len(names) != len(self._data):
+            raise ValueError(f'Length of names ({len(names)}) must match length of data '
+                             f'({len(self._data)})')
+
+        self._names = names
 
     def tensor(self) -> DataList[Tensor | Data[Tensor]]:
         """
@@ -798,7 +962,7 @@ class DataList(Generic[DataT]):
         return DataList(cast(list[Tensor | Data[Tensor]], [
             torch.from_numpy(data) if isinstance(data, ndarray) else
             data.tensor() if isinstance(data, Data) else data for data in self
-        ]))
+        ]), names=self._names)
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         """
@@ -817,165 +981,6 @@ class DataList(Generic[DataT]):
             Self with all elements moved and/or cast
         """
         return self.apply('to', *args, types=(Tensor, Data), **kwargs)
-
-
-class BaseDatasetMeta(type):
-    """
-    Automatically creates an index for each sample in the dataset after the dataset has been
-    initialised.
-    """
-    def __call__(cls: type[DatasetT], *args: Any, **kwargs: Any) -> DatasetT:
-        """
-        Parameters
-        ----------
-        cls : type[DatasetT]
-            Class that inherited BaseDatasetMeta
-        *args
-            Optional arguments to pass to BaseDataset class
-        **kwargs
-            Optional keyword arguments to pass to BaseDataset class
-
-        Returns
-        -------
-        DatasetT
-            Dataset instance from the class that inherited BaseDatasetMeta
-        """
-        instance: DatasetT = type.__call__(cls, *args, **kwargs)
-
-        if hasattr(instance, 'idxs') and instance.idxs.dtype != np.int_:
-            raise ValueError(f'idxs attribute already exists and does not have type int '
-                             f'({instance.idxs.dtype}), idxs attribute must be reserved for sample '
-                             f'index')
-
-        if not hasattr(instance, 'high_dim') or instance.high_dim is None:
-            raise ValueError(f'{instance.__class__.__name__} has no high_dim attribute which is '
-                             f'required by BaseDatasetMeta for creating idxs attribute')
-
-        if len(instance.idxs) == 0:
-            instance.idxs = np.arange(len(instance.high_dim))
-        elif len(instance.idxs) != len(instance.high_dim):
-            log.getLogger(__name__).warning(f'Length of idxs ({len(instance.idxs)}) and length of '
-                                            f'high_dim ({len(instance.high_dim)}) does not match, '
-                                            f'idxs will be sent to a range of high_dim length')
-            instance.idxs = np.arange(len(instance.high_dim))
-
-        for attribute in ('extra', 'low_dim', 'high_dim'):
-            if (getattr(instance, attribute) is not None and
-                    len(getattr(instance, attribute)) != len(instance.idxs)):
-                raise ValueError(f'Length of attribute {attribute} '
-                                 f'({len(getattr(instance, attribute))}) and idxs '
-                                 f'({len(instance.idxs)}) does not match')
-        return instance
-
-
-class BaseDataset(
-    Dataset[tuple[int, DataListT, DataListT, Any]],
-    Generic[DataListT],
-    metaclass=BaseDatasetMeta):
-    """
-    Base dataset class for use with BaseNetwork.
-
-    Attributes
-    ----------
-    extra : list[Any] | ArrayLike | None
-        Additional data for each sample in the dataset of length N with shape (N,...) and type Any
-    idxs : ndarray
-        Index for each sample in the dataset with shape (N) and type int
-    low_dim : DataListT | None
-        Low dimensional data for each sample in the dataset with shape (N,...)
-    high_dim : DataListT | None
-        High dimensional data for each sample in the dataset with shape (N,...), this is required
-    """
-    def __init__(self) -> None:
-        super().__init__()
-        self.extra: list[Any] | ArrayLike | None = None
-        self.idxs: ndarray = np.array([], dtype=np.int_)
-        self.low_dim: DataListT | None = None
-        self.high_dim: DataListT | None = None
-
-    def __len__(self) -> int:
-        """
-        Returns the number of samples in the dataset
-
-        Returns
-        -------
-        int
-            Number of samples in the dataset
-        """
-        return len(self.idxs)
-
-    def __getitem__(self, idx: int) -> tuple[int, DataListT, DataListT, Any]:
-        """
-        Parameters
-        ----------
-        idx : int
-            Sample index
-
-        Returns
-        -------
-        tuple[int, DataListT, DataListT, Any]
-            Sample index, low dimensional data, high dimensional data, and extra data
-        """
-        return self.idxs[idx], self.get_low_dim(idx), self.get_high_dim(idx), self.get_extra(idx)
-
-    def get_extra(self, idx: int) -> Any:
-        """
-        Gets extra data for the sample of the given index
-
-        Parameters
-        ----------
-        idx : int
-            Sample index
-
-        Returns
-        -------
-        Any
-            Sample extra data
-        """
-        return torch.tensor(()) if self.extra is None else self.extra[idx]
-
-    def get_high_dim(self, idx: int) -> DataListT:
-        """
-        Gets a high dimensional sample of the given index
-
-        Parameters
-        ----------
-        idx : int
-            Sample index
-
-        Returns
-        -------
-        DataListT
-            High dimensional sample
-        """
-        assert self.high_dim is not None
-        return cast(DataListT, self.high_dim[idx])
-
-    def get_low_dim(self, idx: int) -> DataListT:
-        """
-        Gets a low dimensional sample of the given index
-
-        Parameters
-        ----------
-        idx : int
-            Sample index
-
-        Returns
-        -------
-        DataListT
-            Low dimensional sample
-        """
-        return cast(DataListT, torch.tensor(()) if self.low_dim is None else self.low_dim[idx])
-
-    def step(self, epoch: float) -> None:
-        """
-        Step the dataset for each training iteration.
-
-        Parameters
-        ----------
-        epoch : float
-            Current epoch number
-        """
 
 
 @overload
@@ -1043,105 +1048,9 @@ def data_collation(  # type: ignore
         return torch.concat(cast(list[Tensor], data)) if isinstance(data[0], Tensor) else \
             np.concat(cast(list[ndarray], data))
 
-    # data = cast(list[Data] | list[DataList], data)
     return Data.collate(cast(list[Data], data), data_field=data_field) \
         if isinstance(data[0], Data) else \
         DataList.collate(cast(list[DataList], data), data_field=data_field)
 
 
-@overload
-def loader_init(
-        dataset: DatasetT,
-        *,
-        return_idxs: Literal[False],
-        batch_size: int = ...,
-        ratios: list[float] | tuple[float, ...] | None = ...,
-        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = ...,
-        **kwargs: Any) -> tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...]: ...
-
-@overload
-def loader_init(
-        dataset: DatasetT,
-        *,
-        return_idxs: Literal[True],
-        batch_size: int = ...,
-        ratios: list[float] | tuple[float, ...] | None = ...,
-        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = ...,
-        **kwargs: Any) -> tuple[
-    tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...],
-    tuple[Sequence[int], ...]]: ...
-
-def loader_init(
-        dataset: DatasetT,
-        *,
-        return_idxs: bool = False,
-        batch_size: int = 64,
-        ratios: list[float] | tuple[float, ...] | None = None,
-        idxs: list[ndarray] | tuple[ndarray, ...] | ndarray | None = None,
-        **kwargs: Any,
-) -> (tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...] |
-      tuple[
-          tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...],
-          tuple[Sequence[int], ...]]):
-    # pylint: disable=line-too-long
-    """
-    Initialises data loaders from a subset of the dataset with the given ratios.
-
-    Parameters
-    ----------
-    dataset : DatasetT
-        Dataset to create data loaders from
-    return_idxs : bool, Optional
-        If the indexes for each data loader should be returned, default = False
-    batch_size : int, Optional
-        Batch size when sampling from the data loaders, default = 64
-    ratios : list[float] | tuple[float, ...] | None, Optional
-        Ratios of length M to split up the dataset into subsets, if idxs is provided, dataset will
-        first be split up using idxs and ratios will be used on the remaining samples,
-        default = (0.8,0.2)
-    idxs : list[ndarray] | tuple[ndarray, ...] | ndarray | None, Optional
-        Dataset indexes for creating the subsets with shape (N,S), where N is the number of subsets
-        and S is the number of samples in each subset
-    **kwargs : Any
-        Optional keyword arguments to pass to DataLoader
-
-    Returns
-    -------
-    tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...] | tuple[tuple[DataLoader[tuple[int, DataListT, DataListT, Any]], ...], tuple[Sequence[int], ...]]
-        Data loaders for each subset of length N + M and optionally indexes used for each subset
-    """
-    # pylint: enable=line-too-long
-    num: int
-    slice_: float | ndarray
-    loaders: list[DataLoader[tuple[int, DataListT, DataListT, Any]]] = []
-    data_idxs: ndarray = np.arange(len(dataset))
-    loader: DataLoader[tuple[int, DataListT, DataListT, Any]]
-    idxs = [] if idxs is None else list(idxs) \
-        if isinstance(idxs, (tuple, list)) or np.ndim(idxs) > 1 else [idxs]
-    ratios = (0.8, 1) if ratios is None else list(np.cumsum(np.array(ratios) / np.sum(ratios)))
-    np.random.shuffle(data_idxs)
-
-    for slice_ in idxs + list(ratios):
-        if isinstance(slice_, (int, float)):
-            num = max(int(len(data_idxs) * slice_), 1)
-            slice_ = data_idxs[:num]
-
-        if not np.isin(data_idxs, slice_).any():
-            continue
-
-        loaders.append(DataLoader(
-            Subset(
-                cast(Dataset[tuple[int, DataListT, DataListT, Any]], dataset),
-                data_idxs[np.isin(data_idxs, slice_)].tolist(),
-            ),
-            batch_size=batch_size,
-            **{'shuffle': True} | kwargs,
-        ))
-        data_idxs = np.delete(data_idxs, np.isin(data_idxs, slice_))
-
-    if return_idxs:
-        return tuple(loaders), tuple(cast(Subset, loader.dataset).indices for loader in loaders)
-    return tuple(loaders)
-
-
-__all__ = ['ApplyFunc', 'Data', 'DataList', 'BaseDataset', 'data_collation', 'loader_init']
+__all__ = ['ApplyFunc', 'Data', 'DataList', 'data_collation']

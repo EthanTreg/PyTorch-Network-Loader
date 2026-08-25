@@ -122,7 +122,7 @@ class Concatenate(BaseMultiLayer):
             Output tensor of shape (N,...) and type float
         """
         return torch.cat(
-            self._forward(x, outputs, checkpoints).get_data(),
+            self._forward(x, outputs, checkpoints).get_data(False),
             dim=self._dim + 1 if self._dim >= 0 else self._dim,
         )
 

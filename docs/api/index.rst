@@ -15,8 +15,8 @@ Complete API documentation for all modules in PyTorch Network Loader.
    layers/index
    models/index
    architectures/index
+   data/index
    utils/index
-   data
    loss_funcs
    network
    schedulers

@@ -224,6 +224,11 @@ class BaseLayer(nn.Module, ABC):
             Layer output
         """
 
+    def clear_checkpoints(self) -> None:
+        """
+        Clears the checkpoints for the layer.
+        """
+
     def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
         self._device, *_ = torch._C._nn._parse_to(*args, **kwargs)  # pylint: disable=protected-access

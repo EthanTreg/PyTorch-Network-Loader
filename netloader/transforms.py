@@ -74,16 +74,23 @@ class BaseTransform(ABC, Generic[InArrayCT, OutArrayCT]):
             return Data(*self._call(x.data, back=back, uncertainty=x.uncertainty))
         return self._call(x, back=back, uncertainty=uncertainty)
 
-    def __repr__(self) -> str:
+    def __eq__(self, other: object) -> bool:
         """
-        Representation of the transformation
+        Checks if two transforms are equal by comparing their type and states.
+
+        Parameters
+        ----------
+        other : object
+            Other transform to compare against
 
         Returns
         -------
-        str
-            Representation string
+        bool
+            If the two transforms are of the same type and have the same state
         """
-        return f'{self.__class__.__name__}({self.extra_repr()})'
+        if not isinstance(other, BaseTransform):
+            return NotImplemented
+        return type(self) is type(other) and self.__getstate__() == other.__getstate__()
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -95,6 +102,17 @@ class BaseTransform(ABC, Generic[InArrayCT, OutArrayCT]):
             Dictionary containing the state of the transformation
         """
         return {}
+
+    def __repr__(self) -> str:
+        """
+        Representation of the transformation
+
+        Returns
+        -------
+        str
+            Representation string
+        """
+        return f'{self.__class__.__name__}({self.extra_repr()})'
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """

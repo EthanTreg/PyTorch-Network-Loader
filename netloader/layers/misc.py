@@ -378,17 +378,17 @@ class Index(BaseLayer):
 
         Parameters
         ----------
-        x : Tensor
-            Input tensor of shape (N,...) and type float, where N is the batch size
+        x : TensorListLike
+            Input tensor(s) of shape (N,...) and type float, where N is the batch size
 
         Returns
         -------
-        Tensor
-            Output tensor of shape (N,...) and type float
+        TensorListLike
+            Output tensor(s) of shape (N,...) and type float
         """
         if isinstance(x, DataList) and not self._map:
             return x.get(self._idx, list_=True) if isinstance(self._idx, int) else (
-                DataList(x.get(self._idx, list_=True)))
+                x.get(self._idx, list_=True))
         return x[..., self._idx] if isinstance(x, Tensor) else x[self._idx]
 
     def extra_repr(self) -> str:

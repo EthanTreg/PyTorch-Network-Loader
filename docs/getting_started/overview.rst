@@ -106,7 +106,7 @@ It:
 Datasets & Data Loaders
 -----------------------
 
-The :class:`~netloader.data.BaseDataset` class is the base class for creating datasets.
+The :class:`~netloader.data.datasets.BaseDataset` class is the base class for creating datasets.
 It contains:
 
 * High dimensional data
@@ -114,7 +114,7 @@ It contains:
 * Extra meta data
 * Unique IDs
 
-The dataset can be combined with :func:`~netloader.data.loader_init` to create data loaders for training and testing.
+The dataset can be combined with :func:`~netloader.data.datasets.loader_init` to create data loaders for training and testing.
 
 .. code-block:: python
 

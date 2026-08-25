@@ -46,6 +46,8 @@ class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
 
     Attributes
     ----------
+    checkpoints : bool
+        If checkpoints should be saved after network forward pass
     description : str
         Description of the architecture
     version : str
@@ -81,6 +83,7 @@ class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
     _scheduler_kwargs: dict[str, Any]
     _logger: log.Logger = log.getLogger(__name__)
     _device: torch.device = torch.device('cpu')
+    checkpoints: bool = False
     description: str
     version: str = netloader.__version__
     losses: tuple[list[LossCT], list[LossCT]]
@@ -285,7 +288,7 @@ class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
         self.net = state['net']
         self.run = state.get('run', None)
 
-        if not utils.compare_versions(self.version, netloader.__version__):
+        if not utils.compare_versions(self.version, netloader.__version__, level='minor'):
             warn(
                 f'Architecture version ({self.version}) is older than the current '
                 f'NetLoader version ({netloader.__version__}), please resave the architecture '
@@ -514,6 +517,9 @@ class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
             loss['total'] = self._loss_total(loss)
 
         self._update(loss['total'] if isinstance(loss, dict) else loss)
+
+        if not self.checkpoints:
+            self.net.clear_checkpoints()
 
         if isinstance(loss, dict):
             return {key: value.item() for key, value in loss.items()}  # type: ignore[return-value]
@@ -1069,6 +1075,9 @@ class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
                 ]))
                 self._predict_print(i, time() - t_initial, loader)
 
+        if not self.checkpoints:
+            self.net.clear_checkpoints()
+
         # Transforms all data and saves it to a dictionary
         for (key, transform), datum_ in zip(transforms.items(), zip(*data)):
             if datum_[0] is None:
@@ -1087,6 +1096,7 @@ class BaseArchitecture(UtilityMixin, ABC, Generic[LossCT, TensorLossCT]):
                         datum,
                         transform if isinstance(transform, list) else repeat(transform),
                     )],
+                    names=datum.get_names(),
                 )
             elif isinstance(transform, BaseTransform):
                 assert not isinstance(datum, DataList)

@@ -38,7 +38,7 @@ Along with the magic method:
 
 All transform operations can be performed via the ``__call__`` method with the optional arguments ``back`` and
 ``uncertainty``.
-:class:`~netloader.transforms.BaseTransform` also accepts :class:`~netloader.data.Data` objects as input to transform
+:class:`~netloader.transforms.BaseTransform` also accepts :class:`~netloader.data.structures.Data` objects as input to transform
 the data and uncertainties.
 To transform data, first initialise the transform object, then call the object with the data (and optional
 uncertainties) to be transformed.

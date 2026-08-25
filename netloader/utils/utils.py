@@ -9,7 +9,18 @@ import logging as log
 from copy import deepcopy
 from types import ModuleType
 from contextlib import contextmanager
-from typing import Any, Literal, Self, Generator, Iterable, Iterator, Generic, cast, overload
+from typing import (
+    Any,
+    Literal,
+    Self,
+    Generator,
+    Iterable,
+    Iterator,
+    Generic,
+    cast,
+    overload,
+    TYPE_CHECKING,
+)
 
 import torch
 import numpy as np
@@ -174,7 +185,9 @@ class TypedModuleList(nn.ModuleList, Generic[ModuleT]):
         super().__init__(modules)
 
     def __add__(self, other: Iterable[ModuleT]) -> TypedModuleList[ModuleT]:  # type: ignore[override]
-        return cast(TypedModuleList[ModuleT], super().__add__(other))
+        if TYPE_CHECKING:
+            return cast(TypedModuleList[ModuleT], super().__add__(other))
+        return super().__add__(other)  # type: ignore[unreachable]
 
     @overload  # type: ignore[override]
     def __getitem__(self, idx: int) -> ModuleT: ...
@@ -183,13 +196,17 @@ class TypedModuleList(nn.ModuleList, Generic[ModuleT]):
     def __getitem__(self, idx: slice) -> TypedModuleList[ModuleT]: ...
 
     def __getitem__(self, index: int | slice) -> ModuleT | TypedModuleList[ModuleT]:
-        return cast(ModuleT | TypedModuleList[ModuleT], super().__getitem__(index))
+        if TYPE_CHECKING:
+            return cast(ModuleT | TypedModuleList[ModuleT], super().__getitem__(index))
+        return super().__getitem__(index)  # type: ignore[unreachable]
 
     def __iadd__(self, modules: Iterable[ModuleT]) -> Self:  # type: ignore[override]
         return super().__iadd__(modules)
 
     def __iter__(self) -> Iterator[ModuleT]:
-        return cast(Iterator[ModuleT], super().__iter__())
+        if TYPE_CHECKING:
+            return cast(Iterator[ModuleT], super().__iter__())
+        return super().__iter__()  # type: ignore[unreachable]
 
     def __setitem__(self, idx: int, module: ModuleT) -> None:  # type: ignore[override]
         super().__setitem__(idx, module)
@@ -210,7 +227,9 @@ class TypedModuleList(nn.ModuleList, Generic[ModuleT]):
     def pop(self, key: slice) -> TypedModuleList[ModuleT]: ...
 
     def pop(self, key: int | slice) -> ModuleT | TypedModuleList[ModuleT]:
-        return cast(ModuleT | TypedModuleList[ModuleT], super().pop(key))
+        if TYPE_CHECKING:
+            return cast(ModuleT | TypedModuleList[ModuleT], super().pop(key))
+        return super().pop(key)  # type: ignore[unreachable]
 
 
 def ascii_plot(
@@ -329,7 +348,10 @@ def check_params(name: str, supported_params: list[str] | ndarray, in_params: nd
         log.getLogger(__name__).warning(f'Unknown parameters for {name}: {bad_params}')
 
 
-def compare_versions(cur_ver: str, min_ver: str) -> bool:
+def compare_versions(
+        cur_ver: str,
+        min_ver: str,
+        level: Literal['major', 'minor', 'full'] = 'full') -> bool:
     """
     Compares two version strings.
 
@@ -339,15 +361,22 @@ def compare_versions(cur_ver: str, min_ver: str) -> bool:
         Current version
     min_ver : str
         Minimum version
+    level : Literal['major', 'minor', 'full'], Optional
+        Level of comparison, default = 'full'
 
     Returns
     -------
     bool
         True if current version is greater than or equal to minimum version
     """
+    levels: dict[str, int] = {'major': 1, 'minor': 2}
+    min_ver_: Version = Version(min_ver)
+
     if not bool(cur_ver):
         return True
-    return not '<' in cur_ver and Version(cur_ver) >= Version(min_ver)
+    if level in {'major', 'minor'}:
+        min_ver_ = Version('.'.join(map(str, min_ver_.release[:levels[level]])))
+    return not '<' in cur_ver and Version(cur_ver) >= min_ver_
 
 
 def deep_merge(base: dict, new: dict) -> dict:

@@ -4,6 +4,59 @@
 Changelog
 *********
 
+Version 3.12.0
+==============
+
+**Release Date:** August 2026
+
+**Install:** ``pip install netloader==3.12.0``
+
+**Additions:**
+
+* Added data naming to :class:`~netloader.data.structures.DataList`.
+* Added name indexing to :class:`~netloader.data.structures.DataList`.
+* Added :class:`~netloader.data.structures.DataList` conversion to dict option if data naming is used and vice versa.
+* Added :meth:`~netloader.data.structures.DataList.get_names` and :meth:`~netloader.data.structures.DataList.set_names`
+  methods.
+* Added :meth:`~netloader.data.structures.DataList.__eq__` & :meth:`~netloader.data.structures.Data.__eq__` magic
+  methods.
+* Added :class:`~netloader.architectures.base.BaseArchitecture`\ .\ ``checkpoints`` attribute.
+* Added :meth:`~netloader.layers.base.BaseLayer.clear_checkpoints` method.
+* Added :meth:`~netloader.network.BaseNetwork.clear_checkpoints` method.
+* Added :meth:`~netloader.transforms.BaseTransform.__eq__` magic method.
+* Added version level checking to :func:`~netloader.utils.utils.compare_versions`.
+* Added cache argument to :class:`~netloader.network.Branch` and :class:`~netloader.network.Composite`.
+
+**Changes:**
+
+* Changed netloader.data.py to a module.
+
+**Fixes:**
+
+* Fixed memory leak by clearing checkpoints.
+
+Version 3.11.4
+==============
+
+**Release Date:** July 2026
+
+**Install** ``pip install netloader==3.11.4``
+
+**Changes:**
+
+* Changed supported Python version from 3.12 to 3.11.
+* Changed supported package versions for NumPy & PyTorch.
+
+**Fixes:**
+
+* Fixed :class:`~netloader.architectures.flows.NormFlowEncoder` :class:`int` learning rate error.
+* Fixed :class:`~netloader.architectures.flows.NormFlowEncoder`\ .\ ``net`` only accepting nn.ModuleList.
+* Fixed backwards compatability with :class:`~netloader.models.misc.MultiNetwork`.
+* Fixed backwards compatability with :class:`~netloader.network.BaseNetwork`\ .\ ``net`` being overwritten.
+* Fixed memory leak with :class:`~netloader.network.BaseNetwork`.
+* Fixed type hints for :class:`~netloader.models.misc.MultiNetwork`.
+* Fixed docs API architectures naming convention.
+
 Version 3.11.0
 ==============
 
@@ -30,10 +83,10 @@ Version 3.11.0
 * Added ``description`` argument to :class:`~netloader.layers.base.BaseLayer`.
 * Added support for multiple layer outputs to :class:`~netloader.layers.base.BaseMultiLayer`.
 * Added forward pass to :class:`~netloader.layers.base.BaseMultiLayer` to pack outputs.
-* Added :meth:`~netloader.data.DataList.__add__` magic method.
-* Added :meth:`~netloader.data.DataList.get_data` method.
-* Added :meth:`~netloader.data.BaseDataset.step` method.
-* Added :func:`~netloader.data.loader_init` function to initialise data loaders.
+* Added :meth:`~netloader.data.structures.DataList.__add__` magic method.
+* Added :meth:`~netloader.data.structures.DataList.get_data` method.
+* Added :meth:`~netloader.data.datasets.BaseDataset.step` method.
+* Added :func:`~netloader.data.datasets.loader_init` function to initialise data loaders.
 * Added ``activation_kwargs`` to :class:`~netloader.layers.linear.Activation`.
 * Added :class:`~netloader.loss_funcs.GeneralLoss` for any :mod:`~torch.nn` loss function.
 * Added :class:`~netloader.network.BaseNetwork`.
@@ -52,7 +105,7 @@ Version 3.11.0
   :class:`~netloader.layers.multi_layer.Shortcut`, :class:`~netloader.layers.multi_layer.Skip`, &
   :class:`~netloader.layers.multi_layer.Unpack` layers to be under :mod:`~netloader.layers.multi_layer`.
 * Changed :class:`~netloader.architectures.base.BaseArchitecture` to only flag overwriting if base name is matching.
-* Changed :class:`~netloader.data.Data`\ .\ ``__repr__`` type to give specific type.
+* Changed :class:`~netloader.data.structures.Data`\ .\ ``__repr__`` type to give specific type.
 * Changed :class:`~netloader.architectures.flows.NormFlowEncoder` to allow different learning rates for normalising flow
   and encoder.
 * Changed :class:`~netloader.transforms.BaseTransform` to abstract class.
@@ -105,19 +158,19 @@ Version 3.10.1
   ``loss_weights`` methods and automatic calculation of total loss.
 * Added :class:`~netloader.models.convnext.ConvNeXt`\ .\ ``_stem`` private method.
 * Added ``padding_mode`` keyword argument to convolutional layers.
-* Added support for :class:`~netloader.data.DataList` inputs in :func:`~netloader.data.data_collation`.
+* Added support for :class:`~netloader.data.structures.DataList` inputs in :func:`~netloader.data.structures.data_collation`.
 * Added support for :class:`~torch.nn.ModuleList` with :class:`~netloader.network.CompatibleNetwork`.
 * Added ``pool_kwargs`` keyword argument to :class:`~netloader.layers.pooling.Pool`.
 * Added ``packaging`` as requirement.
 * Added :class:`~netloader.layers.misc.Pad` layer.
 * Added :class:`~netloader.architectures.base.BaseArchitecture.get_save_path`.
-* Added :meth:`~netloader.data.Data.apply` & :meth:`~netloader.data.DataList.apply` methods.
+* Added :meth:`~netloader.data.structures.Data.apply` & :meth:`~netloader.data.structures.DataList.apply` methods.
 
 **Changes:**
 
 * Changed :class:`~netloader.layers.base.BaseMultiLayer`\ .\ ``_target`` attribute to accept ``list[list[int]]`` shapes.
 * Changed activation functions to use ``inplace`` where possible by default.
-* Changed :class:`~netloader.data.DataList` length to return data length rather than list length.
+* Changed :class:`~netloader.data.structures.DataList` length to return data length rather than list length.
 * Changed :class:`~netloader.architectures.encoder_decoder.Autoencoder` to use a dictionary for loss terms.
 * Changed :class:`~netloader.architectures.encoder_decoder.Autoencoder` to use a dictionary for loss weights.
 * Changed :class:`~netloader.architectures.flows.NormFlowEncoder` to use a dictionary for loss weights.
@@ -196,22 +249,22 @@ Version 3.9.1
 
 * Added :class:`~netloader.layers.base.BaseSingleLayer` class.
 * Added :class:`~netloader.utils.utils.Shapes` class.
-* Added :class:`~netloader.data.Data` class for data & uncertainties.
-* Added :class:`~netloader.data.DataList` class for storing multiple arrays or tensors.
+* Added :class:`~netloader.data.structures.Data` class for data & uncertainties.
+* Added :class:`~netloader.data.structures.DataList` class for storing multiple arrays or tensors.
 * Added :class:`~netloader.architectures.base.BaseArchitecture` loss dictionary support.
 * Added support to :class:`~netloader.architectures.base.BaseArchitecture` for list of transforms.
-* Added :class:`~netloader.data.DataList` support to :class:`~netloader.architectures.base.BaseArchitecture`.
+* Added :class:`~netloader.data.structures.DataList` support to :class:`~netloader.architectures.base.BaseArchitecture`.
 * Added :class:`~netloader.architectures.base.BaseArchitecture`\ .\ ``_loss_tensor`` method.
-* Added :class:`~netloader.data.Data` support to :class:`~netloader.transforms.BaseTransform`.
+* Added :class:`~netloader.data.structures.Data` support to :class:`~netloader.transforms.BaseTransform`.
 * Added :class:`~netloader.models.convnext.ConvNeXt`\ .\ ``_head`` method.
-* Added ``return_idxs`` to :func:`~netloader.data.loader_init`.
-* Added :func:`~netloader.data.data_collation` to collate lists of arrays, tensors, :class:`~netloader.data.Data`, and
-  :class:`~netloader.data.DataList` objects.
+* Added ``return_idxs`` to :func:`~netloader.data.datasets.loader_init`.
+* Added :func:`~netloader.data.structures.data_collation` to collate lists of arrays, tensors, :class:`~netloader.data.structures.Data`, and
+  :class:`~netloader.data.structures.DataList` objects.
 * Added ``loss_func`` argument to :class:`~netloader.architectures.encoder_decoder.BaseEncoder`.
 * Added :class:`~netloader.loss_funcs.GaussianNLLLoss` class.
 * Added :class:`~netloader.layers.multi_layer.Pack` class.
 * Added ``layer`` & ``checkpoint`` arguments to :class:`~netloader.layers.multi_layer.Unpack`.
-* Added support for :class:`~netloader.data.DataList` to several layers.
+* Added support for :class:`~netloader.data.structures.DataList` to several layers.
 * Added :class:`~netloader.network.CompatibleNetwork` class.
 * Added :class:`~netloader.network.Network`\ .\ ``version`` attribute.
 * Added ``len``, ``iter``, and ``getitem`` magic methods to :class:`~netloader.network.Network`.
@@ -249,7 +302,7 @@ Version 3.9.1
 * Fixed :class:`~netloader.models.convnext.ConvNeXt` weight initialisation for biases that are None.
 * Fixed :class:`~netloader.network.Network` ignoring ``layer_num`` attribute.
 * Fixed :class:`~netloader.transforms.Log` uncertainty inplace operations.
-* Fixed :class:`~netloader.data.BaseDataset` error message for incorrect attribute length.
+* Fixed :class:`~netloader.data.datasets.BaseDataset` error message for incorrect attribute length.
 * Fixed :class:`~netloader.layers.multi_layer.Concatenate` layer when ``dim=-1``.
 * Fixed :class:`~netloader.transforms.Index` transform not detecting old state format.
 * Fixed :class:`~netloader.transforms.Normalise` transform error for ``offset`` or ``scale`` ndarray keyword arguments.
@@ -281,7 +334,7 @@ Version 3.8.0
 
 **Changes:**
 
-* Changed :func:`~netloader.data.loader_init` ``ratios`` argument to split the dataset after ``idxs``.
+* Changed :func:`~netloader.data.datasets.loader_init` ``ratios`` argument to split the dataset after ``idxs``.
 * Changed :class:`~netloader.network.Network` forward pass to use :class:`~netloader.layers.base.BaseLayer` rather than
   config for information.
 * Changed :class:`~netloader.network.Network` to catch all exceptions during the forward pass.
@@ -305,7 +358,7 @@ Version 3.6.1
 
 **Additions:**
 
-* Added :class:`~netloader.data.BaseDataset` for creating datasets.
+* Added :class:`~netloader.data.datasets.BaseDataset` for creating datasets.
 * Added ``get_device`` & ``get_epochs`` to :class:`~netloader.architectures.base.BaseArchitecture`.
 * Added ``overwrite`` keyword argument to :class:`~netloader.architectures.base.BaseArchitecture` to prevent unwanted
   file deletion.

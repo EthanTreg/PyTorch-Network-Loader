@@ -1,13 +1,13 @@
 zuko~=1.6.0
-numpy~=2.5.1
+numpy~=2.5.2
 sphinx~=9.1.0
-wandb~=0.28.0
-packaging~=26.2
+wandb~=0.28.2
+packaging~=26.3
 docutils~=0.22.4
 numpydoc~=1.10.0
-jupyterlab~=4.6.1
-shibuya~=2026.7.8
-matplotlib~=3.11.0
+jupyterlab~=4.6.3
+shibuya~=2026.7.12
+matplotlib~=3.11.1
 sphinx-design~=0.7.0
 
 --find-links https://download.pytorch.org/whl/cu121; sys_platform == "Windows"

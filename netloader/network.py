@@ -50,10 +50,10 @@ class BaseNetwork(nn.Module, ABC, Generic[ModuleListT]):
     layers : ModuleListT
         Network construction
     """
+    _logger: log.Logger = log.getLogger(__name__)
     name: str
     version: str = netloader.__version__
     checkpoints: list[TensorListLike]
-    _logger: log.Logger = log.getLogger(__name__)
     kl_loss: Tensor
     layers: ModuleListT
 
@@ -137,7 +137,7 @@ class BaseNetwork(nn.Module, ABC, Generic[ModuleListT]):
         self.checkpoints = []
         self.kl_loss = torch.tensor(0.)
 
-        if not utils.compare_versions(self.version, netloader.__version__):
+        if not utils.compare_versions(self.version, netloader.__version__, level='minor'):
             warn(
                 f'Network version ({self.version}) is older than the current NetLoader '
                 f'version ({netloader.__version__}), please resave the network',
@@ -178,6 +178,12 @@ class BaseNetwork(nn.Module, ABC, Generic[ModuleListT]):
         TensorListLike
             Output tensor from the network with shape (N,...) and type float
         """
+
+    def clear_checkpoints(self) -> None:
+        """
+        Clears the checkpoints of the network.
+        """
+        self.checkpoints = []
 
     @overload
     def get_config(self, dict_: Literal[True] = ...) -> dict[str, Any]: ...
@@ -272,6 +278,20 @@ class CompatibleNetwork(BaseNetwork[nn.Module | nn.ModuleList]):
             self.layers = layers_
         else:
             self.load_state_dict(layers_)  # type: ignore[unreachable]
+
+    def clear_checkpoints(self) -> None:
+        """
+        Clears the checkpoints of the network.
+        """
+        super().clear_checkpoints()
+        layer: nn.Module
+
+        if not isinstance(self.layers, nn.ModuleList):
+            return
+
+        for layer in self.layers:
+            if isinstance(layer, layers.BaseLayer):
+                layer.clear_checkpoints()
 
     def forward(self, x: TensorListLike) -> TensorListLike:
         """
@@ -491,6 +511,16 @@ class Network(BaseNetwork[TypedModuleList[layers.BaseLayer]]):
         self._checkpoints = self._config.net.checkpoints
         self._load_state_dict(cast(dict[str, Any], state.get('layers', state.get('net'))))
 
+    def clear_checkpoints(self) -> None:
+        """
+        Clears the checkpoints of the network.
+        """
+        super().clear_checkpoints()
+        layer: layers.BaseLayer
+
+        for layer in self.layers:
+            layer.clear_checkpoints()
+
     def forward(self, x: TensorListLike) -> NormalizingFlow | TensorListLike:
         """
         Forward pass of the network.
@@ -545,8 +575,6 @@ class Network(BaseNetwork[TypedModuleList[layers.BaseLayer]]):
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         super().to(*args, **kwargs)
-        i: int
-        checkpoint: TensorListLike
         layer: layers.BaseLayer
 
         for layer in self.layers:
@@ -577,6 +605,7 @@ class Branch(layers.BaseLayer):
             branches: list[list[dict[str, Any]]],
             shapes: Shapes,
             *,
+            cache: bool = False,
             checkpoint: bool = True,
             dim: int = 0,
             channels: int | None = None,
@@ -594,6 +623,8 @@ class Branch(layers.BaseLayer):
             List of layer configurations for each branch
         shapes : Shapes
             Shape of the outputs from each layer
+        cache : bool, Optional
+            If checkpoints should be saved or cleared after forward pass, default = False
         checkpoint : bool, Optional
             If layer index should be relative to checkpoint layers, default = True
         dim : int, Optional
@@ -614,6 +645,7 @@ class Branch(layers.BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
+        self._cache: bool = cache
         self._checkpoint: bool = checkpoint or net_check
         self._dim: int = dim
         self._target_shape: list[int]
@@ -660,6 +692,9 @@ class Branch(layers.BaseLayer):
             self.head = layers.Pack(**kwargs)
         elif method == 'sum':
             self.head = layers.Shortcut(**kwargs)
+        else:
+            raise ValueError(f'Unknown output combination method {method}, must be one of '
+                             f'"concat", "pack", or "sum"')
 
         shapes.append(kwargs['shapes'].get(-1, True))
 
@@ -672,6 +707,12 @@ class Branch(layers.BaseLayer):
             'method': self._method,
             'shape': self._target_shape,
         }
+
+    def clear_checkpoints(self) -> None:
+        branch: Network
+
+        for branch in self.branches:
+            branch.clear_checkpoints()
 
     def extra_repr(self) -> str:
         """
@@ -704,6 +745,9 @@ class Branch(layers.BaseLayer):
 
         for branch in self.branches:
             outputs.append(branch(x.clone()))
+
+        if not self._cache:
+            self.clear_checkpoints()
         return self.head(outputs[-1], outputs=outputs, checkpoints=[])
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
@@ -735,6 +779,7 @@ class Composite(layers.BaseLayer):
             name: str,
             shapes: Shapes,
             *,
+            cache: bool = False,
             checkpoint: bool = True,
             channels: int | None = None,
             root: str = '',
@@ -752,6 +797,8 @@ class Composite(layers.BaseLayer):
             Name of the subnetwork
         shapes : Shapes
             Shape of the outputs from each layer
+        cache : bool, Optional
+            If checkpoints should be saved or cleared after forward pass, default = False
         checkpoint : bool, Optional
             If layer index should be relative to checkpoint layers, default = True
         channels : int, Optional
@@ -772,6 +819,7 @@ class Composite(layers.BaseLayer):
             Leftover parameters to pass to base layer for checking
         """
         super().__init__(**kwargs)
+        self._cache: bool = cache
         self._checkpoint: bool = checkpoint or net_check
         self.net: Network
         defaults = defaults or {}
@@ -803,6 +851,9 @@ class Composite(layers.BaseLayer):
             'config': self.net.get_config(True),
         }
 
+    def clear_checkpoints(self) -> None:
+        self.net.clear_checkpoints()
+
     def extra_repr(self) -> str:
         """
         Displays layer parameters when printing the network.
@@ -828,7 +879,11 @@ class Composite(layers.BaseLayer):
         TensorListT
             Output tensor(s) from the subnetwork with dtype float32 and shape (N,...)
         """
-        return self.net(x)
+        x = self.net(x)
+
+        if not self._cache:
+            self.clear_checkpoints()
+        return x
 
     def to(self, *args: Any, **kwargs: Any) -> Self:
         self.net.to(*args, **kwargs)

@@ -7,11 +7,10 @@ import torch
 import numpy as np
 
 import netloader.architectures as archs
-from netloader.data import DataList
 from netloader.network import Network
 from netloader.utils import get_device
 from netloader import transforms, models
-from netloader.data import BaseDataset, loader_init
+from netloader.data import DataList, BaseDataset, loader_init
 
 
 class Dataset(BaseDataset):

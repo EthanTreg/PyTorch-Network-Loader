@@ -12,7 +12,7 @@ Classes
 -------
 
 .. autoclass:: BaseTransform
-   :special-members: __call__
+   :special-members: __call__, __eq__
 
 .. autoclass:: BaseTypeTransform
 

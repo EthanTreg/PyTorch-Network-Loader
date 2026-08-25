@@ -185,6 +185,15 @@ class MultiNetwork(BaseNetwork[TypedModuleList[BaseNetwork]]):
         self._cache = state.get('save_outputs', False)
         self.layers = TypedModuleList(state.get('layers', state.get('net')))
 
+    def clear_checkpoints(self) -> None:
+        """
+        Clear the checkpoints from all networks in the MultiNetwork.
+        """
+        net: BaseNetwork
+
+        for net in self.layers:
+            net.clear_checkpoints()
+
     def forward(self, x: TensorListLike) -> TensorListLike:
         """
         Forward pass through all networks in the MultiNetwork.
