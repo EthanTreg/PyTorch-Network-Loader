@@ -63,7 +63,7 @@ class BaseDatasetMeta(type):
 
 
 class BaseDataset(
-    Dataset[tuple[int, DataListT, DataListT, Any]],
+    Dataset[tuple[int | ndarray, DataListT, DataListT, Any]],
     Generic[DataListT],
     metaclass=BaseDatasetMeta):
     """
@@ -98,28 +98,28 @@ class BaseDataset(
         """
         return len(self.idxs)
 
-    def __getitem__(self, idx: int) -> tuple[int, DataListT, DataListT, Any]:
+    def __getitem__(self, idx: int | slice) -> tuple[int | ndarray, DataListT, DataListT, Any]:
         """
         Parameters
         ----------
-        idx : int
-            Sample index
+        idx : int | slice
+            Sample index or slice
 
         Returns
         -------
-        tuple[int, DataListT, DataListT, Any]
+        tuple[int | ndarray, DataListT, DataListT, Any]
             Sample index, low dimensional data, high dimensional data, and extra data
         """
         return self.idxs[idx], self.get_low_dim(idx), self.get_high_dim(idx), self.get_extra(idx)
 
-    def get_extra(self, idx: int) -> Any:
+    def get_extra(self, idx: int | slice) -> Any:
         """
         Gets extra data for the sample of the given index
 
         Parameters
         ----------
-        idx : int
-            Sample index
+        idx : int | slice
+            Sample index or slice
 
         Returns
         -------
@@ -128,14 +128,14 @@ class BaseDataset(
         """
         return torch.tensor(()) if self.extra is None else self.extra[idx]
 
-    def get_high_dim(self, idx: int) -> DataListT:
+    def get_high_dim(self, idx: int | slice) -> DataListT:
         """
         Gets a high dimensional sample of the given index
 
         Parameters
         ----------
-        idx : int
-            Sample index
+        idx : int | slice
+            Sample index or slice
 
         Returns
         -------
@@ -145,14 +145,14 @@ class BaseDataset(
         assert self.high_dim is not None
         return cast(DataListT, self.high_dim[idx])
 
-    def get_low_dim(self, idx: int) -> DataListT:
+    def get_low_dim(self, idx: int | slice) -> DataListT:
         """
         Gets a low dimensional sample of the given index
 
         Parameters
         ----------
-        idx : int
-            Sample index
+        idx : int | slice
+            Sample index or slice
 
         Returns
         -------

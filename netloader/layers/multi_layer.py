@@ -291,7 +291,7 @@ class Shortcut(BaseMultiLayer):
         Tensor
             Output tensor of shape (N,...) and type float
         """
-        return torch.add(*self._forward(x, outputs, checkpoints).get_data())
+        return torch.sum(torch.stack(self._forward(x, outputs, checkpoints).get_data(False)), dim=0)
 
 
 class Skip(BaseMultiLayer):

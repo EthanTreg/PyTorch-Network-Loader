@@ -837,7 +837,7 @@ class Scale(BaseLayer):
             Output tensor of shape (N,...) and type float
         """
         if self._first:
-            permutation = np.arange(x.ndim - 1, 0, -1)
+            permutation: list[int] = list(range(x.ndim - 1, 0, -1))
             return (self._scale * x.permute(0, *permutation)).permute(0, *permutation)
         return self._scale * x
 

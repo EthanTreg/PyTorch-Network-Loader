@@ -613,9 +613,17 @@ class DataList(Generic[DataT]):
             Collated DataList object
         """
         i: int
+        names: list[str] | None = None
         element_data: list[DataLike]
         new_data: list[DataLike] = []
         datum: DataList[DataT]
+
+        for datum in data:
+            if names is None:
+                names = datum.get_names()
+            elif names != datum.get_names():
+                raise ValueError(f'All DataLists must have the same names, got {names} and '
+                                 f'{datum.get_names()}')
 
         for i in range(data[0].len(True)):
             element_data = [datum.get(i, list_=True) for datum in data]
@@ -626,7 +634,7 @@ class DataList(Generic[DataT]):
                 if isinstance(element_data[0], Tensor) else
                 np.concat(cast(list[ndarray], element_data)),
             )
-        return cast(DataList[ArrayT] | DataList[DataT], DataList(new_data))
+        return cast(DataList[ArrayT] | DataList[DataT], DataList(new_data, names=names))
 
     def append(self, data: DataT, name: str = '') -> None:
         """
@@ -796,7 +804,7 @@ class DataList(Generic[DataT]):
         data: DataT
 
         if isinstance(idx, str):
-            if self._names is None:
+            if not self._names:
                 raise ValueError("DataList has no names")
             return self._data[self._names.index(idx)]
 
@@ -918,7 +926,7 @@ class DataList(Generic[DataT]):
         int
             Length of the DataList or length of each element in the DataList
         """
-        return len(self._data) if list_ else len(self._data[0])
+        return len(self._data) if list_ or not self._data else len(self._data[0])
 
     def numpy(self) -> DataList[ndarray | Data[ndarray]]:
         """

@@ -607,6 +607,7 @@ class Branch(layers.BaseLayer):
             *,
             cache: bool = False,
             checkpoint: bool = True,
+            inherit_defaults: bool = True,
             dim: int = 0,
             channels: int | None = None,
             root: str = '',
@@ -627,6 +628,9 @@ class Branch(layers.BaseLayer):
             If checkpoints should be saved or cleared after forward pass, default = False
         checkpoint : bool, Optional
             If layer index should be relative to checkpoint layers, default = True
+        inherit_defaults : bool, Optional
+            If default values for each type of layer should be inherited from the parent network,
+            default = True
         dim : int, Optional
             Dimension to concatenate along if method is 'concat', default = 0
         channels : int, Optional
@@ -647,10 +651,11 @@ class Branch(layers.BaseLayer):
         super().__init__(**kwargs)
         self._cache: bool = cache
         self._checkpoint: bool = checkpoint or net_check
+        self._inherit_defaults: bool = inherit_defaults
         self._dim: int = dim
         self._target_shape: list[int]
-        self._method: Literal['concat', 'pack', 'sum'] = 'concat'
-        self.branches: list[Network] = []
+        self._method: Literal['concat', 'pack', 'sum'] = method
+        self.branches: TypedModuleList[Network] = TypedModuleList()
         self.head: layers.Concatenate | layers.Pack | layers.Shortcut
         in_shape: list[int] | list[list[int]] = shapes.get(-1, True)
         out_shapes: list[list[int]] = []
@@ -686,14 +691,14 @@ class Branch(layers.BaseLayer):
             'check_shapes': Shapes(),
         }
 
-        if method == 'concat':
+        if self._method == 'concat':
             self.head = layers.Concatenate(dim=self._dim, **kwargs)
-        elif method == 'pack':
+        elif self._method == 'pack':
             self.head = layers.Pack(**kwargs)
-        elif method == 'sum':
+        elif self._method == 'sum':
             self.head = layers.Shortcut(**kwargs)
         else:
-            raise ValueError(f'Unknown output combination method {method}, must be one of '
+            raise ValueError(f'Unknown output combination method {self._method}, must be one of '
                              f'"concat", "pack", or "sum"')
 
         shapes.append(kwargs['shapes'].get(-1, True))
@@ -703,6 +708,7 @@ class Branch(layers.BaseLayer):
         return super().__getstate__() | {
             'branches': [branch.get_config(True)['layers'] for branch in self.branches],
             'checkpoint': self._checkpoint,
+            'inherit_defaults': self._inherit_defaults,
             'dim': self._dim,
             'method': self._method,
             'shape': self._target_shape,
@@ -967,6 +973,9 @@ def _create_network(
             layer_class = Composite
         elif layer['type'] == 'Branch':
             layer_class = Branch
+
+            if layer.get('inherit_defaults', True):
+                layer['defaults'] = config.net.layers | layer.get('defaults', {})
         else:
             layer_class = getattr(layers, layer['type'])
 
@@ -983,9 +992,8 @@ def _create_network(
                 check_shapes=check_shapes,
                 **layer,
             ))
-        except ValueError:
-            logger.error(f"Error in {layer['type']} (layer {i})")
-            raise
+        except Exception as e:
+            raise type(e)(f'{e}\nError in {layer["type"]} (layer {i})') from e
 
         if layer_class == Composite:
             config.layers[i]['config'] = cast(Composite, module_list[-1]).net.get_config(True)
